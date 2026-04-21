@@ -13,22 +13,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
-      <change afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/ARCHITECTURE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCharacter.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperController.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperMovementComponent.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperCharacter.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperController.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperMovementComponent.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/CODEX_IMPLEMENTATION.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/CODEX_REVIEW.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/IMPLEMENTATION_PROMPT.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/REVIEW_PROMPT.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/UNREAL_PROMPT.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultEngine.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultEngine.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultInput.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultInput.ini" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,6 +41,7 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/VerseCompiler/.editorconfig" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCameraShakeComponent.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperController.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperMovementComponent.cpp" root0="FORCE_HIGHLIGHTING" />
@@ -217,6 +203,7 @@
       <workItem from="1776740960461" duration="2931000" />
       <workItem from="1776749778499" duration="3553000" />
       <workItem from="1776753411862" duration="8611000" />
+      <workItem from="1776768505524" duration="1673000" />
     </task>
     <servers />
   </component>
