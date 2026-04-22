@@ -1,40 +1,98 @@
-다음 작업을 Unreal Editor 내부에서 도와줘.
+다음 작업을 Unreal Editor 내부에서 단계별로 도와줘.
+
+현재 전제:
+- C++ 포커스 시스템이 이미 구현되어 있다.
+- `ABeekeeperCharacter` 는 `UBeekeeperFocusComponent` 를 가진다.
+- `UBeekeeperFocusComponent` 는 아래 데이터를 제공한다.
+  - `OnFocusPromptChanged`
+  - `OnFocusRuleChanged`
+  - `GetCurrentPromptData()`
+  - `HasFocusTarget()`
+- `FFocusPromptData` 구조에는 아래 값이 있다.
+  - `bIsValid`
+  - `DisplayName`
+  - `InteractionKeyText`
+- 포커스 대상은 `UFocusTargetComponent` 에서 `DisplayName`, `InteractionKeyText` 를 제공한다.
+- 목표는 포커스 진입 시 화면에 `F` 상호작용 팝업 UI를 띄우고, 포커스 이탈 시 숨기는 것이다.
+- UI는 C++에서 직접 그리지 않고 Blueprint 위젯이 포커스 데이터를 받아 표시하는 구조로 만든다.
 
 목표:
-- `ABeekeeperCharacter`의 `BeekeeperCameraShake` 컴포넌트에서 사용할 착지 전용 카메라 셰이크 블루프린트를 만든다.
-- 이 셰이크는 캐릭터가 공중에서 지면으로 착지하는 순간에만 1회 재생된다.
-- 기존 이동 셰이크(`Idle`, `Walk`, `Sprint`)와는 별개의 일회성 착지 반응이어야 한다.
+1. 상호작용 팝업용 UMG 위젯 Blueprint를 만든다.
+2. `DisplayName` 과 `InteractionKeyText` 를 표시한다.
+3. 포커스 대상이 있으면 표시하고, 없으면 숨긴다.
+4. 가능하면 간단한 등장/사라짐 애니메이션도 넣는다.
+5. 실제 플레이어 화면에 붙도록 연결한다.
 
-작업 요청:
-1. `CameraShakeBase` 기반 블루프린트 1개를 생성해줘.
-   - `BP_BeekeeperCameraShake_Landing`
-2. 저장 위치는 가능하면 `Content/Beekeeper/Camera/` 폴더로 해줘.
-3. 이 셰이크는 1인칭 착지 반응용으로 만들어줘.
-4. 느낌은 다음 방향으로 잡아줘.
-   - 착지 순간 짧은 아래 방향 충격감
-   - 아주 짧은 Pitch 반동
-   - 필요하면 약한 위치 Z 반응
-5. 과한 멀미를 유발하지 않도록 지속시간은 짧고 강도는 보수적으로 설정해줘.
-6. 반복 루프형이 아니라 1회성 셰이크로 설정해줘.
-7. `Walk`나 `Sprint` 이동 셰이크보다 순간적인 반응은 느껴지되, 너무 과장된 시네마틱 충격은 피해서 실제 플레이용으로 만들어줘.
-8. 가능하면 기본값을 아래 방향으로 제안해줘.
-   - 짧은 duration
-   - 작은 Pitch kick
-   - 작은 Z drop / rebound 느낌
-   - 빠른 감쇠
-9. 생성 후 `BeekeeperCharacter` 블루프린트에서 `BeekeeperCameraShake` 컴포넌트의 아래 프로퍼티에 연결해줘.
-   - `LandingCameraShakeClass` -> `BP_BeekeeperCameraShake_Landing`
-10. 기존 `IdleCameraShakeClass`, `WalkCameraShakeClass`, `SprintCameraShakeClass`는 건드리지 말고 유지해줘.
+작업 요청 1: 위젯 Blueprint 생성
+1. 새 Widget Blueprint 하나를 생성해줘.
+   - 이름: `WBP_FocusPrompt`
+2. 저장 위치는 가능하면 `Content/Beekeeper/UI/` 로 해줘.
+3. 위젯은 화면 중앙 근처 또는 하단 중앙에 놓이되, 1인칭 포커스 UI로 자연스러운 위치를 잡아줘.
+4. 레이아웃은 너무 복잡하지 않게 해줘.
+   - 키 표시 영역
+   - 상호작용 대상 이름 영역
+5. 예시 표시 형태는 아래 느낌으로 해줘.
+   - `[F] Open Beehive`
+   - 또는 왼쪽에 `F` 배지, 오른쪽에 대상 이름
 
-추가 조건:
-- C++ 쪽에서는 이미 착지 순간에 `LandingCameraShakeClass`를 1회 재생하도록 구현되어 있다.
-- 여기서는 블루프린트 에셋 제작과 컴포넌트 할당만 해주면 된다.
-- 실제 플레이용 1인칭 착지 피드백이 목표다.
-- 값이 애매하면 보수적인 기본값으로 시작하고, 나중에 더 강하게 튜닝할 수 있게 설명해줘.
+작업 요청 2: 위젯 내부 구성
+1. 아래 텍스트/시각 요소를 만들어줘.
+   - 키 텍스트용 TextBlock
+   - 대상 이름용 TextBlock
+   - 배경용 Border 또는 SizeBox
+2. 기본 상태에서는 위젯이 숨겨져 있어도 된다.
+3. 포커스가 있을 때만 보이도록 만들고, 포커스가 없을 때는 `Collapsed` 또는 `Hidden` 처리해줘.
+4. 키 텍스트가 비어 있지 않으면 예: `F`
+5. 대상 이름은 `DisplayName`
+6. 필요하면 기본 프리뷰 값도 넣어줘.
+
+작업 요청 3: 위젯 업데이트 함수 만들기
+1. `WBP_FocusPrompt` 에서 포커스 데이터를 받아 갱신하는 함수 하나를 만들어줘.
+   - 예: `UpdateFocusPrompt`
+2. 입력 파라미터는 아래 기준으로 해줘.
+   - `bIsValid` 또는 `FFocusPromptData`
+3. 이 함수에서:
+   - 유효하면 키 텍스트와 대상 이름 갱신
+   - 유효하지 않으면 UI 숨김
+4. 가능하면 `FFocusPromptData` 구조체를 직접 받는 방식으로 구성해줘.
+
+작업 요청 4: 표시/숨김 애니메이션
+1. 등장 시 Fade In 또는 약한 Scale In 정도의 가벼운 애니메이션을 넣어줘.
+2. 사라질 때도 짧은 Fade Out 정도만 넣어줘.
+3. 너무 과한 모션은 피하고 실제 플레이용 UI로 만들어줘.
+
+작업 요청 5: 화면 연결
+1. `ABeekeeperCharacter` 또는 플레이어 기준으로 이 위젯이 화면에 추가되도록 연결 방법을 제안해줘.
+2. 가능하면 Blueprint 단계에서는 아래 흐름으로 설명해줘.
+   - BeginPlay 에서 위젯 생성
+   - Viewport 에 추가
+   - `BeekeeperFocus` 컴포넌트 참조
+   - `OnFocusPromptChanged` 델리게이트 바인딩
+   - 델리게이트 수신 시 `UpdateFocusPrompt` 호출
+3. 현재 코드 구조상 가장 자연스러운 연결 주체가 누구인지 같이 제안해줘.
+   - `BeekeeperCharacter` BP
+   - 또는 `BeekeeperController` BP
+4. 가능하면 현재 구조에서는 어떤 쪽이 더 적합한지 이유도 짧게 설명해줘.
+
+작업 요청 6: 테스트 시나리오
+1. `ABeehive` 기반 포커스 대상 Blueprint 하나를 기준으로 테스트 흐름을 제안해줘.
+2. 테스트 항목:
+   - 벌통을 바라보면 `F` 팝업 표시
+   - 벌통에서 시선을 떼면 팝업 숨김
+   - 다른 포커스 대상으로 바뀌면 텍스트 갱신
+3. `DisplayName`, `InteractionKeyText` 가 비어 있을 때 표시가 어떻게 되는지도 같이 점검해줘.
+
+디자인 방향:
+- 실제 플레이용 1인칭 상호작용 UI
+- 너무 크지 않게
+- 배경은 반투명 dark panel 정도
+- 키 표시는 읽기 쉬운 강조 배지 형태
+- 전체는 미니멀하고 빠르게 읽히는 느낌
 
 최종 출력 형식:
-- 생성한 블루프린트 이름
+- 생성한 위젯 Blueprint 이름
 - 저장 경로
-- 핵심 설정값 요약
-- `BeekeeperCameraShake` 컴포넌트에 어떤 값으로 연결했는지 요약
-- 추가 튜닝 포인트 2~3개
+- 위젯에 포함된 주요 위젯 요소 목록
+- 갱신 함수 이름과 입력 파라미터
+- 화면 연결 방법 요약
+- 테스트 체크리스트

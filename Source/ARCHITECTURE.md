@@ -1,5 +1,25 @@
 # BeekeepingSim Architecture
 
+## 2026-04-22 Update: Reusable Focus System
+
+- Added reusable focus types under `Source/BeekeepingSim/Public` and `Source/BeekeepingSim/Private`:
+  - `UBeekeeperFocusComponent`
+  - `UFocusTargetComponent`
+  - `IFocusInteractable`
+  - `ABeehive`
+- `ABeekeeperCharacter` now owns `UBeekeeperFocusComponent` and routes focus confirm/cancel input to it.
+- `UBeekeeperFocusComponent` handles:
+  - center-screen line trace based focus detection
+  - focus enter/exit/confirm/cancel transitions
+  - prompt data broadcasting
+  - item-tag filtering evaluation for external hotbar systems
+- `UFocusTargetComponent` handles:
+  - prompt text data
+  - `FFocusItemRule` with `AllowedItemTags`
+  - outline toggling through explicit primitive list or owner primitive fallback
+  - forwarding focus events to actors implementing `IFocusInteractable`
+- `ABeehive` is the example focus actor and uses `UFocusTargetComponent` plus `IFocusInteractable` hooks.
+
 ## 프로젝트 개요
 
 - 이 문서는 아래 경로의 실제 C++ 파일만 기준으로 정리한다.

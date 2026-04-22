@@ -1,29 +1,39 @@
-다음 Unreal Engine C++ 변경을 코드 리뷰해줘. 우선순위는 버그, 상태 전이 오류, null 안정성, 멀티플레이 로컬 플레이어 안전성, Tick 비용이다.
+다음 Unreal Engine C++ 변경을 코드 리뷰해줘. 우선순위는 버그, 상태 전이 오류, null 안정성, 입력 연결, 포커스 해제 누락, 태그 필터링 정확성, 성능(Tick/trace)이다.
 
 변경 파일:
-- Source/BeekeepingSim/Public/BeekeeperCameraShakeComponent.h
-- Source/BeekeepingSim/Private/BeekeeperCameraShakeComponent.cpp
+- Source/BeekeepingSim/BeekeepingSim.Build.cs
+- Source/BeekeepingSim/Public/BeekeeperCharacter.h
+- Source/BeekeepingSim/Private/BeekeeperCharacter.cpp
+- Source/BeekeepingSim/Public/BeekeeperFocusComponent.h
+- Source/BeekeepingSim/Private/BeekeeperFocusComponent.cpp
+- Source/BeekeepingSim/Public/FocusTargetComponent.h
+- Source/BeekeepingSim/Private/FocusTargetComponent.cpp
+- Source/BeekeepingSim/Public/FocusInteractable.h
+- Source/BeekeepingSim/Public/Beehive.h
+- Source/BeekeepingSim/Private/Beehive.cpp
 - Source/ARCHITECTURE.md
 
-기존 기능:
-- `UBeekeeperCameraShakeComponent` 가 `Idle`, `Walk`, `Sprint` 이동 상태에 따라 지속형 카메라 셰이크를 전환한다.
-- 로컬 플레이어에게만 셰이크가 재생되도록 처리한다.
-
-이번 요구사항:
-- 캐릭터가 공중 상태(`IsFalling() == true`)일 때는 이동 상태 기반 셰이크를 모두 정지한다.
-- 공중에서는 `Idle`, `Walk`, `Sprint` 셰이크를 새로 시작하지 않는다.
-- 이전 프레임은 공중이고 현재 프레임은 지상이면 착지로 간주한다.
-- 착지 순간에만 `LandingCameraShakeClass` 를 1회 재생한다.
-- 착지 후에는 기존 이동 상태 계산 로직이 다시 정상 동작해야 한다.
-- 비로컬 플레이어는 셰이크 관련 Tick 낭비를 최소화해야 한다.
+요구사항:
+- 플레이어는 화면 중앙 기준으로 포커스 대상을 감지해야 한다.
+- 포커스 진입 시 외곽선 활성, UI용 `F` 팝업 데이터 제공.
+- 포커스 이탈 시 외곽선 해제, UI 데이터 해제.
+- `F` 상호작용 확정과 `ESC` 포커스 해제를 분리하되 구조상 둘 다 대상 행동 훅을 지원.
+- 포커스 대상은 `AllowedItemTags` 기반으로 핫바 활성/비활성 규칙을 제공.
+- `AllowedItemTags` 가 비어 있으면 모든 아이템 비활성화.
+- `AllowedItemTags` 에 모든 아이템 최상위 태그가 있으면 모든 아이템 활성화.
+- 그 외에는 아이템 태그가 `HasAny` 를 만족할 때만 활성화.
+- 외곽선 대상 메시 지정은 명시 배열 우선, 비어 있으면 owner primitive fallback.
+- 벌통은 이 공통 시스템을 사용하는 예시 액터여야 한다.
 
 집중 리뷰 포인트:
-1. 공중 진입 시 이동 셰이크가 확실히 멈추는지
-2. 착지 셰이크가 실제 착지 순간에만 1회 재생되는지
-3. 착지 직후 이동 셰이크 재개가 기존 로직과 충돌하지 않는지
-4. `bWasFalling` 상태 전이가 BeginPlay, 점프, 착지, 스폰 직후 상황에서 안전한지
-5. `StopMoveShake`, `PlayLandingShake`, `ApplyMoveState` 호출 순서가 부작용 없는지
-6. `PlayerController`, `PlayerCameraManager`, `LandingCameraShakeClass` null 처리 누락이 없는지
-7. 로컬 플레이어가 아닌 경우 Tick 비활성화 로직이 적절한지
+1. `UBeekeeperFocusComponent` 의 라인트레이스 기반 포커스 전이가 중복 호출 없이 안전한지
+2. 이전 대상 `OnFocusExit` / 새 대상 `OnFocusEnter` 호출 순서가 적절한지
+3. `ConfirmFocus` 와 `CancelFocus` 의 동작이 분리되어 있고, `bClearFocusOnConfirm` 로 확장 가능성이 맞는지
+4. `AllowedItemTags` 해석 로직이 요구사항과 정확히 일치하는지
+5. 포커스 대상이 없을 때 기본 상태 복구가 가능한 API/델리게이트 구조인지
+6. `UFocusTargetComponent` 의 외곽선 처리에서 fallback primitive 수집이 부작용 없는지
+7. `ABeehive` 예시가 인터페이스/컴포넌트 조합 예시로 충분한지
+8. non-local 플레이어에서 포커스 Tick/trace 낭비가 과한지
+9. `GameplayTags` 모듈 추가 외에 빌드 깨질 가능성이 있는 include/generated/UHT 문제가 없는지
 
-가능하면 파일/라인 기준으로 severity 순으로 지적해줘. 리뷰 결과에는 버그, 회귀 위험, 테스트가 필요한 케이스를 분리해서 적어줘.
+가능하면 파일/라인 기준으로 severity 순으로 지적해줘. 버그, 회귀 위험, 추가 테스트 필요 항목을 나눠서 적어줘.

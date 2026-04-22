@@ -8,6 +8,7 @@
 
 class UBeekeeperMovementComponent;
 class UBeekeeperCameraShakeComponent;
+class UBeekeeperFocusComponent;
 struct FInputActionValue;
 class UInputAction;
 class UCameraComponent;
@@ -28,6 +29,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBeekeeperCameraShakeComponent> BeekeeperCameraShake;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBeekeeperFocusComponent> BeekeeperFocus;
 	
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float MouseSensitivity;
@@ -44,14 +48,20 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> SprintAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> FocusConfirmAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> FocusCancelAction;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MoveSpeedScale = 1;
 	
-	UPROPERTY(EditAnywhere, Blueprintable, Category = "Setting", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Setting", meta = (ClampMin = "0.0"))
 	float LookSpeedScale = 1;
 	
-	UPROPERTY(EditAnywhere, Blueprintable, Category = "Setting")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Setting")
 	bool bIsSprintToggle = true;
 
 protected:
@@ -66,6 +76,10 @@ protected:
 	void SprintStartInput();
 	
 	void SprintReleaseInput();
+
+	void FocusConfirmInput();
+
+	void FocusCancelInput();
 	
 	UFUNCTION(Blueprintable, Category = "Input")
 	void DoMove(float Right, float Forward);
@@ -84,4 +98,6 @@ protected:
 public:	
 	
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
+
+	UBeekeeperFocusComponent* GetBeekeeperFocus() const { return BeekeeperFocus; }
 };

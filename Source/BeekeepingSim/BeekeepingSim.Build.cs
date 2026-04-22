@@ -14,6 +14,7 @@ public class BeekeepingSim : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
+			"GameplayTags",
 			"AIModule",
 			"StateTreeModule",
 			"GameplayStateTreeModule",

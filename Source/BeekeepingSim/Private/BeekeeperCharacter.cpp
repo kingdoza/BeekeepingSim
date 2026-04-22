@@ -3,11 +3,13 @@
 
 #include "Public/BeekeeperCharacter.h"
 #include "Public/BeekeeperCameraShakeComponent.h"
+#include "Public/BeekeeperFocusComponent.h"
 #include "Public/BeekeeperMovementComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
+#include "InputActionValue.h"
 
 
 ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitializer) 
@@ -18,6 +20,7 @@ ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitial
 	
 	BeekeeperMovement = Cast<UBeekeeperMovementComponent>(GetCharacterMovement());
 	BeekeeperCameraShake = CreateDefaultSubobject<UBeekeeperCameraShakeComponent>(TEXT("BeekeeperCameraShake"));
+	BeekeeperFocus = CreateDefaultSubobject<UBeekeeperFocusComponent>(TEXT("BeekeeperFocus"));
 	
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("First Person Camera"));
 	FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
@@ -97,6 +100,16 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		
 		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::SprintStartInput);
 		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::SprintReleaseInput);
+
+		if (FocusConfirmAction)
+		{
+			EnhancedInputComponent->BindAction(FocusConfirmAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusConfirmInput);
+		}
+
+		if (FocusCancelAction)
+		{
+			EnhancedInputComponent->BindAction(FocusCancelAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusCancelInput);
+		}
 	}
 }
 
@@ -130,6 +143,26 @@ void ABeekeeperCharacter::SprintReleaseInput()
 	}
 
 	BeekeeperMovement->StopSprinting();
+}
+
+void ABeekeeperCharacter::FocusConfirmInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->ConfirmFocus();
+}
+
+void ABeekeeperCharacter::FocusCancelInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->CancelFocus();
 }
 
 void ABeekeeperCharacter::DoJumpStart()
