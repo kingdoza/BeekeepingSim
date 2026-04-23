@@ -28,6 +28,12 @@ class BEEKEEPINGSIM_API UBeekeeperCameraShakeComponent : public UActorComponent
 public:
 	UBeekeeperCameraShakeComponent();
 
+	UFUNCTION(BlueprintCallable, Category = "Camera Shake")
+	void StopAllCameraShakes();
+
+	UFUNCTION(BlueprintCallable, Category = "Camera Shake")
+	void SuppressNextLandingShake();
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera Shake")
 	TSubclassOf<UCameraShakeBase> IdleCameraShakeClass;
@@ -82,6 +88,8 @@ private:
 	bool bHasAppliedMoveState = false;
 
 	bool bWasFalling = false;
+
+	bool bSuppressNextLandingShake = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerCameraManager> CurrentPlayerCameraManager;

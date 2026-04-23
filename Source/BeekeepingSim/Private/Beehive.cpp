@@ -3,6 +3,7 @@
 
 #include "Public/Beehive.h"
 
+#include "Public/AnchoredFocusCursorActionComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Public/FocusTargetComponent.h"
@@ -18,26 +19,27 @@ ABeehive::ABeehive()
 	BeehiveMesh->SetupAttachment(Root);
 
 	FocusTarget = CreateDefaultSubobject<UFocusTargetComponent>(TEXT("FocusTarget"));
+	FocusAction = CreateDefaultSubobject<UAnchoredFocusCursorActionComponent>(TEXT("FocusAction"));
 }
 
 void ABeehive::OnFocusEnter_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
-	bIsLidOpen = true;
 	ReceiveFocusEntered(InteractingCharacter);
 }
 
 void ABeehive::OnFocusExit_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
-	bIsLidOpen = false;
 	ReceiveFocusExited(InteractingCharacter);
 }
 
 void ABeehive::OnFocusConfirm_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
+	bIsLidOpen = true;
 	ReceiveFocusConfirmed(InteractingCharacter);
 }
 
 void ABeehive::OnFocusCancel_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
+	bIsLidOpen = false;
 	ReceiveFocusCanceled(InteractingCharacter);
 }

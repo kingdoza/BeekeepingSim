@@ -7,6 +7,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Public/BeekeeperCharacter.h"
+#include "Public/FocusActionComponent.h"
 #include "Public/FocusTargetComponent.h"
 
 UBeekeeperFocusComponent::UBeekeeperFocusComponent()
@@ -25,59 +26,122 @@ void UBeekeeperFocusComponent::BeginPlay()
 		OwnerCamera = OwnerCharacter->GetFirstPersonCamera();
 	}
 
-	BroadcastFocusState();
+	BroadcastPreviewPromptState();
+	BroadcastEngagedFocusRule();
+	UpdateCrosshairVisibility(false);
 }
 
 void UBeekeeperFocusComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (CurrentFocusTarget && !IsValid(CurrentFocusTarget))
-	{
-		CurrentFocusTarget = nullptr;
-		BroadcastFocusState();
-	}
-
 	if (ShouldDisableTickForNonLocal())
 	{
+		if (bIsFocusEngaged)
+		{
+			ClearEngagedFocus();
+		}
+
 		if (CurrentFocusTarget)
 		{
-			ClearFocusTarget(false);
+			ClearPreviewFocus(false);
 		}
+
+		UpdateCrosshairVisibility(false);
 
 		SetComponentTickInterval(0.25f);
 		return;
 	}
 
 	SetComponentTickInterval(0.0f);
+
+	if (bIsFocusEngaged)
+	{
+		UpdateEngagedFocusState();
+		return;
+	}
+
+	if (CurrentFocusTarget && !IsValid(CurrentFocusTarget))
+	{
+		CurrentFocusTarget = nullptr;
+		BroadcastPreviewPromptState();
+	}
+
 	RefreshFocusTarget();
 }
 
 void UBeekeeperFocusComponent::ConfirmFocus()
 {
+	if (bIsFocusEngaged)
+	{
+		CancelFocus();
+		return;
+	}
+
 	if (!IsValid(CurrentFocusTarget) || !OwnerCharacter)
 	{
 		return;
 	}
 
-	UFocusTargetComponent* FocusTarget = CurrentFocusTarget;
-	const bool bShouldClearFocusOnConfirm = FocusTarget->ShouldClearFocusOnConfirm();
-
-	FocusTarget->NotifyFocusConfirm(OwnerCharacter);
-	if (bShouldClearFocusOnConfirm && CurrentFocusTarget == FocusTarget)
+	UFocusActionComponent* FocusActionComponent = FindFocusActionComponent(CurrentFocusTarget);
+	if (!FocusActionComponent || !FocusActionComponent->CanBeginFocusAction(OwnerCharacter))
 	{
-		ClearFocusTarget(false);
+		return;
 	}
+
+	UFocusTargetComponent* PreviewTarget = CurrentFocusTarget;
+	ClearPreviewFocus(false);
+
+	EngagedFocusTarget = PreviewTarget;
+	EngagedFocusAction = FocusActionComponent;
+	bIsFocusEngaged = true;
+
+	if (!EngagedFocusAction->BeginFocusAction(OwnerCharacter))
+	{
+		ClearEngagedFocus();
+		if (IsValid(PreviewTarget))
+		{
+			SetPreviewFocusTarget(PreviewTarget);
+		}
+		return;
+	}
+
+	EngagedFocusTarget->NotifyFocusConfirm(OwnerCharacter);
+	BroadcastEngagedFocusRule();
+	RefreshCrosshairVisibilityFromCurrentAction();
 }
 
 void UBeekeeperFocusComponent::CancelFocus()
 {
-	ClearFocusTarget(true);
+	if (!bIsFocusEngaged)
+	{
+		ClearPreviewFocus(true);
+		return;
+	}
+
+	if (!IsValid(EngagedFocusTarget) || !EngagedFocusAction || !OwnerCharacter)
+	{
+		ClearEngagedFocus();
+		return;
+	}
+
+	if (EngagedFocusAction->ShouldRestoreCrosshairOnCancelStart())
+	{
+		UpdateCrosshairVisibility(false);
+	}
+
+	if (EngagedFocusAction->CancelFocusAction(OwnerCharacter))
+	{
+		EngagedFocusTarget->NotifyFocusCancel(OwnerCharacter);
+		return;
+	}
+
+	RefreshCrosshairVisibilityFromCurrentAction();
 }
 
 FFocusPromptData UBeekeeperFocusComponent::GetCurrentPromptData() const
 {
-	if (!IsValid(CurrentFocusTarget))
+	if (bIsFocusEngaged || !IsValid(CurrentFocusTarget))
 	{
 		return FFocusPromptData();
 	}
@@ -87,12 +151,12 @@ FFocusPromptData UBeekeeperFocusComponent::GetCurrentPromptData() const
 
 bool UBeekeeperFocusComponent::EvaluateItemAllowed(const FGameplayTagContainer& ItemTags, FGameplayTag AllItemsTag) const
 {
-	if (!CurrentFocusTarget)
+	if (!bIsFocusEngaged || !EngagedFocusTarget)
 	{
 		return true;
 	}
 
-	const FGameplayTagContainer& AllowedItemTags = CurrentFocusTarget->GetItemRule().AllowedItemTags;
+	const FGameplayTagContainer& AllowedItemTags = EngagedFocusTarget->GetItemRule().AllowedItemTags;
 	if (AllowedItemTags.IsEmpty())
 	{
 		return false;
@@ -114,7 +178,7 @@ void UBeekeeperFocusComponent::RefreshFocusTarget()
 		return;
 	}
 
-	SetFocusTarget(NewFocusTarget);
+	SetPreviewFocusTarget(NewFocusTarget);
 }
 
 UFocusTargetComponent* UBeekeeperFocusComponent::FindFocusTargetFromTrace() const
@@ -143,7 +207,7 @@ UFocusTargetComponent* UBeekeeperFocusComponent::FindFocusTargetFromTrace() cons
 	return HitActor->FindComponentByClass<UFocusTargetComponent>();
 }
 
-void UBeekeeperFocusComponent::SetFocusTarget(UFocusTargetComponent* NewFocusTarget)
+void UBeekeeperFocusComponent::SetPreviewFocusTarget(UFocusTargetComponent* NewFocusTarget)
 {
 	if (CurrentFocusTarget == NewFocusTarget)
 	{
@@ -170,15 +234,15 @@ void UBeekeeperFocusComponent::SetFocusTarget(UFocusTargetComponent* NewFocusTar
 		}
 	}
 
-	BroadcastFocusState();
+	BroadcastPreviewPromptState();
 }
 
-void UBeekeeperFocusComponent::ClearFocusTarget(bool bNotifyCancel)
+void UBeekeeperFocusComponent::ClearPreviewFocus(bool bNotifyCancel)
 {
 	if (!IsValid(CurrentFocusTarget))
 	{
 		CurrentFocusTarget = nullptr;
-		BroadcastFocusState();
+		BroadcastPreviewPromptState();
 		return;
 	}
 
@@ -196,20 +260,80 @@ void UBeekeeperFocusComponent::ClearFocusTarget(bool bNotifyCancel)
 		PreviousFocusTarget->NotifyFocusExit(OwnerCharacter);
 	}
 
-	BroadcastFocusState();
+	BroadcastPreviewPromptState();
 }
 
-void UBeekeeperFocusComponent::BroadcastFocusState()
+void UBeekeeperFocusComponent::ClearEngagedFocus()
+{
+	if (EngagedFocusAction && OwnerCharacter)
+	{
+		EngagedFocusAction->AbortFocusAction(OwnerCharacter);
+	}
+
+	EngagedFocusTarget = nullptr;
+	EngagedFocusAction = nullptr;
+	bIsFocusEngaged = false;
+	BroadcastEngagedFocusRule();
+	UpdateCrosshairVisibility(false);
+}
+
+void UBeekeeperFocusComponent::BroadcastPreviewPromptState()
 {
 	OnFocusPromptChanged.Broadcast(GetCurrentPromptData());
+}
 
-	if (!IsValid(CurrentFocusTarget))
+void UBeekeeperFocusComponent::BroadcastEngagedFocusRule()
+{
+	if (!bIsFocusEngaged || !IsValid(EngagedFocusTarget))
 	{
 		OnFocusRuleChanged.Broadcast(false, FFocusItemRule());
 		return;
 	}
 
-	OnFocusRuleChanged.Broadcast(true, CurrentFocusTarget->GetItemRule());
+	OnFocusRuleChanged.Broadcast(true, EngagedFocusTarget->GetItemRule());
+}
+
+void UBeekeeperFocusComponent::UpdateCrosshairVisibility(bool bNewShouldHideCrosshair)
+{
+	if (bShouldHideCrosshair == bNewShouldHideCrosshair)
+	{
+		return;
+	}
+
+	bShouldHideCrosshair = bNewShouldHideCrosshair;
+	OnCrosshairVisibilityChanged.Broadcast(!bShouldHideCrosshair);
+}
+
+void UBeekeeperFocusComponent::RefreshCrosshairVisibilityFromCurrentAction()
+{
+	const bool bNewShouldHideCrosshair = bIsFocusEngaged && EngagedFocusAction && EngagedFocusAction->WantsCrosshairHiddenWhileEngaged();
+	UpdateCrosshairVisibility(bNewShouldHideCrosshair);
+}
+
+UFocusActionComponent* UBeekeeperFocusComponent::FindFocusActionComponent(const UFocusTargetComponent* FocusTarget) const
+{
+	if (!FocusTarget || !FocusTarget->GetOwner())
+	{
+		return nullptr;
+	}
+
+	return FocusTarget->GetOwner()->FindComponentByClass<UFocusActionComponent>();
+}
+
+void UBeekeeperFocusComponent::UpdateEngagedFocusState()
+{
+	if (!IsValid(EngagedFocusTarget) || !EngagedFocusAction)
+	{
+		ClearEngagedFocus();
+		return;
+	}
+
+	if (EngagedFocusAction->IsActionEngaged())
+	{
+		return;
+	}
+
+	ClearEngagedFocus();
 }
 
 bool UBeekeeperFocusComponent::ShouldDisableTickForNonLocal() const

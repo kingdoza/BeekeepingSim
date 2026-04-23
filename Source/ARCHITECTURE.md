@@ -1,5 +1,27 @@
 # BeekeepingSim Architecture
 
+## 2026-04-22 Update: PreviewFocus / EngagedFocus and FocusActionComponent
+
+- `UBeekeeperFocusComponent` now separates:
+  - `PreviewFocus`: center-screen trace, outline, prompt UI
+  - `EngagedFocus`: confirmed interaction state with preview disabled
+- `UFocusActionComponent` is the reusable base for confirm/cancel interaction behavior.
+- `UAnchoredFocusActionComponent` is the reusable anchored interaction implementation:
+  - character moves to the character anchor on confirm
+  - camera blends to a focus anchor on confirm
+  - cancel keeps the character in place and only blends the camera back to the default first-person view
+  - camera blends back to the default first-person view before input is restored
+- `UAnchoredFocusCursorActionComponent` extends the anchored interaction flow:
+  - provides crosshair visibility policy while engaged instead of touching widgets directly
+  - shows the mouse cursor and switches to `FInputModeGameAndUI` during engaged focus
+  - restores crosshair immediately on cancel, then restores cursor/input mode after the camera return blend completes
+- `UBeekeeperFocusComponent` is the single source of truth for crosshair visibility:
+  - it calculates whether the crosshair should be hidden from the current engaged action policy
+  - Blueprint UI only needs to read `ShouldHideCrosshair()` or subscribe to `OnCrosshairVisibilityChanged`
+- `ABeehive` now uses `UAnchoredFocusCursorActionComponent` as the example interaction action.
+- Hotbar filtering is only broadcast during `EngagedFocus`, not during `PreviewFocus`.
+- `UBeekeeperCameraShakeComponent` supports one-shot landing shake suppression so forced focus repositioning does not trigger a fake landing shake.
+
 ## 2026-04-22 Update: Reusable Focus System
 
 - Added reusable focus types under `Source/BeekeepingSim/Public` and `Source/BeekeepingSim/Private`:

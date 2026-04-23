@@ -8,6 +8,7 @@
 #include "Beehive.generated.h"
 
 class UFocusTargetComponent;
+class UAnchoredFocusCursorActionComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 class ABeekeeperCharacter;
@@ -29,6 +30,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UFocusTargetComponent> FocusTarget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UAnchoredFocusCursorActionComponent> FocusAction;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive")
 	bool bIsLidOpen = false;

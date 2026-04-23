@@ -15,6 +15,26 @@ UBeekeeperCameraShakeComponent::UBeekeeperCameraShakeComponent()
 	PrimaryComponentTick.TickInterval = 0.0f;
 }
 
+void UBeekeeperCameraShakeComponent::SuppressNextLandingShake()
+{
+	bSuppressNextLandingShake = true;
+}
+
+void UBeekeeperCameraShakeComponent::StopAllCameraShakes()
+{
+	APlayerController* LocalPlayerController = GetLocalPlayerController();
+	if (!LocalPlayerController || !LocalPlayerController->PlayerCameraManager)
+	{
+		StopCurrentShake();
+		return;
+	}
+
+	LocalPlayerController->PlayerCameraManager->StopAllCameraShakes(true);
+	CurrentPlayerCameraManager = nullptr;
+	CurrentShakeClass = nullptr;
+	bHasAppliedMoveState = false;
+}
+
 void UBeekeeperCameraShakeComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -51,6 +71,12 @@ void UBeekeeperCameraShakeComponent::TickComponent(float DeltaTime, ELevelTick T
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (OwnerCharacter && OwnerCharacter->IsFocusInteractionInputLocked())
+	{
+		StopAllCameraShakes();
+		return;
+	}
+
 	if (ShouldDisableTickForNonLocal())
 	{
 		StopCurrentShake();
@@ -71,7 +97,14 @@ void UBeekeeperCameraShakeComponent::TickComponent(float DeltaTime, ELevelTick T
 	const bool bHasLandedThisFrame = bWasFalling && !bIsFalling;
 	if (bHasLandedThisFrame)
 	{
-		PlayLandingShake();
+		if (bSuppressNextLandingShake)
+		{
+			bSuppressNextLandingShake = false;
+		}
+		else
+		{
+			PlayLandingShake();
+		}
 	}
 
 	const EBeekeeperMoveState NewState = CalculateMoveState();

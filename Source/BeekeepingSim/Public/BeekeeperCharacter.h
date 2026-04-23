@@ -12,6 +12,7 @@ class UBeekeeperFocusComponent;
 struct FInputActionValue;
 class UInputAction;
 class UCameraComponent;
+class USkeletalMeshComponent;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeekeeperCharacter : public ACharacter
@@ -100,4 +101,37 @@ public:
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
 
 	UBeekeeperFocusComponent* GetBeekeeperFocus() const { return BeekeeperFocus; }
+
+	UBeekeeperCameraShakeComponent* GetBeekeeperCameraShake() const { return BeekeeperCameraShake; }
+
+	void SetFocusInteractionInputLocked(bool bLocked);
+
+	bool IsFocusInteractionInputLocked() const { return bIsFocusInteractionInputLocked; }
+
+	void BeginFocusCameraOverride();
+
+	void UpdateFocusCameraOverride(const FVector& WorldLocation, const FRotator& WorldRotation);
+
+	void EndFocusCameraOverride();
+
+	FTransform GetDefaultFocusCameraWorldTransform() const;
+
+	void SyncControlRotationTo(const FRotator& NewControlRotation);
+
+	bool MoveToCharacterAnchor(const FTransform& AnchorTransform);
+
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus", meta = (AllowPrivateAccess = "true"))
+	FName FirstPersonCameraAttachSocketName = TEXT("head");
+
+private:
+	bool bIsFocusInteractionInputLocked = false;
+
+	bool bIsFocusCameraOverrideActive = false;
+
+	bool bStoredUsePawnControlRotation = true;
+
+	FVector DefaultFirstPersonCameraRelativeLocation = FVector::ZeroVector;
+
+	FRotator DefaultFirstPersonCameraRelativeRotation = FRotator::ZeroRotator;
 };
