@@ -1,58 +1,126 @@
-다음은 현재 C++ 구현 기준으로, Unreal Editor 내장 AI 어시스턴트에게 그대로 붙여넣어 사용할 프롬프트다.
+다음은 현재 C++ 구현 기준으로, Unreal Editor 내장 AI 어시스턴트에게 그대로 붙여넣어 사용할 수 있는 프롬프트다.
 
 ---
 
 현재 프로젝트 상황:
-- 크로스헤어 위젯은 현재 `BeekeeperCharacter` Blueprint에서 생성하고 소유하고 있다.
-- 새 C++ 컴포넌트 `UAnchoredFocusCursorActionComponent` 가 추가되어 있다.
-- 이 컴포넌트는 `OnCrosshairVisibilityRequested(bool bVisible)` 델리게이트를 브로드캐스트한다.
-- 의도된 동작은:
-  - Engaged 시작 시 `false` 브로드캐스트 -> 크로스헤어 숨김
-  - FocusCancel 시작 시 `true` 브로드캐스트 -> 크로스헤어 즉시 복구
-- 이 컴포넌트는 위젯 인스턴스를 직접 참조하지 않는다.
-- 따라서 Blueprint 쪽에서 델리게이트를 구독해서 현재 크로스헤어 위젯의 표시/숨김을 처리해야 한다.
+- `ABeekeeperCharacter`는 `UBeekeeperHotbarComponent`를 소유한다.
+- `UBeekeeperHotbarComponent`는 8칸 고정 슬롯 핫바를 관리한다.
+- 슬롯 선택 상태는 `SelectedIndex` 하나로 관리된다.
+- `SelectedIndex == INDEX_NONE`이면 맨손 상태다.
+- 일반 상태에서 선택된 슬롯은 `InHand` 표현 모드다.
+- `EngagedFocus` 상태에서 선택된 슬롯은 `OnCursor` 표현 모드다.
+- `EngagedFocus` 진입 시 선택은 무조건 해제된다.
+- 핫바 UI는 C++ 컴포넌트 상태만 읽고, 실제 위젯 표시와 연출은 Blueprint에서 처리한다.
+- `BP_BeekeeperCharacter`가 핫바 위젯을 생성하고 소유하는 구조를 유지해도 된다.
 
-원하는 작업:
-1. 현재 `BeekeeperCharacter`가 생성/소유 중인 크로스헤어 위젯을 유지하는 방식으로 먼저 구현해줘.
-2. `UAnchoredFocusCursorActionComponent::OnCrosshairVisibilityRequested` 이벤트를 받아 크로스헤어 위젯을 활성/비활성화하는 Blueprint 연결 절차를 구체적으로 안내해줘.
-3. 가능하면 아래 내용을 순서대로 자세히 설명해줘:
-   - `BeekeeperCharacter` Blueprint에서 현재 생성 중인 크로스헤어 위젯 참조 변수 확인 또는 생성
-   - 위젯을 `BeginPlay` 또는 기존 생성 시점에 `Add to Viewport` 하는 구조 확인
-   - 현재 포커스 대상 액터의 `FocusAction` 컴포넌트가 `UAnchoredFocusCursorActionComponent`인지 확인하는 방법
-   - `OnCrosshairVisibilityRequested(bool bVisible)`에 Blueprint에서 바인딩하는 방법
-   - `bVisible` 값에 따라 현재 크로스헤어 위젯을 `Set Visibility` 또는 `Add/Remove From Parent` 중 어떤 방식으로 처리하는 게 나은지 추천
-   - 포커스 대상이 벌통(`ABeehive`)일 때 실제로 이 델리게이트가 동작하도록 연결하는 방법
-4. 특히 “크로스헤어 위젯은 Character가 소유하고, 액션 컴포넌트는 대상 액터가 소유”하는 구조에서 이벤트를 어떻게 찾아서 바인딩해야 하는지 Blueprint 노드 흐름으로 설명해줘.
-5. 가능하면 아래 두 가지 구현안을 비교해서 추천해줘:
-   - 옵션 A: `BeekeeperCharacter`가 계속 크로스헤어 위젯을 소유하고, 현재 Engaged 대상의 `UAnchoredFocusCursorActionComponent`에 바인딩
-   - 옵션 B: 크로스헤어 위젯 소유를 `PlayerController` 또는 HUD로 옮기고, 거기서 액션 컴포넌트 델리게이트를 바인딩
-6. 위 두 옵션 중 현재 구조에서 더 적절한 쪽을 하나 추천하고, 이유를 설명해줘.
+내가 원하는 작업:
+1. `WBP_BeekeeperHotbar` 같은 8칸 핫바 위젯 Blueprint를 만드는 방법을 단계별로 설명해줘.
+2. 이 위젯이 `BP_BeekeeperCharacter`의 `BeekeeperHotbar` 컴포넌트와 연결되도록 설명해줘.
+3. 아래 내용을 반드시 포함해줘:
+   - 핫바 위젯 생성 위치
+   - `BP_BeekeeperCharacter`에서 `Create Widget` / `Add to Viewport` 하는 방법
+   - 위젯에 `BeekeeperHotbarComponent` 참조를 넘기는 방법
+   - 위젯에서 `GetSlots()`, `GetSelectedIndex()`, `IsSlotEnabled(Index)`, `GetPresentationMode()`를 읽는 방법
+   - 슬롯 8개 UI를 만드는 방법
+   - 선택 슬롯 하이라이트 처리
+   - 비활성 슬롯 시각 처리
+   - 빈 슬롯과 선택 상태를 분리해서 표현하는 방법
+   - `InHand`, `OnCursor`, `None` 표현 모드를 UI에 반영하는 방법
+   - `OnHotbarChanged` 델리게이트에 바인딩해서 위젯을 갱신하는 방법
 
-추천 방향 관련 추가 요구:
-- 현재 구조에서는 `BeekeeperCharacter`가 위젯을 소유하는 것도 동작 가능하다고 본다.
-- 하지만 더 장기적으로 `PlayerController` 또는 HUD가 소유하는 게 낫다면 그 이유를 설명해줘.
-- 특히 다음 관점으로 비교해줘:
-  - 포제션 변경 대응
-  - UI 책임 분리
-  - 재사용성
-  - 현재 프로젝트 구조와의 충돌 여부
+핵심 구현 조건:
+- 핫바는 항상 8칸이다.
+- 하이라이트는 아이템 유무가 아니라 `SelectedIndex` 기준이다.
+- 빈 슬롯도 선택될 수 있다.
+- 비활성 슬롯은 `bIsEnabled == false` 또는 `IsSlotEnabled(Index) == false`로 판단한다.
+- 핫바 필터는 `EngagedFocus`에서만 적용된다.
+- 위젯은 포커스 대상 내부 구조를 몰라도 되고, `BeekeeperHotbar`만 보면 된다.
+
+원하는 위젯 구조:
+- 루트: `Canvas Panel` 또는 적절한 루트
+- 하단 중앙에 8칸 핫바 배치
+- 각 슬롯은 동일한 하위 슬롯 위젯으로 분리해도 되고, 하나의 위젯 안에서 8개를 직접 만들어도 된다
+- 각 슬롯은 최소한 아래 시각 요소를 가진다:
+  - 슬롯 배경
+  - 아이콘 영역
+  - 선택 하이라이트
+  - 비활성 오버레이 또는 Tint
+
+설명해줬으면 하는 Blueprint 설계:
+
+### 1. `WBP_BeekeeperHotbar`
+- 변수:
+  - `HotbarComponentRef` : `BeekeeperHotbarComponent` 참조
+- 함수:
+  - `RefreshHotbar`
+- 역할:
+  - 현재 슬롯 8개를 읽고 UI 반영
+  - `SelectedIndex` 기준 하이라이트
+  - `IsSlotEnabled(Index)` 기준 비활성 처리
+  - `GetPresentationMode()`를 읽어 현재 모드 텍스트나 디버그 표시 가능하면 표시
+
+### 2. `WBP_BeekeeperHotbarSlot`를 쓰는 경우
+- 변수:
+  - `SlotIndex`
+  - `bIsSelected`
+  - `bIsEnabled`
+  - `ItemInstance`
+- 함수:
+  - `RefreshFromData`
+- 역할:
+  - 단일 슬롯 시각 갱신
+
+### 3. `BP_BeekeeperCharacter`
+- `BeginPlay`에서:
+  - `Create Widget`
+  - `Promote to Variable`
+  - `Add to Viewport`
+  - `Get BeekeeperHotbar`
+  - 위젯에 `HotbarComponentRef` 전달
+  - `OnHotbarChanged`에 바인딩
+  - 최초 `RefreshHotbar` 호출
+
+꼭 설명해줬으면 하는 연결 방법:
+- `BP_BeekeeperCharacter`에서 `BeekeeperHotbar`를 가져오는 방법
+- `Bind Event to OnHotbarChanged` 하는 방법
+- 델리게이트 이벤트에서 `RefreshHotbar`를 호출하는 방법
+- UI에서 슬롯별로 `Get Slots` 배열을 순회하는 방법
+- `SelectedIndex`와 배열 인덱스를 비교해서 선택 테두리를 켜는 방법
+- `ItemInstance == None`이면 아이콘은 비우되, 선택 하이라이트는 별도로 유지하는 방법
+
+표현 모드도 UI에서 확인 가능하게 해줘:
+- `GetPresentationMode()` 결과가:
+  - `None`
+  - `InHand`
+  - `OnCursor`
+  인지에 따라 디버그 텍스트나 상태 표시를 넣는 방법도 함께 설명해줘
+
+특히 노드 이름 기준으로 설명해줘:
+- `Create Widget`
+- `Add to Viewport`
+- `Get Component By Class`
+- `Bind Event to OnHotbarChanged`
+- `Get Slots`
+- `Get Selected Index`
+- `Is Slot Enabled`
+- `Get Presentation Mode`
+- `Set Brush Tint`
+- `Set Visibility`
+- `SetText`
 
 출력 형식 요구:
-1. 먼저 “현재 구조 유지 시 구현 방법”을 단계별로 설명
-2. 그 다음 “위젯 소유자를 바꾸는 게 더 좋은지” 판단
-3. 마지막에 추천안 1개를 제시
+1. 먼저 `WBP_BeekeeperHotbar` 생성 절차
+2. 그 다음 `WBP_BeekeeperHotbarSlot`를 분리하는 방식과 안 하는 방식 비교
+3. 그 다음 `BP_BeekeeperCharacter`에서 위젯 생성/연결 절차
+4. 그 다음 `RefreshHotbar` 함수 구현 절차
+5. 마지막에 테스트 체크리스트
 
-추가로 원함:
-- 가능하면 실제 Blueprint 노드 이름 기준으로 설명해줘
-- 예:
-  - `Create Widget`
-  - `Add to Viewport`
-  - `Bind Event to OnCrosshairVisibilityRequested`
-  - `Set Visibility`
-  - `Cast To AnchoredFocusCursorActionComponent`
-- 위젯을 완전히 제거하기보다 `Visibility` 전환이 더 적절하면 그 이유도 같이 설명해줘
+추가로 같이 설명해줘:
+- 현재 구조에서는 핫바 위젯을 `BP_BeekeeperCharacter`가 소유하는 게 괜찮은지
+- 아니면 `PlayerController` 또는 HUD로 옮기는 게 더 나은지
+- 둘을 비교하되, 현재 프로젝트 구조 기준으로 추천안을 하나 제시해줘
 
-핵심 목표:
-- 포커스 상호작용 중에는 크로스헤어가 숨겨지고
-- Cancel 시작 시 즉시 다시 보이게 하며
-- 현재 C++ 구조(`UAnchoredFocusCursorActionComponent` 델리게이트 기반)를 그대로 활용하는 Blueprint 연결 절차를 만들고 싶다.
+최종 목표:
+- `BP_BeekeeperCharacter`가 핫바 위젯을 생성하고
+- `BeekeeperHotbar` 상태 변경 시 UI가 자동 갱신되며
+- 슬롯 하이라이트, 비활성, 빈 슬롯, 표현 모드(`None/InHand/OnCursor`)가 정상 반영되는 Blueprint 구현 가이드를 받고 싶다

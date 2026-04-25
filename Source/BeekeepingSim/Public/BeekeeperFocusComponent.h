@@ -41,6 +41,9 @@ public:
 	UFocusTargetComponent* GetEngagedFocusTarget() const { return EngagedFocusTarget; }
 
 	UFUNCTION(BlueprintPure, Category = "Focus")
+	UFocusTargetComponent* GetActiveInteractionTarget() const { return bIsFocusEngaged ? EngagedFocusTarget : CurrentFocusTarget; }
+
+	UFUNCTION(BlueprintPure, Category = "Focus")
 	bool IsFocusEngaged() const { return bIsFocusEngaged; }
 
 	UFUNCTION(BlueprintPure, Category = "Focus|UI")

@@ -106,6 +106,13 @@ void UBeekeeperFocusComponent::ConfirmFocus()
 		return;
 	}
 
+	// Some focus actions, such as pickups, complete synchronously during BeginFocusAction.
+	if (!IsValid(EngagedFocusTarget) || !IsValid(EngagedFocusAction) || !EngagedFocusAction->IsActionEngaged())
+	{
+		ClearEngagedFocus();
+		return;
+	}
+
 	EngagedFocusTarget->NotifyFocusConfirm(OwnerCharacter);
 	BroadcastEngagedFocusRule();
 	RefreshCrosshairVisibilityFromCurrentAction();

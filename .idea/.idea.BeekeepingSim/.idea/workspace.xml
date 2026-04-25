@@ -13,27 +13,24 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
-      <change afterPath="$PROJECT_DIR$/Source/ARCHITECTURE_PROMPT.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/QNA_ARCHITECTURE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Source/QNA_IMPLEMENTATION.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/QNA_REVIEW.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Material/M_Outline.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Material/M_Outline.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/UI/WBP_Crosshair.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/UI/WBP_Crosshair.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Camera/BP_BeekeeperCameraShake_Idle.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Camera/BP_BeekeeperCameraShake_Idle.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Input/IMC_Default.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Input/IMC_Default.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Beehive.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Beehive.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCameraShakeComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCameraShakeComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCharacter.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperFocusComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperFocusComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Beehive.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Beehive.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperCameraShakeComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperCameraShakeComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusTargetComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusTargetComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperCharacter.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperFocusComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperFocusComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/FocusTargetComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/FocusTargetComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/CODEX_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/CODEX_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/CODEX_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/CODEX_IMPLEMENTATION.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/IMPLEMENTATION_PROMPT.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/IMPLEMENTATION_PROMPT.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/QNA_ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/QNA_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/QNA_IMPLEMENTATION.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/REVIEW_PROMPT.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/REVIEW_PROMPT.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/UNREAL_PROMPT.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/UNREAL_PROMPT.md" afterDir="false" />
     </list>
@@ -64,6 +61,7 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/UMG/Public/Components/HorizontalBox.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/VerseCompiler/.editorconfig" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCameraShakeComponent.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperController.cpp" root0="FORCE_HIGHLIGHTING" />
@@ -102,7 +100,7 @@
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
@@ -235,7 +233,13 @@
       <workItem from="1776753411862" duration="8611000" />
       <workItem from="1776768505524" duration="1673000" />
       <workItem from="1776839407997" duration="18043000" />
-      <workItem from="1776905291783" duration="12605000" />
+      <workItem from="1776905291783" duration="22538000" />
+      <workItem from="1777008934218" duration="3040000" />
+      <workItem from="1777012222422" duration="1281000" />
+      <workItem from="1777013614986" duration="543000" />
+      <workItem from="1777014234990" duration="5473000" />
+      <workItem from="1777021249709" duration="1989000" />
+      <workItem from="1777079868217" duration="1778000" />
     </task>
     <servers />
   </component>

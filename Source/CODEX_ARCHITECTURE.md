@@ -11,8 +11,8 @@
 
 ## 세션 시작 시 기본 절차
 
-1. Source/ARCHITECTURE.md를 먼저 읽고 현재 설계를 파악한다
-2. Source/QNA_ARCHITECTURE.md가 존재할 경우 함께 읽고 최신 사용자 답변을 반영한다
+1. .md/ARCHITECTURE.md를 먼저 읽고 현재 설계를 파악한다
+2. .md/QNA_ARCHITECTURE.md가 존재할 경우 함께 읽고 최신 사용자 답변을 반영한다
 3. 프로젝트 디렉토리 구조를 파악한다
 4. 작업과 관련된 핵심 파일을 우선적으로 탐색한다
 5. 필요 시 범위를 점진적으로 확장하여 추가 파일을 분석한다
@@ -113,7 +113,7 @@
 ## Implementation Prompt Rules
 
 - 구현 작업 완료 후, 해당 작업을 재현할 수 있는 프롬프트를 작성한다
-- 프롬프트는 Source/IMPLEMENTATION_PROMPT.md 파일에 기록한다
+- 프롬프트는 Source/PROMPT_IMPLEMENTATION.md 파일에 기록한다
 
 ---
 
@@ -154,7 +154,7 @@
 구현 작업은 다음 조건을 만족해야 완료로 간주한다:
 
 - Source/ARCHITECTURE.md가 최신 상태로 반영되었을 것
-- Source/IMPLEMENTATION_PROMPT.md가 생성 또는 업데이트되었을 것
+- Source/PROMPT_IMPLEMENTATION.md가 생성 또는 업데이트되었을 것
 - 프롬프트가 실제 구현을 재현 가능한 수준일 것
 
 ---

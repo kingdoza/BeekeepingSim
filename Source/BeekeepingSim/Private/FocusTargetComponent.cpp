@@ -31,6 +31,16 @@ void UFocusTargetComponent::SetFocused(bool bInFocused)
 	ApplyOutlineState(bIsFocused);
 }
 
+void UFocusTargetComponent::SetDisplayName(const FText& NewDisplayName)
+{
+	DisplayName = NewDisplayName;
+}
+
+void UFocusTargetComponent::SetInteractionKeyText(const FText& NewInteractionKeyText)
+{
+	InteractionKeyText = NewInteractionKeyText;
+}
+
 FFocusPromptData UFocusTargetComponent::GetPromptData() const
 {
 	FFocusPromptData PromptData;

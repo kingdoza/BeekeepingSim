@@ -45,6 +45,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Focus")
 	void SetFocused(bool bInFocused);
 
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	void SetDisplayName(const FText& NewDisplayName);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	void SetInteractionKeyText(const FText& NewInteractionKeyText);
+
 	UFUNCTION(BlueprintPure, Category = "Focus")
 	FFocusPromptData GetPromptData() const;
 

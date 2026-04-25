@@ -4,6 +4,8 @@
 #include "Public/BeekeeperCharacter.h"
 #include "Public/BeekeeperCameraShakeComponent.h"
 #include "Public/BeekeeperFocusComponent.h"
+#include "Public/BeekeeperHeldItemVisualizerComponent.h"
+#include "Public/BeekeeperHotbarComponent.h"
 #include "Public/BeekeeperMovementComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -21,6 +23,8 @@ ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitial
 	BeekeeperMovement = Cast<UBeekeeperMovementComponent>(GetCharacterMovement());
 	BeekeeperCameraShake = CreateDefaultSubobject<UBeekeeperCameraShakeComponent>(TEXT("BeekeeperCameraShake"));
 	BeekeeperFocus = CreateDefaultSubobject<UBeekeeperFocusComponent>(TEXT("BeekeeperFocus"));
+	BeekeeperHotbar = CreateDefaultSubobject<UBeekeeperHotbarComponent>(TEXT("BeekeeperHotbar"));
+	BeekeeperHeldItemVisualizer = CreateDefaultSubobject<UBeekeeperHeldItemVisualizerComponent>(TEXT("BeekeeperHeldItemVisualizer"));
 	
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("First Person Camera"));
 	FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
@@ -135,6 +139,16 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		{
 			EnhancedInputComponent->BindAction(FocusCancelAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusCancelInput);
 		}
+
+		if (HotbarSlotAction)
+		{
+			EnhancedInputComponent->BindAction(HotbarSlotAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::HotbarSlotInput);
+		}
+
+		if (HotbarWheelAction)
+		{
+			EnhancedInputComponent->BindAction(HotbarWheelAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::HotbarWheelInput);
+		}
 	}
 }
 
@@ -188,6 +202,38 @@ void ABeekeeperCharacter::FocusCancelInput()
 	}
 
 	BeekeeperFocus->CancelFocus();
+}
+
+void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)
+{
+	if (!BeekeeperHotbar)
+	{
+		return;
+	}
+
+	const int32 SlotNumber = FMath::RoundToInt(Value.Get<float>());
+	if (SlotNumber <= 0)
+	{
+		return;
+	}
+
+	BeekeeperHotbar->HandleSlotInput(SlotNumber - 1);
+}
+
+void ABeekeeperCharacter::HotbarWheelInput(const FInputActionValue& Value)
+{
+	if (!BeekeeperHotbar)
+	{
+		return;
+	}
+
+	const float WheelValue = Value.Get<float>();
+	if (FMath::IsNearlyZero(WheelValue))
+	{
+		return;
+	}
+
+	BeekeeperHotbar->HandleWheelInput(WheelValue > 0.0f);
 }
 
 void ABeekeeperCharacter::DoJumpStart()

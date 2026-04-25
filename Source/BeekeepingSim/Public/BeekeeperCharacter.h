@@ -9,6 +9,8 @@
 class UBeekeeperMovementComponent;
 class UBeekeeperCameraShakeComponent;
 class UBeekeeperFocusComponent;
+class UBeekeeperHotbarComponent;
+class UBeekeeperHeldItemVisualizerComponent;
 struct FInputActionValue;
 class UInputAction;
 class UCameraComponent;
@@ -33,6 +35,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBeekeeperFocusComponent> BeekeeperFocus;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBeekeeperHotbarComponent> BeekeeperHotbar;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBeekeeperHeldItemVisualizerComponent> BeekeeperHeldItemVisualizer;
 	
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float MouseSensitivity;
@@ -55,6 +63,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> FocusCancelAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> HotbarSlotAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> HotbarWheelAction;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MoveSpeedScale = 1;
@@ -81,6 +95,10 @@ protected:
 	void FocusConfirmInput();
 
 	void FocusCancelInput();
+
+	void HotbarSlotInput(const FInputActionValue& Value);
+
+	void HotbarWheelInput(const FInputActionValue& Value);
 	
 	UFUNCTION(Blueprintable, Category = "Input")
 	void DoMove(float Right, float Forward);
@@ -103,6 +121,10 @@ public:
 	UBeekeeperFocusComponent* GetBeekeeperFocus() const { return BeekeeperFocus; }
 
 	UBeekeeperCameraShakeComponent* GetBeekeeperCameraShake() const { return BeekeeperCameraShake; }
+
+	UBeekeeperHotbarComponent* GetBeekeeperHotbar() const { return BeekeeperHotbar; }
+
+	UBeekeeperHeldItemVisualizerComponent* GetBeekeeperHeldItemVisualizer() const { return BeekeeperHeldItemVisualizer; }
 
 	void SetFocusInteractionInputLocked(bool bLocked);
 
