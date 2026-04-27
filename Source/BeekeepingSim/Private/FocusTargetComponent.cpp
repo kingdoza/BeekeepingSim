@@ -70,7 +70,7 @@ void UFocusTargetComponent::NotifyFocusExit(ABeekeeperCharacter* InteractingChar
 	}
 
 	IFocusInteractable::Execute_OnFocusExit(OwnerActor, InteractingCharacter);
-}
+} 
 
 void UFocusTargetComponent::NotifyFocusConfirm(ABeekeeperCharacter* InteractingCharacter)
 {

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Public/BeekeeperHotbarComponent.h"
+#include "Public/HotbarPresentationTypes.h"
 #include "BeekeeperHeldItemVisualizerComponent.generated.h"
 
 class ABeekeeperCharacter;

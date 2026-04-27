@@ -4,42 +4,53 @@
 
 ## 변경 파일
 
-- `Source/BeekeepingSim/Public/BeekeeperHeldItemVisualizerComponent.h`
-- `Source/BeekeepingSim/Private/BeekeeperHeldItemVisualizerComponent.cpp`
-- `Source/BeekeepingSim/Public/ItemPresentationActor.h`
-- `Source/BeekeepingSim/Private/ItemPresentationActor.cpp`
+- `Source/BeekeepingSim/Public/ItemSlotDragDropLibrary.h` (신규)
+- `Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp` (신규)
+- `Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h`
+- `Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp`
+- `Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h`
+- `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
+- `Source/BeekeepingSim/Public/StorageBoxWidget.h`
+- `Source/BeekeepingSim/Private/StorageBoxWidget.cpp`
 - `.md/0_ARCHITECTURE.md`
 
 ## 변경 목적
 
-- `EngagedFocus` 상태의 held presentation cursor 정렬 정확도를 개선한다.
-- 기존 viewport 정규화 오프셋 방식 대신, deproject cursor ray + camera plane intersection 방식으로 위치를 계산한다.
-- held presentation scale을 모드별(`InHandRelativeScale`, `OnCursorRelativeScale`)로 분리한다.
-- 사용하지 않는 구 변수(`OnCursorBaseLocalOffset`, `CursorHorizontalOffsetRange`, `CursorVerticalOffsetRange`, `MeshRelativeScale`)를 제거한다.
-- lifecycle 안정성을 위해 visualizer `EndPlay()` 정리(delegate 해제, actor destroy)를 유지한다.
-- `AItemPresentationActor::InitializePresentation`을 `BlueprintNativeEvent`로 유지해 BP override 가능하도록 한다.
+- Hotbar UI 와 Storage UI 간 drag/drop 라우팅 의존성을 제거한다.
+- `UStorageBoxWidget` 중심 라우팅을 제거하고, widget-중립 `UItemSlotDragDropLibrary` 라우팅으로 전환한다.
+- `UStorageSlotDragDropOperation` 에 source component 참조를 추가해 slot widget 이 source/target component 기반으로 드롭을 처리하도록 한다.
 
 ## 핵심 로직
 
-1. `UpdateCursorPresentation()`:
-- `GetMousePosition()` + `DeprojectScreenPositionToWorld()`로 월드 ray 산출
-- `OwnerCamera` forward 기준 고정 거리 평면(`OnCursorPlaneDistance`) 구성
-- ray-plane 교차점 계산 후 `OnCursorLocalOffset`(camera local 기준) 적용
-- 최종 world 위치를 camera relative location으로 변환해 actor 위치 반영
+1. Drag operation 확장
+- `UStorageSlotDragDropOperation`:
+  - `SourceType`, `SourceIndex`
+  - `SourceHotbarComponent`, `SourceStorageComponent`
+  - 선택적 `ItemInstance`
 
-2. 모드별 transform:
-- `InHand`: `InHandLocalOffset`, `InHandLocalRotation`, `InHandRelativeScale`
-- `OnCursor`: deproject 기반 위치, `OnCursorLocalRotation`, `OnCursorRelativeScale`
+2. 중립 라우터 추가
+- `UItemSlotDragDropLibrary::HandleItemSlotDrop(...)`:
+  - Hotbar -> Hotbar: 같은 hotbar component일 때 `SwapSlots()`
+  - Hotbar -> Storage: `MoveHotbarItemToStorage()`
+  - Storage -> Hotbar: `MoveStorageItemToHotbar()`
+  - Storage -> Storage: 같은 storage component일 때 `SwapStorageSlots()`
+  - cross-component 동일 컨테이너 이동(다른 hotbar/storage) 및 미지원 조합은 false
 
-3. 안정성:
-- local/non-local 전환 시 시각화 복구(`bWasRunningLocally`)
-- `EndPlay()`에서 delegate 해제 및 spawned actor 정리
+3. StorageBoxWidget 책임 축소
+- 제거:
+  - `HandleSlotDrop()`
+  - `SwapHotbarSlots()`
+- 유지:
+  - `MoveHotbarItemToStorage()`
+  - `MoveStorageItemToHotbar()`
+  - `SwapStorageSlots()`
+  - `SwapHotbarAndStorage()`
 
 ## 리뷰 집중 포인트
 
-- deproject + plane intersection 계산의 수학적/좌표계 안정성(FOV, aspect ratio, camera blend 중)  
-- attach 상태(actor가 camera에 붙은 상태)에서 relative transform 적용 일관성  
-- `OnCursorPlaneDistance <= 0` 및 ray-plane 특이 케이스 방어 충분성  
-- lifecycle/GC 안정성(`EndPlay`, transient 참조, actor destroy 타이밍)  
-- Blueprint 확장성(`InitializePresentation` BP override 경로)  
-- 기존 에셋 영향(제거된 변수로 인한 BP 데이터 손실 가능성)과 migration 필요 여부  
+- `HandleItemSlotDrop()` 가 요구된 source/target 조합을 모두 처리하는지.
+- 같은 컨테이너 타입에서 source/target component 동일성 검증이 정확한지.
+- `UStorageSlotDragDropOperation` 의 component 참조가 null일 때 실패 경로가 안전한지.
+- `UStorageBoxWidget` 에 라우팅 책임이 완전히 제거되었는지(잔존 호출 포함).
+- hotbar/storage 변경 이벤트(`OnHotbarChanged`, `OnStorageChanged`)가 기존 component API 경로에서 유지되는지.
+- Blueprint 연동 시 slot widget 이 `UStorageBoxWidget` 참조 없이도 라우팅 가능한 API 표면을 갖추었는지.

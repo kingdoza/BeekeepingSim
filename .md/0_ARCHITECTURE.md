@@ -26,6 +26,10 @@
   - `ABeehive`
   - `AWorldItemPickup`
   - `UPickupFocusActionComponent`
+  - `AStorageBox`
+  - `UStorageBoxComponent`
+  - `UStorageBoxFocusActionComponent`
+  - `UStorageBoxWidget`
 
 ## 문서 범위 밖 실제 코드
 
@@ -96,14 +100,17 @@
   - `INDEX_NONE`: 선택 없음, 빈손 상태
   - 유효 인덱스: 해당 슬롯 선택 및 활성 상태
 - 같은 슬롯을 다시 선택하면 선택을 해제한다.
-- Hotbar 표시 모드는 포커스 상태로부터 파생된다.
-  - `None`
-  - `InHand`: 일반 플레이
-  - `OnCursor`: `EngagedFocus`
+- Hotbar 표시 모드는 선택 아이템 유무와 현재 engaged action 정책으로 결정된다.
+  - 선택 없음: `None`
+  - 일반 플레이: `InHand`
+  - engaged 중: `UFocusActionComponent::GetHotbarPresentationModeWhileEngaged()` 반환값 사용
 - `UBeekeeperHotbarComponent` 는 `UBeekeeperFocusComponent::OnFocusRuleChanged` 를 구독한다.
   - `PreviewFocus` 에서는 필터링하지 않는다.
   - `EngagedFocus` 에서만 필터링한다.
-  - `EngagedFocus` 진입 시 항상 선택을 해제하고 빈손 상태로 강제한다.
+  - `EngagedFocus` 진입 시 선택 해제 여부는 `UFocusActionComponent::ShouldClearHotbarSelectionOnFocusEngaged()` 정책으로 결정된다.
+- `UBeekeeperHotbarComponent` 는 concrete action subclass 를 직접 참조하지 않고 `UFocusActionComponent` 인터페이스만 사용한다.
+- `UAnchoredFocusCursorActionComponent` 는 engaged 중 `OnCursor` 표시 정책을 제공한다.
+- `UStorageBoxFocusActionComponent` 는 engaged 중 `InHand` 표시 + 선택 유지 정책을 제공한다.
 - `IHotbarItemInterface` 로 hotbar 아이템이 gameplay tag 를 제공한다.
 
 ### 2026-04-24 Update: Item Definition / Instance / Action and Held Item Visualizer
@@ -152,6 +159,33 @@
   - confirm 시 소유 pickup 과 상호작용 캐릭터를 검증한다.
   - 캐릭터의 `UBeekeeperHotbarComponent::TryAcquireItem()` 을 호출한다.
   - 획득 성공 시 pickup actor 를 제거하고, 실패 시 actor 를 유지한 채 로그/디버그 메시지만 남긴다.
+
+### 2026-04-25 Update: Storage Box Focus Interaction
+
+- `AStorageBox` 는 상자 상호작용용 focus actor 다.
+  - `USceneComponent` 루트, `UStaticMeshComponent`, `UFocusTargetComponent`, `UStorageBoxComponent`, `UStorageBoxFocusActionComponent` 를 소유한다.
+- `UStorageBoxComponent` 는 런타임 메모리 기반 상자 슬롯 상태 오너다.
+  - 저장/로드는 현재 범위 밖이다.
+  - 슬롯 조회/설정/클리어/상자 내부 swap 과 hotbar<->storage 이동/교환 API 를 제공한다.
+- `UStorageBoxFocusActionComponent` 는 카메라 이동 없는 UI 기반 focus action 이다.
+  - confirm 시 입력 잠금 + 마우스 커서 표시 + `FInputModeGameAndUI` + `UStorageBoxWidget` 표시를 수행한다.
+  - cancel/abort 시 widget 제거 + 커서/입력 모드 복구 + 입력 잠금 해제를 수행한다.
+  - 앵커 이동, 카메라 블렌드, 카메라 override 는 수행하지 않는다.
+- `UStorageBoxWidget` 는 Blueprint UI 가 사용할 C++ API 표면이다.
+  - storage/hotbar 참조를 받아 drag/drop UI 가 슬롯 이동/교환 API 를 호출하는 구조다.
+
+### 2026-04-27 Update: Storage UI Drag/Drop Routing
+
+- `EStorageSlotContainerType` 이 추가되었다.
+  - storage UI drag/drop source/target container 구분용 `BlueprintType` enum 이다.
+- `UStorageSlotDragDropOperation` 이 추가되었다.
+  - drag source container type/index, source hotbar/storage component 참조, 선택적 `UItemInstance` 를 보관하는 `UDragDropOperation` 파생 payload class 다.
+- `UBeekeeperHotbarComponent::SwapSlots()` 가 추가되었다.
+  - hotbar 내부 슬롯 교환 후 슬롯 재평가와 hotbar 변경 브로드캐스트를 수행한다.
+- `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 이 추가되었다.
+  - widget 클래스에 종속되지 않는 중립 item slot drag/drop 라우터다.
+  - source/target container 조합과 source/target component 참조를 해석해 hotbar/storage 이동 또는 교환 API 로 라우팅한다.
+- `UStorageBoxWidget` 은 drop 라우터 역할을 제거하고 storage UI root/API 표면 역할만 유지한다.
 
 ## 주요 모듈/파일 구조
 
@@ -216,6 +250,26 @@
 - pickup 전용 포커스 액션
   - `Source/BeekeepingSim/Public/PickupFocusActionComponent.h`
   - `Source/BeekeepingSim/Private/PickupFocusActionComponent.cpp`
+- 스토리지 박스 액터
+  - `Source/BeekeepingSim/Public/StorageBox.h`
+  - `Source/BeekeepingSim/Private/StorageBox.cpp`
+- 스토리지 박스 상태 컴포넌트
+  - `Source/BeekeepingSim/Public/StorageBoxComponent.h`
+  - `Source/BeekeepingSim/Private/StorageBoxComponent.cpp`
+- 스토리지 박스 포커스 액션
+  - `Source/BeekeepingSim/Public/StorageBoxFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp`
+- 스토리지 박스 UI 위젯 베이스
+  - `Source/BeekeepingSim/Public/StorageBoxWidget.h`
+  - `Source/BeekeepingSim/Private/StorageBoxWidget.cpp`
+- 스토리지 슬롯 drag/drop 타입
+  - `Source/BeekeepingSim/Public/StorageSlotDragDropTypes.h`
+- 스토리지 슬롯 drag/drop operation
+  - `Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h`
+  - `Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp`
+- 아이템 슬롯 drag/drop 라우터 라이브러리
+  - `Source/BeekeepingSim/Public/ItemSlotDragDropLibrary.h`
+  - `Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp`
 
 ## 주요 공용 타입
 
@@ -244,6 +298,11 @@
   - item definition 에서 action class 와 action tag 를 지정하는 정적 스펙이다.
 - `FItemActionExecutionResult`
   - action 실행 성공 여부, 아이템 소모 여부, stack 변화량, 메시지를 반환한다.
+
+### Storage UI Drag/Drop 타입
+
+- `EStorageSlotContainerType`
+  - drag/drop source/target 컨테이너(`None`, `Hotbar`, `Storage`)를 표현한다.
 
 ## 핵심 클래스 역할
 
@@ -343,7 +402,7 @@
 - 8 슬롯 hotbar 상태 오너다.
 - `FHotbarSlotData` 배열과 `SelectedIndex` 로 상태를 관리한다.
 - 슬롯 선택/해제, 휠 순환, 포커스 규칙 적용, 슬롯 재평가를 담당한다.
-- engaged focus 중에는 선택 슬롯을 강제로 비우고 허용 아이템 태그 규칙으로 슬롯 활성화를 갱신한다.
+- engaged focus 중에는 `UFocusActionComponent` 정책으로 선택 유지/해제와 표시 모드를 결정하고, 허용 아이템 태그 규칙으로 슬롯 활성화를 갱신한다.
 - 선택된 아이템이 있을 때만 표시 모드가 `InHand` 또는 `OnCursor` 로 바뀐다.
 - `OnHotbarChanged` delegate 로 UI 갱신 지점을 제공한다.
 - 선택 아이템이 `UItemInstance` 인 경우 표시 이름, 아이콘, 스택 수량 조회를 제공한다.
@@ -419,6 +478,43 @@
 - 별도 앵커 이동이나 장기 engaged 상태 없이 단발성으로 종료된다.
 - 획득 실패 시 로그 또는 온스크린 디버그 메시지로 최소 피드백만 제공한다.
 
+### `AStorageBox`
+
+- 상자 상호작용용 월드 actor 다.
+- `UFocusTargetComponent` 로 기존 focus trace 대상에 포함된다.
+- `UStorageBoxComponent` 로 슬롯 상태를 소유하고, `UStorageBoxFocusActionComponent` 로 confirm/cancel 상호작용을 처리한다.
+
+### `UStorageBoxComponent`
+
+- 상자 슬롯 런타임 상태 오너다.
+- 슬롯 초기화, 조회, 설정, 클리어, 상자 내부 swap 을 제공한다.
+- `UBeekeeperHotbarComponent` 와의 슬롯 이동/교환 API 를 제공한다.
+- 슬롯 변경 시 delegate 로 UI 갱신 지점을 제공한다.
+- 저장/로드는 현재 범위 밖이다.
+
+### `UStorageBoxFocusActionComponent`
+
+- 카메라 이동 없이 UI 상호작용만 수행하는 `UFocusActionComponent` 파생이다.
+- engaged 시작 시 입력 잠금, 커서 표시, `FInputModeGameAndUI`, storage widget 표시를 수행한다.
+- cancel/abort 시 widget 제거, 커서 숨김, `FInputModeGameOnly`, 입력 잠금 해제를 수행한다.
+- engaged 동안 크로스헤어 숨김 정책을 제공한다.
+
+### `UStorageBoxWidget`
+
+- storage/hotbar 이동 API 를 Blueprint drag/drop UI 가 호출할 수 있게 래핑한 `UUserWidget` 베이스다.
+- 위젯의 실제 레이아웃과 시각 연출은 Blueprint 구현 범위다.
+
+### `UStorageSlotDragDropOperation`
+
+- storage UI drag/drop metadata payload 용 `UDragDropOperation` 파생 클래스다.
+- `SourceType`, `SourceIndex`, `SourceHotbarComponent`, `SourceStorageComponent`, 선택적 `ItemInstance` 참조를 보관한다.
+
+### `UItemSlotDragDropLibrary`
+
+- widget 종속성이 없는 item slot drag/drop 라우팅용 `UBlueprintFunctionLibrary` 다.
+- `HandleItemSlotDrop()` 으로 Hotbar/Storage source-target 조합을 분기해 기존 component API 를 호출한다.
+- 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖으로 false 를 반환한다.
+
 ## 주요 실행 흐름
 
 ### 1. 플레이어 입력 라우팅
@@ -493,11 +589,16 @@
    - 슬롯을 8개로 초기화한다.
    - focus component 의 `OnFocusRuleChanged` 를 구독한다.
 2. `HandleFocusRuleChanged`
+   - `UBeekeeperFocusComponent::GetEngagedFocusAction()` 으로 현재 action 을 캐시한다.
    - engaged 여부와 `FFocusItemRule` 을 `ApplyFocusRule()` 로 전달한다.
 3. engaged 진입 시
-   - 기존 선택 해제
+   - `ShouldClearHotbarSelectionOnFocusEngaged()` 정책으로 기존 선택 해제 여부를 결정한다.
    - 각 슬롯의 enabled 상태 재평가
-4. 슬롯 필터링 규칙
+4. 표시 모드 결정
+   - 선택 없음 또는 선택 아이템 없음: `None`
+   - engaged + action 유효: `GetHotbarPresentationModeWhileEngaged()` 반환값 사용
+   - 그 외 fallback: `InHand`
+5. 슬롯 필터링 규칙
    - engaged 가 아니면 모든 슬롯 허용
    - 빈 슬롯은 허용
    - 허용 태그가 비어 있으면 아이템 슬롯은 비허용
@@ -514,6 +615,27 @@
    - falling 중이면 이동 셰이크를 중지한다.
    - 착지 프레임이면 landing shake 또는 suppress 로직을 처리한다.
    - 이동 상태가 바뀌면 해당 셰이크 클래스로 전환한다.
+
+### 8. Storage Box Focus UI 흐름
+
+1. preview 상태에서 `AStorageBox` 를 confirm 하면 `UStorageBoxFocusActionComponent::BeginFocusAction()` 이 호출된다.
+2. 액션은 아래 순서로 수행한다.
+   - 입력 잠금
+   - 커서 표시 + `FInputModeGameAndUI`
+   - `UStorageBoxWidget` 생성/초기화/표시
+3. engaged 동안 slot widget 은 `UStorageSlotDragDropOperation` payload 와 target component/index 를 구성해
+   `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 으로 drop 을 라우팅한다.
+   - hotbar -> hotbar: 같은 hotbar component 내부 swap
+   - hotbar -> storage: hotbar item 을 target storage 로 이동/교환
+   - storage -> hotbar: storage item 을 target hotbar 로 이동/교환
+   - storage -> storage: 같은 storage component 내부 swap
+   - 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖으로 false
+4. `UStorageBoxWidget` 은 storage/hotbar component 참조 제공과 UI root 역할만 담당하며,
+   drop 조합 라우팅을 소유하지 않는다.
+5. cancel/abort 시 액션은 아래를 복구한다.
+   - widget 제거
+   - 커서 숨김 + `FInputModeGameOnly`
+   - 입력 잠금 해제
 
 ## 컴포넌트/의존 관계
 
@@ -559,6 +681,13 @@
 - `AWorldItemPickup`
   - `UFocusTargetComponent`
   - `UPickupFocusActionComponent`
+- `AStorageBox`
+  - `UFocusTargetComponent`
+  - `UStorageBoxComponent`
+  - `UStorageBoxFocusActionComponent`
+- `UStorageBoxWidget`
+  - `UStorageBoxComponent`
+  - `UBeekeeperHotbarComponent`
 
 ## 확인된 설계 특징
 

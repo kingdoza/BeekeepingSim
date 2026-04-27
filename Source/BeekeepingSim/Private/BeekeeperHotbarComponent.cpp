@@ -5,6 +5,7 @@
 
 #include "Public/BeekeeperCharacter.h"
 #include "Public/BeekeeperFocusComponent.h"
+#include "Public/FocusActionComponent.h"
 #include "Public/HotbarItemInterface.h"
 #include "Public/ItemDefinition.h"
 #include "Public/ItemInstance.h"
@@ -54,8 +55,26 @@ void UBeekeeperHotbarComponent::HandleSlotInput(int32 Index)
 	SelectSlot(Index);
 }
 
+// void UBeekeeperHotbarComponent::HandleWheelInput(bool bForward)
+// {
+// 	if (SelectedIndex == INDEX_NONE)
+// 	{
+// 		SelectSlot(0);
+// 		return;
+// 	}
+//
+// 	const int32 Offset = bForward ? 1 : -1;
+// 	const int32 NextIndex = (SelectedIndex + Offset + SlotCount) % SlotCount;
+// 	SelectSlot(NextIndex);
+// }
+
 void UBeekeeperHotbarComponent::HandleWheelInput(bool bForward)
 {
+	if (SlotCount <= 0)
+	{
+		return;
+	}
+
 	if (SelectedIndex == INDEX_NONE)
 	{
 		SelectSlot(0);
@@ -63,8 +82,19 @@ void UBeekeeperHotbarComponent::HandleWheelInput(bool bForward)
 	}
 
 	const int32 Offset = bForward ? 1 : -1;
-	const int32 NextIndex = (SelectedIndex + Offset + SlotCount) % SlotCount;
-	SelectSlot(NextIndex);
+
+	int32 NextIndex = SelectedIndex;
+
+	for (int32 i = 0; i < SlotCount; ++i)
+	{
+		NextIndex = (NextIndex + Offset + SlotCount) % SlotCount;
+
+		if (IsSlotEnabled(NextIndex))
+		{
+			SelectSlot(NextIndex);
+			return;
+		}
+	}
 }
 
 void UBeekeeperHotbarComponent::SelectSlot(int32 Index)
@@ -100,8 +130,11 @@ void UBeekeeperHotbarComponent::ApplyFocusRule(bool bEngaged, const FFocusItemRu
 	bIsEngagedFocusActive = bEngaged;
 	ActiveFocusRule = Rule;
 
+	const bool bShouldClearSelectionOnEngage =
+		ShouldClearSelectionByActiveFocusPolicy();
+
 	bool bSelectionChanged = false;
-	if (!bWasEngaged && bIsEngagedFocusActive && SelectedIndex != INDEX_NONE)
+	if (!bWasEngaged && bIsEngagedFocusActive && bShouldClearSelectionOnEngage && SelectedIndex != INDEX_NONE)
 	{
 		SelectedIndex = INDEX_NONE;
 		bSelectionChanged = true;
@@ -271,13 +304,18 @@ UItemInstance* UBeekeeperHotbarComponent::GetSelectedItemInstance() const
 }
 
 EHotbarPresentationMode UBeekeeperHotbarComponent::GetPresentationMode() const
-{
+{ 
 	if (SelectedIndex == INDEX_NONE || !GetSelectedItem())
 	{
 		return EHotbarPresentationMode::None;
 	}
 
-	return bIsEngagedFocusActive ? EHotbarPresentationMode::OnCursor : EHotbarPresentationMode::InHand;
+	if (bIsEngagedFocusActive && ActiveFocusAction)
+	{
+		return ActiveFocusAction->GetHotbarPresentationModeWhileEngaged();
+	}
+
+	return EHotbarPresentationMode::InHand;
 }
 
 void UBeekeeperHotbarComponent::SetSlotItem(int32 Index, UObject* NewItemInstance)
@@ -296,6 +334,19 @@ void UBeekeeperHotbarComponent::SetSlotItem(int32 Index, UObject* NewItemInstanc
 
 	ReevaluateSlotsInternal();
 	BroadcastHotbarChanged();
+}
+
+bool UBeekeeperHotbarComponent::SwapSlots(const int32 FromIndex, const int32 ToIndex)
+{
+	if (!IsIndexValid(FromIndex) || !IsIndexValid(ToIndex) || FromIndex == ToIndex)
+	{
+		return false;
+	}
+
+	Slots.Swap(FromIndex, ToIndex);
+	ReevaluateSlotsInternal();
+	BroadcastHotbarChanged();
+	return true;
 }
 
 FText UBeekeeperHotbarComponent::GetSelectedItemDisplayName() const
@@ -333,7 +384,8 @@ void UBeekeeperHotbarComponent::BeginPlay()
 		return;
 	}
 
-	if (UBeekeeperFocusComponent* FocusComponent = OwnerCharacter->GetBeekeeperFocus())
+	FocusComponent = OwnerCharacter->GetBeekeeperFocus();
+	if (FocusComponent)
 	{
 		FocusComponent->OnFocusRuleChanged.AddDynamic(this, &UBeekeeperHotbarComponent::HandleFocusRuleChanged);
 	}
@@ -341,6 +393,7 @@ void UBeekeeperHotbarComponent::BeginPlay()
 
 void UBeekeeperHotbarComponent::HandleFocusRuleChanged(bool bHasFocusTarget, FFocusItemRule FocusItemRule)
 {
+	ActiveFocusAction = (bHasFocusTarget && FocusComponent) ? FocusComponent->GetEngagedFocusAction() : nullptr;
 	ApplyFocusRule(bHasFocusTarget, FocusItemRule);
 }
 
@@ -377,35 +430,61 @@ bool UBeekeeperHotbarComponent::IsSlotAllowedByActiveRule(int32 Index) const
 	{
 		return false;
 	}
+	
+	//UE_LOG(LogTemp, Warning, TEXT("IsIndexValid"));
 
 	if (!bIsEngagedFocusActive)
 	{
 		return true;
 	}
-
-	if (!Slots[Index].ItemInstance)
-	{
-		return true;
-	}
+	
+	//UE_LOG(LogTemp, Warning, TEXT("bIsEngagedFocusActive"));
+	
+	//UE_LOG(LogTemp, Warning, TEXT("Slots[Index].ItemInstance"));
 
 	const FGameplayTagContainer& AllowedItemTags = ActiveFocusRule.AllowedItemTags;
 	if (AllowedItemTags.IsEmpty())
 	{
 		return false;
 	}
+	
+	//UE_LOG(LogTemp, Warning, TEXT("AllowedItemTags"));
 
-	if (AllItemsRootTag.IsValid() && AllowedItemTags.HasTag(AllItemsRootTag))
+	if (AllItemsRootTag.IsValid() && AllowedItemTags.HasTagExact(AllItemsRootTag))
 	{
 		return true;
 	}
+	
+	if (!Slots[Index].ItemInstance)
+	{
+		return false;
+	}
 
 	const FGameplayTagContainer ItemTags = GetItemTagsForSlot(Index);
+	//UE_LOG(LogTemp, Warning, TEXT("ItemTags : %s, AllowedItemTags tags: %s"), *ItemTags.ToString(), *AllowedItemTags.ToString());
 	return ItemTags.HasAny(AllowedItemTags);
 }
 
 bool UBeekeeperHotbarComponent::ShouldClearSelectedSlot() const
 {
-	return IsIndexValid(SelectedIndex) && !IsSlotEnabled(SelectedIndex);
+	if (!IsIndexValid(SelectedIndex) || IsSlotEnabled(SelectedIndex))
+	{
+		return false;
+	}
+
+	if (!ShouldClearSelectionByActiveFocusPolicy())
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool UBeekeeperHotbarComponent::ShouldClearSelectionByActiveFocusPolicy() const
+{
+	return !bIsEngagedFocusActive
+		|| !ActiveFocusAction
+		|| ActiveFocusAction->ShouldClearHotbarSelectionOnFocusEngaged();
 }
 
 int32 UBeekeeperHotbarComponent::FindFirstEmptySlot() const

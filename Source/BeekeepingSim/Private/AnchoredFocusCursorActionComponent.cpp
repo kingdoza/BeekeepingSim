@@ -16,6 +16,11 @@ bool UAnchoredFocusCursorActionComponent::ShouldRestoreCrosshairOnCancelStart() 
 	return true;
 }
 
+EHotbarPresentationMode UAnchoredFocusCursorActionComponent::GetHotbarPresentationModeWhileEngaged() const
+{
+	return EHotbarPresentationMode::OnCursor;
+}
+
 void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter)
 {
 	Super::OnFocusEngagedStarted(InteractingCharacter);

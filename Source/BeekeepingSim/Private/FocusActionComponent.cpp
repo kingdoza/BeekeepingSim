@@ -49,3 +49,13 @@ bool UFocusActionComponent::ShouldRestoreCrosshairOnCancelStart() const
 {
 	return false;
 }
+
+EHotbarPresentationMode UFocusActionComponent::GetHotbarPresentationModeWhileEngaged() const
+{
+	return EHotbarPresentationMode::InHand;
+}
+
+bool UFocusActionComponent::ShouldClearHotbarSelectionOnFocusEngaged() const
+{
+	return true;
+}

@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Public/BeekeeperCharacter.h"
 #include "Public/BeekeeperFocusComponent.h"
+#include "Public/BeekeeperHotbarComponent.h"
 #include "Public/ItemInstance.h"
 #include "Public/ItemPresentationActor.h"
 

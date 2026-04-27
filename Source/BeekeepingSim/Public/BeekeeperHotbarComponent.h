@@ -5,21 +5,16 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "Public/HotbarPresentationTypes.h"
 #include "Public/FocusTargetComponent.h"
 #include "BeekeeperHotbarComponent.generated.h"
 
 class ABeekeeperCharacter;
+class UBeekeeperFocusComponent;
+class UFocusActionComponent;
 class UItemDefinition;
 class UItemInstance;
 class UTexture2D;
-
-UENUM(BlueprintType)
-enum class EHotbarPresentationMode : uint8
-{
-	None,
-	InHand,
-	OnCursor
-};
 
 USTRUCT(BlueprintType)
 struct FHotbarSlotData
@@ -111,6 +106,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	void SetSlotItem(int32 Index, UObject* NewItemInstance);
 
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	bool SwapSlots(int32 FromIndex, int32 ToIndex);
+
 	UFUNCTION(BlueprintPure, Category = "Hotbar|UI")
 	FText GetSelectedItemDisplayName() const;
 
@@ -140,6 +138,8 @@ protected:
 
 	bool IsSlotAllowedByActiveRule(int32 Index) const;
 
+	bool ShouldClearSelectionByActiveFocusPolicy() const;
+
 	bool ShouldClearSelectedSlot() const;
 
 	bool ReevaluateSlotsInternal();
@@ -158,6 +158,12 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABeekeeperCharacter> OwnerCharacter;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeekeeperFocusComponent> FocusComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFocusActionComponent> ActiveFocusAction;
 
 	int32 SelectedIndex = INDEX_NONE;
 

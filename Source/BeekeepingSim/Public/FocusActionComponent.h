@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Public/HotbarPresentationTypes.h"
 #include "FocusActionComponent.generated.h"
 
 class ABeekeeperCharacter;
@@ -36,6 +37,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Focus Action|UI")
 	virtual bool ShouldRestoreCrosshairOnCancelStart() const;
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
+	virtual EHotbarPresentationMode GetHotbarPresentationModeWhileEngaged() const;
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
+	virtual bool ShouldClearHotbarSelectionOnFocusEngaged() const;
 
 protected:
 	bool bIsActionEngaged = false;

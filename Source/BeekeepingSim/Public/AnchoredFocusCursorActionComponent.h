@@ -19,6 +19,8 @@ public:
 
 	virtual bool ShouldRestoreCrosshairOnCancelStart() const override;
 
+	virtual EHotbarPresentationMode GetHotbarPresentationModeWhileEngaged() const override;
+
 protected:
 	virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
 
