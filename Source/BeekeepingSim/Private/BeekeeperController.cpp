@@ -4,6 +4,8 @@
 #include "Public/BeekeeperController.h"
 #include "EnhancedInputSubsystems.h"
 #include "BeekeepingSimCameraManager.h"
+#include "Public/BeekeeperCharacter.h"
+#include "Public/BeekeeperHotbarComponent.h"
 #include "Public/StorageBoxComponent.h"
 #include "Public/StorageSlotDragDropOperation.h"
 
@@ -32,6 +34,12 @@ void ABeekeeperController::ClearActiveStorageComponent()
 	ActiveStorageComponent = nullptr;
 }
 
+UBeekeeperHotbarComponent* ABeekeeperController::GetPlayerHotbarComponent() const
+{
+	const ABeekeeperCharacter* BeekeeperCharacter = Cast<ABeekeeperCharacter>(GetPawn());
+	return BeekeeperCharacter ? BeekeeperCharacter->GetBeekeeperHotbar() : nullptr;
+}
+
 void ABeekeeperController::SetActiveItemSlotDragOperation(UStorageSlotDragDropOperation* InOperation)
 {
 	ActiveItemSlotDragOperation = InOperation;
@@ -49,7 +57,13 @@ bool ABeekeeperController::AdjustActiveItemSlotDragQuantity(float WheelDelta)
 		return false;
 	}
 
-	const int32 Delta = WheelDelta > 0.0f ? 1 : -1;
+	if (ActiveItemSlotDragOperation->DragMode != EItemSlotDragMode::PartialStack)
+	{
+		return false;
+	}
+
+	const int32 PreviousQuantity = ActiveItemSlotDragOperation->MoveQuantity;
+	const int32 Delta = WheelDelta > 0.0f ? -1 : 1;
 	ActiveItemSlotDragOperation->AdjustMoveQuantity(Delta);
-	return true;
+	return PreviousQuantity != ActiveItemSlotDragOperation->MoveQuantity;
 }

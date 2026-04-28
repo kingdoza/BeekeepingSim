@@ -80,13 +80,13 @@ bool UStorageBoxFocusActionComponent::BeginFocusAction(ABeekeeperCharacter* Inte
 		return false;
 	}
 
-	ActiveWidget->InitializeStorageWidget(StorageComponent, HotbarComponent);
-	ActiveWidget->AddToViewport();
-
 	if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(PlayerController))
 	{
 		BeekeeperController->SetActiveStorageComponent(StorageComponent);
 	}
+
+	ActiveWidget->InitializeStorageWidget(StorageComponent, HotbarComponent);
+	ActiveWidget->AddToViewport();
 
 	return true;
 }

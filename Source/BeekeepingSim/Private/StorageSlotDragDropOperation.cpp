@@ -1,5 +1,7 @@
 #include "Public/StorageSlotDragDropOperation.h"
 #include "Public/ItemInstance.h"
+#include "Public/ItemSlotWidget.h"
+#include "Public/ItemVisualWidget.h"
 
 void UStorageSlotDragDropOperation::InitializeMoveQuantity()
 {
@@ -17,6 +19,11 @@ void UStorageSlotDragDropOperation::InitializeMoveQuantity()
 
 void UStorageSlotDragDropOperation::AdjustMoveQuantity(const int32 Delta)
 {
+	if (DragMode != EItemSlotDragMode::PartialStack)
+	{
+		return;
+	}
+
 	if (Delta == 0)
 	{
 		return;
@@ -28,5 +35,23 @@ void UStorageSlotDragDropOperation::AdjustMoveQuantity(const int32 Delta)
 void UStorageSlotDragDropOperation::SetMoveQuantityClamped(const int32 NewQuantity)
 {
 	const int32 MinQuantity = MaxMoveQuantity > 0 ? 1 : 0;
-	MoveQuantity = FMath::Clamp(NewQuantity, MinQuantity, MaxMoveQuantity);
+	const int32 ClampedQuantity = FMath::Clamp(NewQuantity, MinQuantity, MaxMoveQuantity);
+	if (MoveQuantity == ClampedQuantity)
+	{
+		return;
+	}
+
+	MoveQuantity = ClampedQuantity;
+
+	if (DragVisualWidget)
+	{
+		DragVisualWidget->SetItemVisualData(ItemInstance, MoveQuantity);
+	}
+
+	if (SourceSlotWidget)
+	{
+		SourceSlotWidget->RefreshDragPreviewFromOperation(this);
+	}
+
+	OnMoveQuantityChanged.Broadcast(MoveQuantity);
 }

@@ -12,14 +12,10 @@
 
 void UItemSlotWidget::InitializeSlotContext(
 	const EStorageSlotContainerType InContainerType,
-	const int32 InSlotIndex,
-	UBeekeeperHotbarComponent* InHotbarComponent,
-	UStorageBoxComponent* InStorageComponent)
+	const int32 InSlotIndex)
 {
 	ContainerType = InContainerType;
 	SlotIndex = InSlotIndex;
-	HotbarComponent = InHotbarComponent;
-	StorageComponent = InStorageComponent;
 	RefreshFromData();
 }
 
@@ -29,19 +25,24 @@ void UItemSlotWidget::RefreshFromData()
 	bIsSelected = false;
 	bIsActivated = false;
 
-	if (ContainerType == EStorageSlotContainerType::Hotbar && HotbarComponent)
+	if (ContainerType == EStorageSlotContainerType::Hotbar)
 	{
-		const TArray<FHotbarSlotData>& HotbarSlots = HotbarComponent->GetSlots();
-		if (HotbarSlots.IsValidIndex(SlotIndex))
+		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();
+		if (HotbarComponent)
 		{
-			ItemInstance = Cast<UItemInstance>(HotbarSlots[SlotIndex].ItemInstance.Get());
-			bIsSelected = HotbarComponent->GetSelectedIndex() == SlotIndex;
-			bIsActivated = HotbarSlots[SlotIndex].bIsEnabled;
+			const TArray<FHotbarSlotData>& HotbarSlots = HotbarComponent->GetSlots();
+			if (HotbarSlots.IsValidIndex(SlotIndex))
+			{
+				ItemInstance = Cast<UItemInstance>(HotbarSlots[SlotIndex].ItemInstance.Get());
+				bIsSelected = HotbarComponent->GetSelectedIndex() == SlotIndex;
+				bIsActivated = HotbarSlots[SlotIndex].bIsEnabled;
+			}
 		}
 	}
-	else if (ContainerType == EStorageSlotContainerType::Storage && StorageComponent)
+	else if (ContainerType == EStorageSlotContainerType::Storage)
 	{
-		if (StorageComponent->IsIndexValid(SlotIndex))
+		UStorageBoxComponent* StorageComponent = ResolveStorageComponentForSlot();
+		if (StorageComponent && StorageComponent->IsIndexValid(SlotIndex))
 		{
 			ItemInstance = StorageComponent->GetItemAt(SlotIndex);
 			bIsActivated = true;
@@ -64,12 +65,144 @@ void UItemSlotWidget::SetDragSourceVisualHidden(const bool bHidden)
 
 void UItemSlotWidget::ClearDragState()
 {
+	PendingDragButton = EKeys::Invalid;
+	ClearPartialDragPreviewState();
+	ActiveDragMode = EItemSlotDragMode::FullStack;
 	SetDragSourceVisualHidden(false);
+	RefreshFromData();
 
 	if (ABeekeeperController* BeekeeperController = ResolveBeekeeperController())
 	{
 		BeekeeperController->ClearActiveItemSlotDragOperation();
 	}
+}
+
+bool UItemSlotWidget::IsPartialDragPreviewActive() const
+{
+	return bPartialDragPreviewActive
+		&& PartialDragPreviewOriginalStackCount > 0
+		&& PartialDragPreviewMoveQuantity > 0
+		&& !ShouldHideItemVisualForPartialDragPreview();
+}
+
+bool UItemSlotWidget::ShouldHideItemVisualForPartialDragPreview() const
+{
+	return bPartialDragPreviewActive
+		&& PartialDragPreviewOriginalStackCount > 0
+		&& PartialDragPreviewMoveQuantity >= PartialDragPreviewOriginalStackCount;
+}
+
+int32 UItemSlotWidget::GetPartialDragPreviewDisplayStackCount() const
+{
+	if (!bPartialDragPreviewActive)
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, PartialDragPreviewOriginalStackCount - PartialDragPreviewMoveQuantity);
+}
+
+void UItemSlotWidget::SetPartialDragPreviewState(const int32 InOriginalStackCount, const int32 InMoveQuantity)
+{
+	const int32 NewOriginal = FMath::Max(0, InOriginalStackCount);
+	const int32 NewMove = FMath::Clamp(InMoveQuantity, 0, NewOriginal);
+	const bool bNewActive = NewOriginal > 0 && NewMove > 0;
+
+	if (PartialDragPreviewOriginalStackCount == NewOriginal
+		&& PartialDragPreviewMoveQuantity == NewMove
+		&& bPartialDragPreviewActive == bNewActive)
+	{
+		return;
+	}
+
+	PartialDragPreviewOriginalStackCount = NewOriginal;
+	PartialDragPreviewMoveQuantity = NewMove;
+	bPartialDragPreviewActive = bNewActive;
+	RefreshVisual();
+}
+
+void UItemSlotWidget::UpdatePartialDragPreviewMoveQuantity(const int32 InMoveQuantity)
+{
+	if (!bPartialDragPreviewActive)
+	{
+		return;
+	}
+
+	const int32 NewMove = FMath::Clamp(InMoveQuantity, 0, PartialDragPreviewOriginalStackCount);
+	if (PartialDragPreviewMoveQuantity == NewMove)
+	{
+		return;
+	}
+
+	PartialDragPreviewMoveQuantity = NewMove;
+	RefreshVisual();
+}
+
+void UItemSlotWidget::ClearPartialDragPreviewState()
+{
+	if (PartialDragPreviewOriginalStackCount == 0
+		&& PartialDragPreviewMoveQuantity == 0
+		&& !bPartialDragPreviewActive)
+	{
+		return;
+	}
+
+	PartialDragPreviewOriginalStackCount = 0;
+	PartialDragPreviewMoveQuantity = 0;
+	bPartialDragPreviewActive = false;
+	RefreshVisual();
+}
+
+void UItemSlotWidget::RefreshPartialDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation)
+{
+	if (!Operation || Operation->DragMode != EItemSlotDragMode::PartialStack || !ItemInstance || Operation->SourceSlotWidget != this)
+	{
+		ClearPartialDragPreviewState();
+		return;
+	}
+
+	if (!bPartialDragPreviewActive)
+	{
+		SetPartialDragPreviewState(ItemInstance->GetStackCount(), Operation->MoveQuantity);
+		return;
+	}
+
+	UpdatePartialDragPreviewMoveQuantity(Operation->MoveQuantity);
+}
+
+bool UItemSlotWidget::ShouldHideItemVisualForCurrentDrag() const
+{
+	if (!bIsDragSource)
+	{
+		return false;
+	}
+
+	if (ActiveDragMode == EItemSlotDragMode::FullStack)
+	{
+		return true;
+	}
+
+	return ShouldHideItemVisualForPartialDragPreview();
+}
+
+int32 UItemSlotWidget::GetDragPreviewDisplayStackCount() const
+{
+	if (!ItemInstance)
+	{
+		return 0;
+	}
+
+	if (!bIsDragSource || ActiveDragMode != EItemSlotDragMode::PartialStack)
+	{
+		return ItemInstance->GetStackCount();
+	}
+
+	return GetPartialDragPreviewDisplayStackCount();
+}
+
+void UItemSlotWidget::RefreshDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation)
+{
+	RefreshPartialDragPreviewFromOperation(Operation);
 }
 
 FReply UItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -80,6 +213,7 @@ FReply UItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, con
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
+	PendingDragButton = EffectingButton;
 	return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EffectingButton).NativeReply;
 }
 
@@ -114,17 +248,22 @@ void UItemSlotWidget::NativeOnDragDetected(
 		return;
 	}
 
-	const FKey EffectingButton = InMouseEvent.GetEffectingButton();
-	DragOperation->DragMode = EffectingButton == EKeys::RightMouseButton
-		? EItemSlotDragMode::PartialStack
-		: EItemSlotDragMode::FullStack;
+	if (PendingDragButton != EKeys::LeftMouseButton && PendingDragButton != EKeys::RightMouseButton)
+	{
+		OutOperation = nullptr;
+		return;
+	}
+
+	const bool bIsRightDrag = PendingDragButton == EKeys::RightMouseButton;
+	DragOperation->DragMode = bIsRightDrag ? EItemSlotDragMode::PartialStack : EItemSlotDragMode::FullStack;
 
 	DragOperation->SourceType = ContainerType;
 	DragOperation->SourceIndex = SlotIndex;
 	DragOperation->ItemInstance = ItemInstance;
-	DragOperation->SourceHotbarComponent = ContainerType == EStorageSlotContainerType::Hotbar ? HotbarComponent : nullptr;
-	DragOperation->SourceStorageComponent = ContainerType == EStorageSlotContainerType::Storage ? StorageComponent : nullptr;
+	DragOperation->SourceHotbarComponent = ContainerType == EStorageSlotContainerType::Hotbar ? ResolveHotbarComponentForSlot() : nullptr;
+	DragOperation->SourceStorageComponent = ContainerType == EStorageSlotContainerType::Storage ? ResolveStorageComponentForSlot() : nullptr;
 	DragOperation->InitializeMoveQuantity();
+	DragOperation->SourceSlotWidget = this;
 
 	if (DragVisualWidgetClass)
 	{
@@ -142,6 +281,16 @@ void UItemSlotWidget::NativeOnDragDetected(
 	DragOperation->Offset = FVector2D::ZeroVector;
 	DragOperation->OnDrop.AddDynamic(this, &UItemSlotWidget::HandleDragOperationDropped);
 	DragOperation->OnDragCancelled.AddDynamic(this, &UItemSlotWidget::HandleDragOperationCancelled);
+
+	ActiveDragMode = DragOperation->DragMode;
+	if (DragOperation->DragMode == EItemSlotDragMode::PartialStack)
+	{
+		SetPartialDragPreviewState(ItemInstance ? ItemInstance->GetStackCount() : 0, DragOperation->MoveQuantity);
+	}
+	else
+	{
+		ClearPartialDragPreviewState();
+	}
 
 	SetDragSourceVisualHidden(true);
 	if (ABeekeeperController* BeekeeperController = ResolveBeekeeperController())
@@ -167,8 +316,8 @@ bool UItemSlotWidget::NativeOnDrop(
 		DragOperation,
 		ContainerType,
 		SlotIndex,
-		HotbarComponent,
-		StorageComponent);
+		ResolveHotbarComponentForSlot(),
+		ResolveStorageComponentForSlot());
 
 	if (bHandled)
 	{
@@ -220,15 +369,17 @@ bool UItemSlotWidget::TryQuickMove()
 
 	if (ContainerType == EStorageSlotContainerType::Hotbar)
 	{
+		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();
 		if (!HotbarComponent)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TryQuickMove failed: hotbar context is null for hotbar source slot."));
 			return false;
 		}
 
-		ABeekeeperController* Controller = ResolveBeekeeperController();
-		UStorageBoxComponent* ActiveStorage = Controller ? Controller->GetActiveStorageComponent() : nullptr;
+		UStorageBoxComponent* ActiveStorage = ResolveStorageComponentForSlot();
 		if (!ActiveStorage)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TryQuickMove failed: active storage context is null for hotbar source slot."));
 			return false;
 		}
 
@@ -265,6 +416,7 @@ bool UItemSlotWidget::TryQuickMove()
 
 		if (TargetStorageIndex == INDEX_NONE)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TryQuickMove failed: no valid storage target slot found."));
 			return false;
 		}
 
@@ -273,8 +425,11 @@ bool UItemSlotWidget::TryQuickMove()
 
 	if (ContainerType == EStorageSlotContainerType::Storage)
 	{
+		UStorageBoxComponent* StorageComponent = ResolveStorageComponentForSlot();
+		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();
 		if (!StorageComponent || !HotbarComponent)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TryQuickMove failed: storage/hotbar context is null for storage source slot."));
 			return false;
 		}
 
@@ -311,6 +466,7 @@ bool UItemSlotWidget::TryQuickMove()
 
 		if (TargetHotbarIndex == INDEX_NONE)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TryQuickMove failed: no valid hotbar target slot found."));
 			return false;
 		}
 
@@ -318,4 +474,16 @@ bool UItemSlotWidget::TryQuickMove()
 	}
 
 	return false;
+}
+
+UBeekeeperHotbarComponent* UItemSlotWidget::ResolveHotbarComponentForSlot() const
+{
+	const ABeekeeperController* Controller = ResolveBeekeeperController();
+	return Controller ? Controller->GetPlayerHotbarComponent() : nullptr;
+}
+
+UStorageBoxComponent* UItemSlotWidget::ResolveStorageComponentForSlot() const
+{
+	const ABeekeeperController* Controller = ResolveBeekeeperController();
+	return Controller ? Controller->GetActiveStorageComponent() : nullptr;
 }

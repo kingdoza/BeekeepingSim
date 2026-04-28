@@ -7,6 +7,7 @@
 #include "BeekeeperController.generated.h"
 
 class UInputMappingContext;
+class UBeekeeperHotbarComponent;
 class UStorageBoxComponent;
 class UStorageSlotDragDropOperation;
 
@@ -25,6 +26,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Storage")
 	UStorageBoxComponent* GetActiveStorageComponent() const { return ActiveStorageComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Hotbar")
+	UBeekeeperHotbarComponent* GetPlayerHotbarComponent() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Item Slot|Drag Drop")
 	void SetActiveItemSlotDragOperation(UStorageSlotDragDropOperation* InOperation);

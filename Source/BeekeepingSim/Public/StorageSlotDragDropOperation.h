@@ -8,7 +8,10 @@
 class UBeekeeperHotbarComponent;
 class UStorageBoxComponent;
 class UItemInstance;
+class UItemSlotWidget;
 class UItemVisualWidget;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FItemDragMoveQuantityChangedSignature, int32, NewMoveQuantity);
 
 UENUM(BlueprintType)
 enum class EItemSlotDragMode : uint8
@@ -31,6 +34,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Storage Drag Drop")
 	void SetMoveQuantityClamped(int32 NewQuantity);
+
+	UPROPERTY(BlueprintAssignable, Category = "Storage Drag Drop")
+	FItemDragMoveQuantityChangedSignature OnMoveQuantityChanged;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
 	EStorageSlotContainerType SourceType = EStorageSlotContainerType::None;
@@ -58,4 +64,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
 	TObjectPtr<UItemVisualWidget> DragVisualWidget = nullptr;
+
+	UPROPERTY(Transient, BlueprintReadWrite, Category = "Storage Drag Drop")
+	TObjectPtr<UItemSlotWidget> SourceSlotWidget = nullptr;
 };
