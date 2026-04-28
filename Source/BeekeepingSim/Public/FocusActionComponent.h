@@ -44,6 +44,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
 	virtual bool ShouldClearHotbarSelectionOnFocusEngaged() const;
 
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
+	virtual bool ShouldBlockHotbarSlotInputWhileEngaged() const;
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
+	virtual bool ShouldBlockHotbarWheelInputWhileEngaged() const;
+
 protected:
 	bool bIsActionEngaged = false;
 };

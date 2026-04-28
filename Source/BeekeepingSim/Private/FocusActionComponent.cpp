@@ -59,3 +59,13 @@ bool UFocusActionComponent::ShouldClearHotbarSelectionOnFocusEngaged() const
 {
 	return true;
 }
+
+bool UFocusActionComponent::ShouldBlockHotbarSlotInputWhileEngaged() const
+{
+	return false;
+}
+
+bool UFocusActionComponent::ShouldBlockHotbarWheelInputWhileEngaged() const
+{
+	return false;
+}

@@ -30,6 +30,10 @@ public:
 
 	virtual bool ShouldClearHotbarSelectionOnFocusEngaged() const override;
 
+	virtual bool ShouldBlockHotbarSlotInputWhileEngaged() const override;
+
+	virtual bool ShouldBlockHotbarWheelInputWhileEngaged() const override;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

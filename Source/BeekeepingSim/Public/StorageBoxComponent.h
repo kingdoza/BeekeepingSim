@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Public/StorageSlotDragDropTypes.h"
 #include "StorageBoxComponent.generated.h"
 
 class UBeekeeperHotbarComponent;
@@ -56,6 +57,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	bool SwapHotbarAndStorage(UBeekeeperHotbarComponent* HotbarComponent, int32 HotbarIndex, int32 StorageIndex);
 
+	UFUNCTION(BlueprintCallable, Category = "Storage")
+	FItemSlotMoveResult MovePartialStorageToStorage(int32 FromIndex, int32 ToIndex, int32 Quantity);
+
+	UFUNCTION(BlueprintCallable, Category = "Storage")
+	FItemSlotMoveResult MovePartialStorageToHotbar(UBeekeeperHotbarComponent* HotbarComponent, int32 StorageIndex, int32 HotbarIndex, int32 Quantity);
+
+	UFUNCTION(BlueprintCallable, Category = "Storage")
+	FItemSlotMoveResult MovePartialHotbarToStorage(UBeekeeperHotbarComponent* HotbarComponent, int32 HotbarIndex, int32 StorageIndex, int32 Quantity);
+
 	UPROPERTY(BlueprintAssignable, Category = "Storage")
 	FStorageBoxChangedSignature OnStorageChanged;
 
@@ -67,6 +77,10 @@ protected:
 	bool IsHotbarIndexValid(const UBeekeeperHotbarComponent* HotbarComponent, int32 Index) const;
 
 	UObject* GetHotbarItemAt(const UBeekeeperHotbarComponent* HotbarComponent, int32 Index) const;
+
+	int32 FindFirstEmptyStorageSlot() const;
+
+	UItemInstance* CreateStorageItemInstance(class UItemDefinition* ItemDefinition, int32 StackCount);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "1"))

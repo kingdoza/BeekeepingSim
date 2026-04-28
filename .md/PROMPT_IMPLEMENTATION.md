@@ -1,444 +1,346 @@
-# 구현 프롬프트: 독립 Hotbar 호환 Item Slot Drag/Drop 라우팅
+# 구현 프롬프트: ItemSlot Context 정리 및 Drag Preview 보강
 
-## 작업 목표
+## 작업 범위
 
-Hotbar UI 는 StorageBox 상호작용 여부와 무관하게 항상 표시되는 독립 UI 다.
+이 문서는 현재 발견된 ItemSlot 문제를 해결하기 위한 신규 구현 지시만 담는다.
 
-따라서 drag/drop 라우팅이 `UStorageBoxWidget` 에 종속되면 안 된다. 기존 `UStorageBoxWidget::HandleSlotDrop()` 중심 구조를 제거하고, source/target component 참조를 기반으로 동작하는 중립 C++ 라우터로 변경한다.
+기존에 완료된 구현 회차, 과거 drag/drop 라우터 구현, 기존 partial move 구현 상태 설명은 이 문서 범위에서 제외한다.
 
-변경 목표:
+이번 작업의 목표:
 
-- `WBP_Hotbar` 는 `UStorageBoxWidget` 을 몰라도 hotbar 내부 slot swap 을 처리할 수 있어야 한다.
-- `WBP_Hotbar` 는 storage 에서 넘어온 drag/drop 도 `UStorageBoxWidget` 참조 없이 처리할 수 있어야 한다.
-- `WBP_StorageBox` / storage slot UI 는 hotbar UI 를 몰라도 storage 내부 swap, storage -> hotbar, hotbar -> storage 를 처리할 수 있어야 한다.
-- source/target 구분은 `EStorageSlotContainerType` 으로 유지한다.
-- drag/drop operation 은 source container type/index 뿐 아니라 source component 참조도 보관한다.
-- drop 라우팅은 `UBlueprintFunctionLibrary` 기반 중립 함수가 담당한다.
-- `UStorageBoxWidget` 은 storage UI root 역할만 수행하고, cross-container drop 라우터 역할을 갖지 않는다.
+1. `UItemSlotWidget` 이 `HotbarComponent`, `StorageComponent` 를 직접 보관하지 않도록 정리한다.
+2. storage -> hotbar quick move 가 controller context 기반으로 동작하게 한다.
+3. LMB drag 중 source slot item visual 이 사라지게 한다.
+4. RMB drag 중 wheel 로 이동 수량을 조절하고, drag visual/source slot preview 를 즉시 갱신한다.
 
-## 현재 문제
+## 반영할 QNA 결정
 
-현재 구현 또는 직전 설계에는 아래 문제가 있다.
+관련 QNA 만 반영한다.
 
-- `UStorageBoxWidget::HandleSlotDrop()` 이 source/target 조합 라우팅을 담당한다.
-- 독립 HUD `WBP_Hotbar` 가 storage item drop 을 처리하려면 `UStorageBoxWidget` 을 알아야 한다.
-- 이는 hotbar UI 를 storage UI 에 종속시킨다.
-- 향후 StorageBox 상호작용 없이 hotbar 내부 item 위치 swap 을 지원할 때도 구조가 어색해진다.
+- 질문 5: RMB 부분 이동 중 mouse wheel 입력은 PlayerController 또는 HUD 계층에서 active drag operation 을 보관해 처리한다.
+- 질문 11: RMB drag 중 source slot stack count 감소는 UI preview 로만 처리한다.
+  - 실제 `UItemInstance::StackCount` 는 drag 중 변경하지 않는다.
+  - 실제 데이터 변경은 drop 성공 시점에만 수행한다.
+  - drop 실패/cancel/ESC/widget cleanup 시 rollback 이 필요 없도록 한다.
+- 질문 12: `UItemSlotWidget` 은 container component 를 직접 보관하지 않는다.
+  - `UItemSlotWidget` 은 `ContainerType`, `SlotIndex` 만 보관한다.
+  - hotbar 는 controller/player context 에서 resolve 한다.
+  - storage 는 controller active storage context 에서 resolve 한다.
 
-이번 작업은 이 종속성을 제거한다.
+## 현재 확인된 문제
 
-## 대상 파일 목록
+### 1. LMB source slot visual 숨김
 
-신규 파일:
+현재 C++에는 drag 시작 시 `SetDragSourceVisualHidden(true)` 흐름이 있다.
 
-- `Source/BeekeepingSim/Public/ItemSlotDragDropLibrary.h`
-- `Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp`
+하지만 `RefreshVisual()` 은 `OnSlotVisualStateChanged()` 만 호출하므로 실제 아이콘/수량 숨김은 Blueprint 구현 또는 추가 getter/API 계약에 의존한다.
 
-수정 대상:
+필요 작업:
 
-- `Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h`
-- `Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp`
-- `Source/BeekeepingSim/Public/StorageBoxWidget.h`
-- `Source/BeekeepingSim/Private/StorageBoxWidget.cpp`
-- `.md/0_ARCHITECTURE.md`
-- `.md/PROMPT_IMPLEMENTATION.md`
+- C++에서 source slot visual 상태를 Blueprint 가 안정적으로 읽을 수 있게 getter/API 를 제공한다.
+- Blueprint 구현에서 이 상태를 사용해 내부 `ItemVisualWidget` 을 숨기거나 비운다.
 
-확인 대상:
+### 2. storage -> hotbar quick move 실패
 
-- `Source/BeekeepingSim/Public/StorageSlotDragDropTypes.h`
-- `Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h`
-- `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
-- `Source/BeekeepingSim/Public/StorageBoxComponent.h`
-- `Source/BeekeepingSim/Private/StorageBoxComponent.cpp`
-- `Source/BeekeepingSim/BeekeepingSim.Build.cs`
+현재 구현은 storage slot quick move 에서 `StorageComponent` 와 `HotbarComponent` 직접 보관값에 의존한다.
 
-## 전제
+개선 방향:
 
-아래 API 는 이미 존재한다고 가정한다. 없으면 먼저 추가한다.
+- `UItemSlotWidget` 은 `HotbarComponent`, `StorageComponent` 를 직접 보관하지 않는다.
+- hotbar 는 controller/player context 에서 resolve 한다.
+- storage 는 controller active storage context 에서 resolve 한다.
+- storage slot 은 `InitializeSlotContext(Storage, Index)` 만으로 quick move 가 동작해야 한다.
 
-- `EStorageSlotContainerType`
-  - `None`
-  - `Hotbar`
-  - `Storage`
-- `UBeekeeperHotbarComponent::SwapSlots(int32 FromIndex, int32 ToIndex)`
-- `UStorageBoxComponent`
-  - `MoveHotbarItemToStorage(UBeekeeperHotbarComponent* HotbarComponent, int32 HotbarIndex, int32 StorageIndex)`
-  - `MoveStorageItemToHotbar(UBeekeeperHotbarComponent* HotbarComponent, int32 StorageIndex, int32 HotbarIndex)`
-  - `SwapStorageSlots(int32 FromIndex, int32 ToIndex)`
-  - `SwapHotbarAndStorage(UBeekeeperHotbarComponent* HotbarComponent, int32 HotbarIndex, int32 StorageIndex)`
+### 3. RMB drag quantity preview 미완성
 
-## 구현 요구사항
+현재 `MoveQuantity`, `MaxMoveQuantity`, `AdjustMoveQuantity()` 류의 기반은 있으나 다음이 부족하다.
 
-### 1. Drag/drop operation 에 source component 참조 추가
+- wheel 로 `MoveQuantity` 변경 후 drag visual StackCount 즉시 갱신
+- source slot 에 남은 수량 preview 즉시 반영
+- `MoveQuantity == OriginalStackCount` 일 때 source slot visual 숨김
 
-`UStorageSlotDragDropOperation` 에 source component 참조를 추가한다.
+## 구현 지시
 
-header 요구사항:
+### 1. Controller hotbar/storage context provider 정리
+
+`ABeekeeperController` 에 아래 API 가 없으면 추가한다.
 
 ```cpp
-class UBeekeeperHotbarComponent;
-class UStorageBoxComponent;
-class UItemInstance;
+UFUNCTION(BlueprintPure, Category = "Hotbar")
+UBeekeeperHotbarComponent* GetPlayerHotbarComponent() const;
+
+UFUNCTION(BlueprintPure, Category = "Storage")
+UStorageBoxComponent* GetActiveStorageComponent() const;
 ```
 
-property 예시:
+`GetActiveStorageComponent()` 는 이미 있으면 유지한다.
+
+`GetPlayerHotbarComponent()` 동작:
+
+- `GetPawn()` 을 `ABeekeeperCharacter` 로 cast 한다.
+- 캐릭터에서 `UBeekeeperHotbarComponent` 를 얻어 반환한다.
+- 필요하면 `ABeekeeperCharacter` 에 아래 getter 를 추가한다.
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-EStorageSlotContainerType SourceType = EStorageSlotContainerType::None;
-
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-int32 SourceIndex = INDEX_NONE;
-
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-TObjectPtr<UBeekeeperHotbarComponent> SourceHotbarComponent = nullptr;
-
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-TObjectPtr<UStorageBoxComponent> SourceStorageComponent = nullptr;
-
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-TObjectPtr<UItemInstance> ItemInstance = nullptr;
-```
-
-의미:
-
-- `SourceType == Hotbar`
-  - `SourceHotbarComponent` 가 유효해야 한다.
-  - `SourceStorageComponent` 는 null 이어도 된다.
-- `SourceType == Storage`
-  - `SourceStorageComponent` 가 유효해야 한다.
-  - `SourceHotbarComponent` 는 null 이어도 된다.
-- `ItemInstance` 는 drag visual 표시 보조 데이터다.
-- 실제 이동/교환의 기준은 source/target type, source/target index, source/target component 참조다.
-
-금지:
-
-- `UStorageBoxWidget* SourceStorageWidget` 참조를 operation 에 넣지 않는다.
-- `UDragDropOperation::Payload` 에 source metadata 를 넣는 방식으로 구현하지 않는다.
-
-### 2. 중립 drag/drop 라우터 추가
-
-신규 `UItemSlotDragDropLibrary` 를 추가한다.
-
-상속:
-
-```cpp
-UItemSlotDragDropLibrary : public UBlueprintFunctionLibrary
-```
-
-header 예시:
-
-```cpp
-#pragma once
-
-#include "CoreMinimal.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
-#include "Public/StorageSlotDragDropTypes.h"
-#include "ItemSlotDragDropLibrary.generated.h"
-
-class UBeekeeperHotbarComponent;
-class UStorageBoxComponent;
-class UStorageSlotDragDropOperation;
-
-UCLASS()
-class BEEKEEPINGSIM_API UItemSlotDragDropLibrary : public UBlueprintFunctionLibrary
-{
-    GENERATED_BODY()
-
-public:
-    UFUNCTION(BlueprintCallable, Category = "Item Slot|Drag Drop")
-    static bool HandleItemSlotDrop(
-        UStorageSlotDragDropOperation* Operation,
-        EStorageSlotContainerType TargetType,
-        int32 TargetIndex,
-        UBeekeeperHotbarComponent* TargetHotbarComponent,
-        UStorageBoxComponent* TargetStorageComponent);
-};
-```
-
-이름은 `UItemSlotDragDropLibrary` 를 사용한다. Storage 전용 widget 함수가 아니라 item slot 간 이동 라우터라는 의미를 명확히 하기 위함이다.
-
-### 3. Drop 라우팅 규칙
-
-`UItemSlotDragDropLibrary::HandleItemSlotDrop()` 은 아래 source/target 조합을 처리한다.
-
-#### Hotbar -> Hotbar
-
-조건:
-
-- `Operation->SourceType == EStorageSlotContainerType::Hotbar`
-- `TargetType == EStorageSlotContainerType::Hotbar`
-- `Operation->SourceHotbarComponent` 유효
-- `TargetHotbarComponent` 유효
-- source hotbar 와 target hotbar 가 같은 component
-
-동작:
-
-```cpp
-return TargetHotbarComponent->SwapSlots(Operation->SourceIndex, TargetIndex);
+UFUNCTION(BlueprintPure, Category = "Hotbar")
+UBeekeeperHotbarComponent* GetBeekeeperHotbarComponent() const;
 ```
 
 주의:
 
-- 서로 다른 hotbar component 간 이동은 현재 범위 밖이다.
-- source/target hotbar component 가 다르면 false 반환한다.
+- `ActiveStorageComponent` 는 `UStorageBoxFocusActionComponent` 가 focus begin/cleanup 에서 최신화하는 기존 흐름을 사용한다.
+- cleanup 시 active storage 가 현재 storage 와 같을 때만 clear 하는 방어는 유지한다.
 
-#### Hotbar -> Storage
+### 2. `UItemSlotWidget` container component 직접 보관 제거
 
-조건:
+`UItemSlotWidget` 에서 제거한다.
 
-- `Operation->SourceType == Hotbar`
-- `TargetType == Storage`
-- `Operation->SourceHotbarComponent` 유효
-- `TargetStorageComponent` 유효
+- `TObjectPtr<UBeekeeperHotbarComponent> HotbarComponent`
+- `TObjectPtr<UStorageBoxComponent> StorageComponent`
+- `InitializeSlotContext()` 의 `UBeekeeperHotbarComponent* InHotbarComponent` 매개변수
+- `InitializeSlotContext()` 의 `UStorageBoxComponent* InStorageComponent` 매개변수
+- HotbarComponent/StorageComponent 직접 getter/setter 또는 Blueprint 노출 핀
+- `TryQuickMove()`, `RefreshFromData()`, `NativeOnDragDetected()`, `NativeOnDrop()` 내부의 component 직접 참조
 
-동작:
-
-```cpp
-return TargetStorageComponent->MoveHotbarItemToStorage(
-    Operation->SourceHotbarComponent,
-    Operation->SourceIndex,
-    TargetIndex);
-```
-
-기존 `MoveHotbarItemToStorage()` 내부 정책을 따른다.
-
-- 대상 storage 슬롯이 비어 있으면 이동
-- 대상 storage 슬롯에 아이템이 있으면 hotbar/storage 교환
-
-#### Storage -> Hotbar
-
-조건:
-
-- `Operation->SourceType == Storage`
-- `TargetType == Hotbar`
-- `Operation->SourceStorageComponent` 유효
-- `TargetHotbarComponent` 유효
-
-동작:
+변경 후 API:
 
 ```cpp
-return Operation->SourceStorageComponent->MoveStorageItemToHotbar(
-    TargetHotbarComponent,
-    Operation->SourceIndex,
-    TargetIndex);
+UFUNCTION(BlueprintCallable, Category = "Item Slot")
+void InitializeSlotContext(EStorageSlotContainerType InContainerType, int32 InSlotIndex);
 ```
 
-기존 `MoveStorageItemToHotbar()` 내부 정책을 따른다.
-
-- 대상 hotbar 슬롯이 비어 있으면 이동
-- 대상 hotbar 슬롯에 아이템이 있으면 hotbar/storage 교환
-
-#### Storage -> Storage
-
-조건:
-
-- `Operation->SourceType == Storage`
-- `TargetType == Storage`
-- `Operation->SourceStorageComponent` 유효
-- `TargetStorageComponent` 유효
-- source storage 와 target storage 가 같은 component
-
-동작:
+`UItemSlotWidget` 이 보관할 context:
 
 ```cpp
-return TargetStorageComponent->SwapStorageSlots(Operation->SourceIndex, TargetIndex);
+EStorageSlotContainerType ContainerType;
+int32 SlotIndex;
 ```
+
+필요한 helper:
+
+```cpp
+UBeekeeperHotbarComponent* ResolveHotbarComponentForSlot() const;
+UStorageBoxComponent* ResolveStorageComponentForSlot() const;
+```
+
+`ResolveHotbarComponentForSlot()`:
+
+- `GetOwningPlayer()` 를 `ABeekeeperController` 로 cast
+- `GetPlayerHotbarComponent()` 반환
+- 실패 시 null
+
+`ResolveStorageComponentForSlot()`:
+
+- `GetOwningPlayer()` 를 `ABeekeeperController` 로 cast
+- `GetActiveStorageComponent()` 반환
+- 실패 시 null
+
+적용 지점:
+
+- `RefreshFromData()`
+  - hotbar slot: resolved hotbar 에서 `SlotIndex` 조회
+  - storage slot: resolved active storage 에서 `SlotIndex` 조회
+- `NativeOnDragDetected()`
+  - hotbar source: operation `SourceHotbarComponent = ResolveHotbarComponentForSlot()`
+  - storage source: operation `SourceStorageComponent = ResolveStorageComponentForSlot()`
+- `NativeOnDrop()`
+  - hotbar target: target hotbar = resolved hotbar
+  - storage target: target storage = resolved active storage
+- `TryQuickMove()`
+  - hotbar -> storage: source hotbar = resolved hotbar, target storage = active storage
+  - storage -> hotbar: source storage = active storage, target hotbar = resolved hotbar
+
+실패 처리:
+
+- resolved hotbar/storage 가 null 이면 false 반환
+- crash 하지 않는다.
+- quick move 실패 원인을 `UE_LOG` 로 구분할 수 있게 한다.
+
+### 3. `UStorageSlotDragDropOperation` quantity change 알림
+
+`MoveQuantity` 변경 시 drag visual 과 source slot preview 를 갱신할 수 있게 한다.
+
+추가 권장:
+
+```cpp
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FItemDragMoveQuantityChangedSignature, int32, NewMoveQuantity);
+
+UPROPERTY(BlueprintAssignable, Category = "Storage Drag Drop")
+FItemDragMoveQuantityChangedSignature OnMoveQuantityChanged;
+
+UPROPERTY(Transient, BlueprintReadWrite, Category = "Storage Drag Drop")
+TObjectPtr<UItemSlotWidget> SourceSlotWidget;
+```
+
+`SetMoveQuantityClamped()` 수정:
+
+- 기존 값과 새 값이 같으면 불필요한 갱신을 하지 않는다.
+- clamp 된 값이 변경되면 `MoveQuantity` 를 갱신한다.
+- `DragVisualWidget` 이 유효하면:
+
+```cpp
+DragVisualWidget->SetItemVisualData(ItemInstance, MoveQuantity);
+```
+
+- `SourceSlotWidget` 이 유효하면 source preview 갱신을 호출한다.
+- `OnMoveQuantityChanged.Broadcast(MoveQuantity)` 를 호출한다.
 
 주의:
 
-- 서로 다른 storage component 간 이동은 현재 범위 밖이다.
-- source/target storage component 가 다르면 false 반환한다.
+- `PartialStack` drag 에서만 wheel quantity 변경을 허용한다.
+- `FullStack` drag 는 wheel 로 수량 변경하지 않는다.
 
-#### 공통 실패 조건
+### 4. `ABeekeeperController::AdjustActiveItemSlotDragQuantity()` 보강
 
-아래 경우 false 를 반환한다.
+수정 요구:
 
-- `Operation == nullptr`
-- `SourceType == None`
-- `TargetType == None`
-- `SourceIndex == INDEX_NONE`
-- `TargetIndex == INDEX_NONE`
-- 필요한 source component 가 null
-- 필요한 target component 가 null
-- 같은 컨테이너 타입 간 drop 인데 source component 와 target component 가 서로 다름
-- 지원하지 않는 source/target 조합
+- active operation 이 없으면 false
+- active operation 이 `PartialStack` 이 아니면 false
+- wheel delta 가 0 이면 false
+- wheel up/down 을 `+1/-1` 로 변환
+- `MoveQuantity` 변경 전후가 같으면 false 또는 no-op
+- 변경되면 drag visual StackCount 와 source slot preview 가 즉시 갱신되어야 한다.
 
-### 4. StorageBoxWidget 라우팅 책임 제거
+### 5. `UItemSlotWidget` drag preview 상태 추가
 
-`UStorageBoxWidget` 은 더 이상 drag/drop source/target 조합 라우팅을 담당하지 않는다.
+source slot 에 남은 수량을 preview 하기 위한 상태를 추가한다.
 
-수정 요구사항:
+권장 필드:
 
-- `UStorageBoxWidget::HandleSlotDrop()` 은 제거한다.
-- `UStorageBoxWidget::SwapHotbarSlots()` wrapper 도 제거한다.
-- 기존 `MoveHotbarItemToStorage`, `MoveStorageItemToHotbar`, `SwapStorageSlots`, `SwapHotbarAndStorage` wrapper 는 기존 Blueprint 호환을 위해 유지해도 된다.
-- 신규 Blueprint 작업에서는 cross-container drag/drop 처리를 `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 으로만 수행한다.
+```cpp
+UPROPERTY(Transient, BlueprintReadOnly, Category = "Item Slot")
+int32 DragPreviewMoveQuantity = 0;
 
-의도:
+UPROPERTY(Transient, BlueprintReadOnly, Category = "Item Slot")
+int32 DragPreviewOriginalStackCount = 0;
 
-- 독립 `WBP_Hotbar` 가 `UStorageBoxWidget` 을 몰라도 된다.
-- `UStorageBoxWidget` 은 storage UI root, storage component access, storage UI refresh 책임만 가진다.
-- item slot 간 이동 라우팅은 widget class 가 아니라 중립 library 가 담당한다.
+UPROPERTY(Transient, BlueprintReadOnly, Category = "Item Slot")
+EItemSlotDragMode DragPreviewMode = EItemSlotDragMode::FullStack;
+```
 
-### 5. Blueprint 사용 흐름
+권장 API:
 
-#### 공통 slot widget 변수
+```cpp
+UFUNCTION(BlueprintPure, Category = "Item Slot")
+bool ShouldHideItemVisualForCurrentDrag() const;
 
-Hotbar slot widget 과 storage slot widget 은 아래 변수를 가진다.
+UFUNCTION(BlueprintPure, Category = "Item Slot")
+int32 GetDragPreviewDisplayStackCount() const;
 
-- `ContainerType`: `EStorageSlotContainerType`
-- `SlotIndex`: `int32`
-- `ItemInstance`: `UItemInstance` reference, optional
+UFUNCTION(BlueprintCallable, Category = "Item Slot")
+void RefreshDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation);
+```
 
-Hotbar slot widget 은 추가로 아래 참조를 가진다.
+동작:
 
-- `HotbarComponent`: `UBeekeeperHotbarComponent` reference
+- LMB `FullStack` drag:
+  - source slot item visual 은 완전히 숨긴다.
+- RMB `PartialStack` drag:
+  - `MoveQuantity < OriginalStackCount` 이면 source slot item visual 은 유지하고 stack count 는 `OriginalStackCount - MoveQuantity` 로 preview 한다.
+  - `MoveQuantity >= OriginalStackCount` 이면 source slot item visual 을 완전히 숨긴다.
+- drag 종료/drop/cancel:
+  - preview 상태 초기화
+  - 실제 데이터 기준으로 `RefreshFromData()` 또는 `RefreshVisual()` 호출
 
-Storage slot widget 은 추가로 아래 참조를 가진다.
+중요:
 
-- `StorageComponent`: `UStorageBoxComponent` reference
+- drag 중 실제 `UItemInstance::StackCount` 를 변경하지 않는다.
+- 실제 stack 변경은 drop 성공 시 기존 move API 에서만 수행한다.
 
-`OwnerStorageWidget` 은 hotbar slot 에 요구하지 않는다.
+### 6. `UItemSlotWidget::NativeOnDragDetected()` 보강
 
-#### Hotbar slot drag 시작
+drag operation 생성 시:
 
-`OnDragDetected` 에서:
+- `DragOperation->SourceSlotWidget = this`
+- source preview 초기화:
+
+```cpp
+DragPreviewOriginalStackCount = ItemInstance ? ItemInstance->GetStackCount() : 0;
+DragPreviewMoveQuantity = DragOperation->MoveQuantity;
+DragPreviewMode = DragOperation->DragMode;
+```
+
+- drag visual 생성 후:
+  - LMB/full stack: drag visual 은 실제 stack count 표시 또는 override 없음
+  - RMB/partial stack: drag visual 은 `MoveQuantity` override 로 표시
+- source slot visual 상태 갱신:
+  - LMB: 숨김
+  - RMB: 남은 수량 preview 또는 전체 선택 시 숨김
+
+### 7. `RefreshVisual()` / Blueprint 계약
+
+`RefreshVisual()` 은 Blueprint 가 충분한 상태를 읽을 수 있게 해야 한다.
+
+Blueprint 에서 읽을 값:
+
+- `ItemInstance`
+- `bIsSelected`
+- `bIsActivated`
+- `bIsDragSource`
+- `ShouldHideItemVisualForCurrentDrag()`
+- `GetDragPreviewDisplayStackCount()`
+
+필요하면 getter 를 추가한다.
+
+Blueprint 구현 규칙:
+
+- `ShouldHideItemVisualForCurrentDrag() == true`
+  - 내부 `WBP_ItemVisual` 을 숨기거나 `ClearItemVisualData()` 호출
+- RMB partial drag 이고 숨김이 아니면
+  - `WBP_ItemVisual.SetItemVisualData(ItemInstance, GetDragPreviewDisplayStackCount())`
+- 일반 상태면
+  - item 있음: `WBP_ItemVisual.SetItemVisualData(ItemInstance)`
+  - item 없음: `WBP_ItemVisual.ClearItemVisualData()`
+
+## Blueprint 수정 요구사항
+
+### `WBP_ItemSlot`
+
+기존 `InitializeSlotContext` 호출을 새 시그니처로 교체한다.
+
+Hotbar slot:
 
 ```text
-Create Drag Drop Operation
-Class = UStorageSlotDragDropOperation 또는 BP 파생 class
-
-Operation.SourceType = Hotbar
-Operation.SourceIndex = SlotIndex
-Operation.SourceHotbarComponent = HotbarComponent
-Operation.SourceStorageComponent = None
-Operation.ItemInstance = ItemInstance
+InitializeSlotContext(Hotbar, Index)
 ```
 
-#### Storage slot drag 시작
-
-`OnDragDetected` 에서:
+Storage slot:
 
 ```text
-Create Drag Drop Operation
-Class = UStorageSlotDragDropOperation 또는 BP 파생 class
-
-Operation.SourceType = Storage
-Operation.SourceIndex = SlotIndex
-Operation.SourceHotbarComponent = None
-Operation.SourceStorageComponent = StorageComponent
-Operation.ItemInstance = ItemInstance
+InitializeSlotContext(Storage, Index)
 ```
 
-#### Hotbar slot drop
+삭제할 것:
 
-`OnDrop` 에서:
+- `HotbarComponent` 변수
+- `StorageComponent` 변수
+- slot 단위 component 주입 로직
 
-```text
-Operation -> Cast to UStorageSlotDragDropOperation
+유지할 것:
 
-UItemSlotDragDropLibrary::HandleItemSlotDrop(
-    Operation,
-    TargetType = Hotbar,
-    TargetIndex = SlotIndex,
-    TargetHotbarComponent = HotbarComponent,
-    TargetStorageComponent = None)
-```
+- `ContainerType`
+- `SlotIndex`
+- 내부 `WBP_ItemVisual`
+- `OnSlotVisualStateChanged` visual 갱신 구현
 
-처리 가능 케이스:
+### `WBP_ItemVisual`
 
-- Hotbar -> Hotbar
-- Storage -> Hotbar
+`OnItemVisualDataChanged` 에서 `GetDisplayStackCount()` 를 읽어 StackCount Text 를 갱신한다.
 
-#### Storage slot drop
+RMB drag 중에는 C++에서 `SetItemVisualData(ItemInstance, MoveQuantity)` 또는 source preview count 를 넘겨주므로, Blueprint 는 `GetDisplayStackCount()` 만 반영하면 된다.
 
-`OnDrop` 에서:
+## 검증 항목
 
-```text
-Operation -> Cast to UStorageSlotDragDropOperation
-
-UItemSlotDragDropLibrary::HandleItemSlotDrop(
-    Operation,
-    TargetType = Storage,
-    TargetIndex = SlotIndex,
-    TargetHotbarComponent = None,
-    TargetStorageComponent = StorageComponent)
-```
-
-처리 가능 케이스:
-
-- Hotbar -> Storage
-- Storage -> Storage
-
-### 6. UI 갱신 정책
-
-Drop 성공 후 UI 갱신은 기존 delegate 기반 갱신을 우선 사용한다.
-
-- hotbar 변경:
-  - `UBeekeeperHotbarComponent::OnHotbarChanged`
-- storage 변경:
-  - `UStorageBoxComponent::OnStorageChanged`
-
-Blueprint 에서 즉시 refresh 가 필요하면 `HandleItemSlotDrop()` 반환값이 true 일 때 해당 slot list refresh 이벤트를 호출해도 된다.
-
-단, C++ 라우터는 UI refresh 를 직접 호출하지 않는다.
-
-## 구현 원칙
-
-- Hotbar UI 는 StorageBox UI 에 의존하지 않는다.
-- StorageBox UI 는 Hotbar UI 에 의존하지 않는다.
-- drag/drop operation 은 source component 참조를 보관한다.
-- drop target slot 은 자기 target component 참조만 전달한다.
-- cross-container 이동/교환은 component API 로 처리한다.
-- 라우팅은 `UItemSlotDragDropLibrary` 에서 수행한다.
-- `UStorageBoxWidget` 은 drop 라우터가 아니다.
-- 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖이며 false 반환한다.
-- 실제 UMG slot layout, hover, drag visual, item icon 표시, 빈 슬롯 표시 등은 Blueprint 구현 범위다.
-- 기존 `Public` / `Private` 구조와 Unreal coding style 을 따른다.
-
-## 문서 반영 요구사항
-
-구현 완료 후 `.md/0_ARCHITECTURE.md` 의 변경된 부분만 갱신한다.
-
-반영할 내용:
-
-- `UStorageSlotDragDropOperation` 은 source container type/index 뿐 아니라 source hotbar/storage component 참조를 보관한다.
-- `UItemSlotDragDropLibrary` 는 widget 에 종속되지 않는 item slot drag/drop 라우터다.
-- `UStorageBoxWidget::HandleSlotDrop()` 중심 구조는 제거된다.
-- Hotbar UI 는 StorageBoxWidget 참조 없이 hotbar 내부 swap 과 storage -> hotbar drop 을 처리할 수 있다.
-- Storage UI 는 HotbarWidget 참조 없이 hotbar -> storage drop 과 storage 내부 swap 을 처리할 수 있다.
-- `UStorageBoxWidget` 은 storage UI root 및 refresh/API 표면 역할만 담당한다.
-
-## 검증 요구사항
-
-- Unreal Build Tool 로 `BeekeepingSimEditor Win64 Development` 빌드를 시도한다.
-- 빌드가 불가능하면 최소한 아래를 정적으로 점검한다.
-  - `UStorageSlotDragDropOperation` 의 component forward declaration/include
-  - `UItemSlotDragDropLibrary` 의 `BlueprintFunctionLibrary` include
-  - `UMG` module dependency 여부
-  - `HandleItemSlotDrop()` 의 모든 source/target 조합 처리 여부
-  - `UStorageBoxWidget::HandleSlotDrop()` 제거 또는 미사용 여부
-  - hotbar slot Blueprint 가 `UStorageBoxWidget` 참조 없이 hotbar->hotbar, storage->hotbar 를 처리 가능한지
-  - storage slot Blueprint 가 `WBP_Hotbar` 참조 없이 hotbar->storage, storage->storage 를 처리 가능한지
-
-## 출력 요구사항
-
-작업 완료 보고는 아래 형식을 따른다.
-
-```
-[상태] 완료
-[요약] 중립 ItemSlotDragDropLibrary 기반 drag/drop 라우팅과 Hotbar 독립성 유지 요약
-[변경 파일] 수정/추가/제거한 API 목록
-[검증] 빌드 또는 정적 확인 결과
-[주의] Blueprint slot widget 에서 source/target component 참조를 설정해야 하는 지점
-```
-
----
-
-## 구현 상태 (2026-04-27)
-
-- 구현 완료
-- `UStorageSlotDragDropOperation` 에 source hotbar/storage component 참조 추가
-- `UItemSlotDragDropLibrary` 추가 및 `HandleItemSlotDrop()` 라우팅 구현
-- `UStorageBoxWidget::HandleSlotDrop()`, `SwapHotbarSlots()` 제거
+- `UItemSlotWidget` 에 `HotbarComponent`, `StorageComponent` 멤버가 남아 있지 않다.
+- `InitializeSlotContext()` 는 `ContainerType`, `SlotIndex` 만 받는다.
+- storage slot 은 `InitializeSlotContext(Storage, Index)` 만으로 refresh/drop/quick move 가 동작한다.
+- hotbar slot 은 `InitializeSlotContext(Hotbar, Index)` 만으로 refresh/drop/quick move 가 동작한다.
+- LMB drag 시작 시 source slot item visual 이 보이지 않는다.
+- LMB drag cancel/drop 후 source slot visual 이 실제 데이터 기준으로 복구된다.
+- storage -> hotbar quick move 가 동작한다.
+- RMB drag 시작 시 drag visual StackCount 가 1 로 표시된다.
+- RMB drag 중 wheel up/down 으로 `MoveQuantity` 가 1..MaxMoveQuantity 범위에서 변경된다.
+- `MoveQuantity` 변경 즉시 drag visual StackCount Text 가 바뀐다.
+- RMB drag 중 source slot 은 `OriginalStackCount - MoveQuantity` 를 표시한다.
+- RMB drag 수량이 전체 수량과 같아지면 source slot item visual 이 보이지 않는다.
+- RMB drag cancel/drop 후 source slot visual 이 실제 데이터 기준으로 복구된다.

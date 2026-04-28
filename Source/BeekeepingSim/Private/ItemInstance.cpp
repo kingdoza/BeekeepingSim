@@ -10,7 +10,14 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 	Definition = InDefinition;
 	InstanceId = FGuid::NewGuid();
 	StackCount = 0;
-	Durability = InDurability;
+	if (Definition && Definition->bUsesDurability)
+	{
+		Durability = FMath::Max(0.0f, Definition->MaxDurability);
+	}
+	else
+	{
+		Durability = InDurability;
+	}
 	SetStackCount(InStackCount);
 	RebuildActions();
 }
@@ -49,6 +56,32 @@ void UItemInstance::SetStackCount(int32 NewStackCount)
 void UItemInstance::SetDurability(float NewDurability)
 {
 	Durability = NewDurability;
+}
+
+bool UItemInstance::HasDurability() const
+{
+	return Definition && Definition->bUsesDurability;
+}
+
+float UItemInstance::GetCurrentDurability() const
+{
+	return HasDurability() ? FMath::Max(0.0f, Durability) : 0.0f;
+}
+
+float UItemInstance::GetMaxDurability() const
+{
+	return HasDurability() ? FMath::Max(0.0f, Definition->MaxDurability) : 0.0f;
+}
+
+float UItemInstance::GetDurabilityRatio() const
+{
+	const float MaxDurability = GetMaxDurability();
+	if (MaxDurability <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp(GetCurrentDurability() / MaxDurability, 0.0f, 1.0f);
 }
 
 UItemAction* UItemInstance::FindActionByTag(FGameplayTag ActionTag) const

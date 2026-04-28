@@ -1,100 +1,143 @@
 ﻿# 코드 개선 요청 프롬프트
 
-아래 리뷰 결과를 기준으로 Unreal C++ 코드와 설계 문서를 수정하라.
+아래 통합 리뷰 결과를 기준으로 Unreal C++ 코드를 수정하라.
 
 ## 대상 파일
 
+- `Source/BeekeepingSim/Private/StorageBoxComponent.cpp`
 - `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
-- `.md/0_ARCHITECTURE.md`
+- `Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp`
+- 필요 시 `Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h`
 
-## 치명적 문제
-
-없음.
-
-## 중요 문제 1: `AllowedItemTags`가 비어 있을 때 아이템 슬롯을 허용해 설계와 충돌함
+## 중요 문제 1: partial move 후 hotbar stack 수량 변경이 broadcast되지 않는 경로
 
 ### 문제
-`UBeekeeperHotbarComponent::IsSlotAllowedByActiveRule()`에서 engaged 상태이고 슬롯에 아이템이 있는 경우에도 `AllowedItemTags.IsEmpty()`이면 `true`를 반환한다.
-
-`.md/0_ARCHITECTURE.md`의 Hotbar 필터링 흐름은 "허용 태그가 비어 있으면 아이템 슬롯은 비허용"이라고 정의한다. 현재 구현은 해당 정책과 반대다.
+`MovePartialStorageToHotbar()`에서 기존 hotbar stack에 merge만 발생하면 `TargetItem->SetStackCount()`만 호출되고 `OnHotbarChanged`가 broadcast되지 않는다. `MovePartialHotbarToStorage()`에서도 source hotbar stack이 0이 되지 않으면 `ReevaluateSlots()`만 호출되며, slot enabled 변화가 없으면 broadcast되지 않는다.
 
 ### 영향
-FocusTarget의 item rule이 비어 있는 engaged action에서 모든 hotbar 아이템 슬롯이 enabled로 남는다. 이는 focus 중 허용 아이템만 활성화한다는 기존 설계를 깨고, UI가 사용 불가능해야 할 아이템을 사용 가능 상태로 표시할 수 있다.
+Hotbar UI가 partial 이동 후 stack count를 즉시 갱신하지 못한다. Quick move와 drag/drop 모두에서 UI stale 상태가 발생할 수 있다.
 
 ### 수정 방향
-빈 슬롯은 계속 허용하되, 아이템이 있는 슬롯에서 `AllowedItemTags`가 비어 있으면 `false`를 반환한다. StorageBox의 선택 유지 정책은 이미 `ShouldClearSelectionByActiveFocusPolicy()`로 분리되어 있으므로, 이 수정이 선택 유지 정책과 충돌하지 않아야 한다.
+stack count 변경 자체도 hotbar 상태 변경으로 간주해 명시적으로 hotbar changed를 broadcast해야 한다. public API를 추가하거나 기존 setter 경로를 사용하되, 중복 broadcast를 최소화한다.
+
+### 수정 예시
+파일 경로: `Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h`
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Hotbar")
+void NotifyHotbarItemsChanged();
+```
+
+파일 경로: `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
+
+```cpp
+void UBeekeeperHotbarComponent::NotifyHotbarItemsChanged()
+{
+	ReevaluateSlotsInternal();
+	BroadcastHotbarChanged();
+}
+```
+
+파일 경로: `Source/BeekeepingSim/Private/StorageBoxComponent.cpp`
+
+```cpp
+if (Result.MovedQuantity > 0)
+{
+	SourceItem->SetStackCount(SourceItem->GetStackCount() - Result.MovedQuantity);
+	if (SourceItem->GetStackCount() <= 0)
+	{
+		Slots[StorageIndex].ItemInstance = nullptr;
+	}
+
+	HotbarComponent->NotifyHotbarItemsChanged();
+	BroadcastStorageChanged();
+	Result.bSuccess = true;
+}
+```
+
+```cpp
+if (Result.MovedQuantity > 0)
+{
+	SourceItem->SetStackCount(SourceItem->GetStackCount() - Result.MovedQuantity);
+	if (SourceItem->GetStackCount() <= 0)
+	{
+		HotbarComponent->SetSlotItem(HotbarIndex, nullptr);
+	}
+	else
+	{
+		HotbarComponent->NotifyHotbarItemsChanged();
+	}
+
+	BroadcastStorageChanged();
+	Result.bSuccess = true;
+}
+```
+
+## 중요 문제 2: engaged 중 empty hotbar slot이 disabled 처리됨
+
+### 문제
+`IsSlotAllowedByActiveRule()`이 `AllowedItemTags.IsEmpty()`를 먼저 검사해 false를 반환하고, empty slot 검사도 false를 반환한다. `.md/0_ARCHITECTURE.md`는 engaged 중에도 빈 슬롯은 허용한다고 정의한다.
+
+### 영향
+Storage UI에서 empty hotbar slot이 disabled처럼 보일 수 있고, storage -> hotbar drop target UX가 깨질 수 있다.
+
+### 수정 방향
+유효 index와 engaged 여부 확인 후, 빈 슬롯은 항상 true로 반환한다. 그 다음 아이템 슬롯에 대해서만 allowed tag 필터를 적용한다.
 
 ### 수정 코드
 파일 경로: `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
 
 ```cpp
-bool UBeekeeperHotbarComponent::IsSlotAllowedByActiveRule(int32 Index) const
+if (!bIsEngagedFocusActive)
 {
-	if (!IsIndexValid(Index))
-	{
-		return false;
-	}
+	return true;
+}
 
-	if (!bIsEngagedFocusActive)
-	{
-		return true;
-	}
+if (!Slots[Index].ItemInstance)
+{
+	return true;
+}
 
-	if (!Slots[Index].ItemInstance)
-	{
-		return true;
-	}
-
-	const FGameplayTagContainer& AllowedItemTags = ActiveFocusRule.AllowedItemTags;
-	if (AllowedItemTags.IsEmpty())
-	{
-		return false;
-	}
-
-	if (AllItemsRootTag.IsValid() && AllowedItemTags.HasTagExact(AllItemsRootTag))
-	{
-		return true;
-	}
-
-	const FGameplayTagContainer ItemTags = GetItemTagsForSlot(Index);
-	return ItemTags.HasAny(AllowedItemTags);
+const FGameplayTagContainer& AllowedItemTags = ActiveFocusRule.AllowedItemTags;
+if (AllowedItemTags.IsEmpty())
+{
+	return false;
 }
 ```
 
-## 개선 제안 1: `0_ARCHITECTURE.md`의 Storage UI 흐름이 새 중립 라우터 구조와 일부 불일치함
+## 중요 문제 3: storage UI cleanup이 active drag operation을 정리하지 않음
 
 ### 문제
-최신 설계 결정에는 `UStorageBoxWidget`에서 drop 라우터 역할을 제거했다고 적혀 있지만, `Storage Box Focus UI 흐름` 섹션은 여전히 engaged 동안 UI가 `UStorageBoxWidget` API를 통해 storage/hotbar 이동 및 hotbar 교환을 요청한다고 설명한다.
+`UItemSlotWidget`은 drag operation drop/cancel delegate에서 source visual과 active drag operation을 정리한다. 하지만 StorageFocus cancel/abort/endplay로 widget tree가 제거되는 경우 `UStorageBoxFocusActionComponent::CleanupInteractionUI()`는 active storage만 정리하고 active drag operation은 정리하지 않는다.
 
 ### 영향
-구현 에이전트나 Blueprint 작업자가 새 `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 대신 `UStorageBoxWidget` 중심 라우팅을 계속 사용해야 한다고 오해할 수 있다.
+드래그 중 ESC/cancel 또는 storage actor EndPlay가 발생하면 controller에 stale drag operation이 남을 수 있다. 이후 wheel 입력이 hotbar 순환 대신 삭제된 drag operation 수량 조절로 소비될 수 있다.
 
 ### 수정 방향
-Storage UI drag/drop 라우팅 설명을 `UItemSlotDragDropLibrary` 중심으로 바꾸고, `UStorageBoxWidget`은 생성/초기화 및 root 참조 제공 역할로 한정한다고 명시한다.
+storage UI cleanup에서 `ClearActiveItemSlotDragOperation()`도 호출한다. 가능하면 active storage clear도 현재 storage와 같은 경우에만 수행하도록 방어한다.
 
 ### 수정 코드
-파일 경로: `.md/0_ARCHITECTURE.md`
+파일 경로: `Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp`
 
-```md
-3. engaged 동안 slot widget 은 `UStorageSlotDragDropOperation` payload 와 target component/index 를 구성해 `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 으로 drop 을 라우팅한다.
-   - hotbar -> hotbar: 같은 hotbar component 내부 swap
-   - hotbar -> storage: hotbar item 을 target storage 로 이동/교환
-   - storage -> hotbar: storage item 을 target hotbar 로 이동/교환
-   - storage -> storage: 같은 storage component 내부 swap
-   - 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖으로 false
-4. `UStorageBoxWidget` 은 storage/hotbar component 참조 제공과 UI root 역할만 담당하며, drop 조합 라우팅을 소유하지 않는다.
+```cpp
+if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(PlayerController))
+{
+	BeekeeperController->ClearActiveItemSlotDragOperation();
+	BeekeeperController->ClearActiveStorageComponent();
+}
 ```
+
+## 개선 제안
+
+- `MoveHotbarItemToStorage()`의 temporary `UE_LOG(LogTemp, Warning, TEXT("MoveHotbarItemToStorage"));`는 제거한다.
+- partial move 내부에서 여러 `SetSlotItem()`을 호출하는 경로는 여러 번 broadcast될 수 있으므로, batch update API가 필요하면 별도 helper로 정리한다.
+- quick move가 merge 가능한 슬롯만 있고 전체 수량을 받을 빈 슬롯이 없을 때 부분 성공을 허용할지, 전체 이동만 성공으로 볼지 정책을 명확히 한다.
 
 ## 검증 항목
 
-- UBT/UHT 빌드가 성공하는지 확인한다.
-- `AllowedItemTags`가 비어 있는 engaged focus에서 아이템 슬롯은 disabled, 빈 슬롯은 enabled로 남는지 확인한다.
-- StorageBox action의 `ShouldClearHotbarSelectionOnFocusEngaged() == false` 정책이 위 필터 변경 후에도 선택 인덱스를 지우지 않는지 확인한다.
-- Hotbar -> Hotbar drop은 같은 hotbar component에서만 `SwapSlots()`로 처리되는지 확인한다.
-- Storage -> Storage drop은 같은 storage component에서만 `SwapStorageSlots()`로 처리되는지 확인한다.
-- Hotbar -> Storage, Storage -> Hotbar drop에서 `OnHotbarChanged`와 `OnStorageChanged`가 기존 component API 경로로 정상 broadcast되는지 확인한다.
-- Blueprint slot widget 이 `UStorageBoxWidget` 참조 없이 operation payload와 target component를 넘겨 `UItemSlotDragDropLibrary::HandleItemSlotDrop()`을 호출할 수 있는지 확인한다.
-
-## 0_ARCHITECTURE.md 반영 필요 여부
-
-필요. 코드 구조 설명 일부는 새 라우터를 반영했지만, 실행 흐름 섹션에 `UStorageBoxWidget` 중심 라우팅 설명이 남아 있어 최신 설계와 일치하도록 수정해야 한다.
+- Storage -> Hotbar partial merge 후 hotbar stack count UI가 즉시 갱신되는지 확인한다.
+- Hotbar -> Storage partial move 후 source hotbar stack count UI가 즉시 갱신되는지 확인한다.
+- Storage engaged 중 empty hotbar slot이 enabled visual/drop target으로 남는지 확인한다.
+- 드래그 중 storage cancel/abort/endplay 후 wheel 입력이 hotbar 순환으로 정상 복귀하는지 확인한다.
+- LMB double click quick move가 merge 가능 슬롯 우선, 없으면 빈 슬롯 순서로 동작하는지 확인한다.
+- UBT 빌드를 다시 실행한다.

@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Public/HotbarPresentationTypes.h"
 #include "Public/FocusTargetComponent.h"
+#include "Public/StorageSlotDragDropTypes.h"
 #include "BeekeeperHotbarComponent.generated.h"
 
 class ABeekeeperCharacter;
@@ -86,6 +87,9 @@ public:
 	void ReevaluateSlots();
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	void NotifyHotbarItemsChanged();
+
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	FHotbarItemAcquireResult TryAcquireItem(UItemDefinition* ItemDefinition, int32 Quantity);
 
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
@@ -108,6 +112,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	bool SwapSlots(int32 FromIndex, int32 ToIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	FItemSlotMoveResult MovePartialToSlot(int32 FromIndex, int32 ToIndex, int32 Quantity);
 
 	UFUNCTION(BlueprintPure, Category = "Hotbar|UI")
 	FText GetSelectedItemDisplayName() const;

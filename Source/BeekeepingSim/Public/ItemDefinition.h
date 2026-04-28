@@ -40,6 +40,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1"))
 	int32 MaxStack = 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability")
+	bool bUsesDurability = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (ClampMin = "0.0", EditCondition = "bUsesDurability", EditConditionHides))
+	float MaxDurability = 100.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	TArray<FItemActionSpec> ActionSpecs;
 

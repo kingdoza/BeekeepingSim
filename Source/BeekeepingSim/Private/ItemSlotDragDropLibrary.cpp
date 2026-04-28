@@ -20,6 +20,10 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 		return false;
 	}
 
+	const bool bUsePartialMove =
+		Operation->DragMode == EItemSlotDragMode::PartialStack &&
+		Operation->MoveQuantity > 0;
+
 	if (Operation->SourceType == EStorageSlotContainerType::Hotbar &&
 		TargetType == EStorageSlotContainerType::Hotbar)
 	{
@@ -27,6 +31,11 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 			Operation->SourceHotbarComponent != TargetHotbarComponent)
 		{
 			return false;
+		}
+
+		if (bUsePartialMove)
+		{
+			return TargetHotbarComponent->MovePartialToSlot(Operation->SourceIndex, TargetIndex, Operation->MoveQuantity).bSuccess;
 		}
 
 		return TargetHotbarComponent->SwapSlots(Operation->SourceIndex, TargetIndex);
@@ -38,6 +47,15 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 		if (!Operation->SourceHotbarComponent || !TargetStorageComponent)
 		{
 			return false;
+		}
+
+		if (bUsePartialMove)
+		{
+			return TargetStorageComponent->MovePartialHotbarToStorage(
+				Operation->SourceHotbarComponent,
+				Operation->SourceIndex,
+				TargetIndex,
+				Operation->MoveQuantity).bSuccess;
 		}
 
 		return TargetStorageComponent->MoveHotbarItemToStorage(
@@ -54,6 +72,15 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 			return false;
 		}
 
+		if (bUsePartialMove)
+		{
+			return Operation->SourceStorageComponent->MovePartialStorageToHotbar(
+				TargetHotbarComponent,
+				Operation->SourceIndex,
+				TargetIndex,
+				Operation->MoveQuantity).bSuccess;
+		}
+
 		return Operation->SourceStorageComponent->MoveStorageItemToHotbar(
 			TargetHotbarComponent,
 			Operation->SourceIndex,
@@ -67,6 +94,14 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 			Operation->SourceStorageComponent != TargetStorageComponent)
 		{
 			return false;
+		}
+
+		if (bUsePartialMove)
+		{
+			return TargetStorageComponent->MovePartialStorageToStorage(
+				Operation->SourceIndex,
+				TargetIndex,
+				Operation->MoveQuantity).bSuccess;
 		}
 
 		return TargetStorageComponent->SwapStorageSlots(Operation->SourceIndex, TargetIndex);

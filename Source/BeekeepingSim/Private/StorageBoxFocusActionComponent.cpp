@@ -3,6 +3,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 #include "Public/BeekeeperCharacter.h"
+#include "Public/BeekeeperController.h"
 #include "Public/BeekeeperHotbarComponent.h"
 #include "Public/StorageBoxComponent.h"
 #include "Public/StorageBoxWidget.h"
@@ -82,6 +83,11 @@ bool UStorageBoxFocusActionComponent::BeginFocusAction(ABeekeeperCharacter* Inte
 	ActiveWidget->InitializeStorageWidget(StorageComponent, HotbarComponent);
 	ActiveWidget->AddToViewport();
 
+	if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(PlayerController))
+	{
+		BeekeeperController->SetActiveStorageComponent(StorageComponent);
+	}
+
 	return true;
 }
 
@@ -120,7 +126,17 @@ EHotbarPresentationMode UStorageBoxFocusActionComponent::GetHotbarPresentationMo
 
 bool UStorageBoxFocusActionComponent::ShouldClearHotbarSelectionOnFocusEngaged() const
 {
-	return false;
+	return true;
+}
+
+bool UStorageBoxFocusActionComponent::ShouldBlockHotbarSlotInputWhileEngaged() const
+{
+	return true;
+}
+
+bool UStorageBoxFocusActionComponent::ShouldBlockHotbarWheelInputWhileEngaged() const
+{
+	return true;
 }
 
 void UStorageBoxFocusActionComponent::CleanupInteractionUI()
@@ -136,6 +152,15 @@ void UStorageBoxFocusActionComponent::CleanupInteractionUI()
 		APlayerController* PlayerController = ActiveCharacter ? Cast<APlayerController>(ActiveCharacter->GetController()) : nullptr;
 		if (PlayerController)
 		{
+			if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(PlayerController))
+			{
+				BeekeeperController->ClearActiveItemSlotDragOperation();
+				if (BeekeeperController->GetActiveStorageComponent() == StorageComponent)
+				{
+					BeekeeperController->ClearActiveStorageComponent();
+				}
+			}
+
 			PlayerController->bShowMouseCursor = false;
 			FInputModeGameOnly InputMode;
 			PlayerController->SetInputMode(InputMode);

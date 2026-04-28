@@ -187,6 +187,49 @@
   - source/target container 조합과 source/target component 참조를 해석해 hotbar/storage 이동 또는 교환 API 로 라우팅한다.
 - `UStorageBoxWidget` 은 drop 라우터 역할을 제거하고 storage UI root/API 표면 역할만 유지한다.
 
+### 2026-04-28 Update: Item Drag Visual Widget Base
+
+- `UItemDragVisualWidget` 이 추가되었다.
+  - drag 중 커서에 붙는 아이템 visual 용 `UUserWidget` base 다.
+  - `UItemInstance` 를 받아 icon/display name/stack count getter 를 Blueprint 에 노출한다.
+  - 실제 레이아웃, 이미지/텍스트 배치, 애니메이션은 `WBP_ItemDragVisual` 같은 Blueprint 파생 위젯이 담당한다.
+  - drop 라우팅 또는 아이템 이동/교환 책임은 갖지 않는다.
+
+### 2026-04-28 Update: Durability API and Item Visual Widget Base
+
+- `UItemDefinition` 에 내구도 설정이 추가되었다.
+  - `bUsesDurability`
+  - `MaxDurability`
+- `UItemInstance` 에 내구도 조회 API 가 추가되었다.
+  - `HasDurability()`
+  - `GetCurrentDurability()`
+  - `GetMaxDurability()`
+  - `GetDurabilityRatio()`
+- `InitializeFromDefinition()` 에서 내구도 사용 아이템은 현재 내구도를 `MaxDurability` 로 초기화한다.
+- `UItemVisualWidget` 이 추가되었다.
+  - 슬롯/드래그 visual 공용 `UUserWidget` base 다.
+  - item icon/display name/stack/durability ratio getter 를 Blueprint 에 제공한다.
+  - 표시 데이터 변경 이벤트를 Blueprint 구현으로 위임한다.
+  - drop 라우팅 및 아이템 이동/교환 책임은 가지지 않는다.
+
+### 2026-04-28 Update: Item Slot Widget Base and Drag Operation Expansion
+
+- `EItemSlotDragMode` 가 추가되었다.
+  - `FullStack`, `PartialStack` 드래그 모드를 표현한다.
+- `UStorageSlotDragDropOperation` 이 확장되었다.
+  - `DragMode`, `MoveQuantity`, `MaxMoveQuantity`, `DragVisualWidget` 상태를 보관한다.
+  - `InitializeMoveQuantity()`, `AdjustMoveQuantity()`, `SetMoveQuantityClamped()` API 를 제공한다.
+- `UItemSlotWidget` 이 추가되었다.
+  - slot context(`ContainerType`, `SlotIndex`, hotbar/storage 참조, item 참조)를 보관한다.
+  - `NativeOnMouseButtonDown` 에서 LMB/RMB drag 감지를 수행한다.
+  - `NativeOnDragDetected` 에서
+    - LMB: `FullStack`
+    - RMB: `PartialStack` + 초기 이동 수량 1
+    - source slot visual 숨김
+    - drag visual 생성
+    - controller active drag operation 등록
+  - drag cancel 시 source visual 복구와 active drag operation 해제 경로를 제공한다.
+
 ## 주요 모듈/파일 구조
 
 - 캐릭터
@@ -270,6 +313,15 @@
 - 아이템 슬롯 drag/drop 라우터 라이브러리
   - `Source/BeekeepingSim/Public/ItemSlotDragDropLibrary.h`
   - `Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp`
+- 아이템 drag visual 위젯 베이스
+  - `Source/BeekeepingSim/Public/ItemDragVisualWidget.h`
+  - `Source/BeekeepingSim/Private/ItemDragVisualWidget.cpp`
+- 아이템 visual 위젯 베이스
+  - `Source/BeekeepingSim/Public/ItemVisualWidget.h`
+  - `Source/BeekeepingSim/Private/ItemVisualWidget.cpp`
+- 아이템 슬롯 위젯 베이스
+  - `Source/BeekeepingSim/Public/ItemSlotWidget.h`
+  - `Source/BeekeepingSim/Private/ItemSlotWidget.cpp`
 
 ## 주요 공용 타입
 
@@ -303,6 +355,8 @@
 
 - `EStorageSlotContainerType`
   - drag/drop source/target 컨테이너(`None`, `Hotbar`, `Storage`)를 표현한다.
+- `EItemSlotDragMode`
+  - drag 이동 모드(`FullStack`, `PartialStack`)를 표현한다.
 
 ## 핵심 클래스 역할
 
@@ -327,6 +381,8 @@
 - `APlayerController` 기반 컨트롤러다.
 - `DefaultMappingContext` 를 `EnhancedInputLocalPlayerSubsystem` 에 등록한다.
 - `PlayerCameraManagerClass` 를 `ABeekeepingSimCameraManager` 로 설정한다.
+- StorageFocus UI 컨텍스트를 위한 `ActiveStorageComponent` 참조를 보관/해제한다.
+- drag 중 wheel 수량 조절 라우팅을 위한 `ActiveItemSlotDragOperation` 참조를 보관/해제한다.
 
 ### `UBeekeeperMovementComponent`
 
@@ -371,6 +427,7 @@
 - `CanBeginFocusAction`, `BeginFocusAction`, `CancelFocusAction`, `AbortFocusAction` 을 제공한다.
 - engaged 상태 여부를 내부에서 관리한다.
 - 크로스헤어 숨김 여부와 cancel 시작 시 복구 여부를 UI 정책으로 노출한다.
+- engaged 상태에서 hotbar 슬롯 입력/휠 입력 차단 정책을 제공한다.
 
 ### `UAnchoredFocusActionComponent`
 
@@ -432,6 +489,7 @@
 
 - 디자이너가 설정하는 아이템 정적 데이터 에셋이다.
 - UI 텍스트, 아이콘, 월드 메시, held presentation actor class, 태그, 최대 스택, 행동 스펙 목록을 가진다.
+- 내구도 사용 여부(`bUsesDurability`)와 최대 내구도(`MaxDurability`)를 설정할 수 있다.
 - `WorldMesh` 는 pickup 월드 표시와 held presentation fallback 용도로 유지된다.
 
 ### `UItemInstance`
@@ -440,7 +498,16 @@
 - `Definition` 을 참조해 표시 데이터와 태그를 읽는다.
 - held presentation class 조회 API 를 제공한다.
 - `StackCount`, `Durability`, `InstanceId` 를 관리한다.
+- 내구도 사용 아이템에 대해 현재값/최대값/비율 조회 API 를 제공한다.
 - 정의의 액션 스펙을 기반으로 `UItemAction` 객체들을 생성하고 소유한다.
+
+### `UItemVisualWidget`
+
+- 슬롯 내부 visual 과 drag visual 양쪽에서 재사용 가능한 표시 전용 `UUserWidget` base 다.
+- `SetItemVisualData(UItemInstance*, QuantityOverride)` / `ClearItemVisualData()` 로 표시 데이터를 설정/해제한다.
+- icon/display name/stack/durability ratio getter 를 Blueprint 에 제공한다.
+- item 이 null 인 경우에도 안전한 fallback 을 반환한다.
+- drop 라우팅 및 아이템 이동/교환 책임은 가지지 않는다.
 
 ### `UItemAction`
 
@@ -498,6 +565,8 @@
 - engaged 시작 시 입력 잠금, 커서 표시, `FInputModeGameAndUI`, storage widget 표시를 수행한다.
 - cancel/abort 시 widget 제거, 커서 숨김, `FInputModeGameOnly`, 입력 잠금 해제를 수행한다.
 - engaged 동안 크로스헤어 숨김 정책을 제공한다.
+- engaged 진입 시 hotbar 선택 해제 정책을 제공한다.
+- engaged 동안 hotbar 숫자키 슬롯 선택 및 마우스휠 선택 입력 차단 정책을 제공한다.
 
 ### `UStorageBoxWidget`
 
@@ -508,12 +577,33 @@
 
 - storage UI drag/drop metadata payload 용 `UDragDropOperation` 파생 클래스다.
 - `SourceType`, `SourceIndex`, `SourceHotbarComponent`, `SourceStorageComponent`, 선택적 `ItemInstance` 참조를 보관한다.
+- `DragMode`, `MoveQuantity`, `MaxMoveQuantity`, `DragVisualWidget` 를 보관한다.
+- 이동 수량 초기화/조절/클램프 API 를 제공한다.
 
 ### `UItemSlotDragDropLibrary`
 
 - widget 종속성이 없는 item slot drag/drop 라우팅용 `UBlueprintFunctionLibrary` 다.
 - `HandleItemSlotDrop()` 으로 Hotbar/Storage source-target 조합을 분기해 기존 component API 를 호출한다.
+- `DragMode == FullStack` 이면 기존 이동/교환(swap) 경로를 사용한다.
+- `DragMode == PartialStack` 이면 partial move API 경로를 사용한다.
 - 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖으로 false 를 반환한다.
+
+### `UItemDragVisualWidget`
+
+- drag 중 커서에 붙는 아이템 visual 용 `UUserWidget` base 다.
+- `InitializeDragVisual(UItemInstance*)` 로 아이템 참조를 저장하고 초기화 이벤트를 브로드캐스트한다.
+- `GetItemIcon()`, `GetItemDisplayName()`, `GetItemStackCount()`, `HasItem()` getter 를 Blueprint 에 제공한다.
+- null 아이템 입력을 허용하며 getter 는 안전한 fallback 을 반환한다.
+- drop 라우팅 및 아이템 이동/교환 책임은 가지지 않는다.
+
+### `UItemSlotWidget`
+
+- 슬롯 입력/드래그 시작 상태를 관리하는 `UUserWidget` base 다.
+- slot context 초기화, 데이터 리프레시, source drag visual 숨김/복구 API 를 제공한다.
+- LMB/RMB drag 감지와 drag operation 생성, controller active drag operation 등록 경로를 제공한다.
+- LMB 더블클릭 quick move(Hotbar -> active storage, Storage -> hotbar) 경로를 제공한다.
+- drag operation drop/cancel 이벤트에서 source visual 복구와 active drag operation 해제를 처리한다.
+- 실제 drop 이동/교환 규칙은 `UItemSlotDragDropLibrary` 및 컨테이너 컴포넌트가 담당한다.
 
 ## 주요 실행 흐름
 
@@ -528,7 +618,7 @@
    - cancel 입력은 `UBeekeeperFocusComponent::CancelFocus()` 로 전달된다.
 4. hotbar 입력
    - 숫자 입력은 슬롯 인덱스로 변환되어 `HandleSlotInput()` 으로 전달된다.
-   - 휠 입력은 방향만 추출해 `HandleWheelInput()` 으로 전달된다.
+   - 휠 입력은 active drag operation 이 있으면 수량 조절 라우팅을 우선 시도하고, 없으면 방향을 추출해 `HandleWheelInput()` 으로 전달된다.
 
 ### 2. PreviewFocus 흐름
 
@@ -623,19 +713,25 @@
    - 입력 잠금
    - 커서 표시 + `FInputModeGameAndUI`
    - `UStorageBoxWidget` 생성/초기화/표시
+   - controller 에 active storage component 등록
 3. engaged 동안 slot widget 은 `UStorageSlotDragDropOperation` payload 와 target component/index 를 구성해
    `UItemSlotDragDropLibrary::HandleItemSlotDrop()` 으로 drop 을 라우팅한다.
    - hotbar -> hotbar: 같은 hotbar component 내부 swap
-   - hotbar -> storage: hotbar item 을 target storage 로 이동/교환
-   - storage -> hotbar: storage item 을 target hotbar 로 이동/교환
-   - storage -> storage: 같은 storage component 내부 swap
+   - hotbar -> storage: hotbar item 을 target storage 로 이동/교환 또는 partial 이동
+   - storage -> hotbar: storage item 을 target hotbar 로 이동/교환 또는 partial 이동
+   - storage -> storage: 같은 storage component 내부 swap 또는 partial 이동
    - 서로 다른 hotbar 간 이동, 서로 다른 storage 간 이동은 현재 범위 밖으로 false
-4. `UStorageBoxWidget` 은 storage/hotbar component 참조 제공과 UI root 역할만 담당하며,
+4. LMB 더블클릭 quick move:
+   - hotbar slot: controller 의 active storage component 로 전체 수량 이동 시도
+   - storage slot: 연결된 hotbar component 로 전체 수량 이동 시도
+   - 대상 슬롯은 우선 merge 가능한 같은 아이템 슬롯을 찾고, 없으면 빈 슬롯을 사용
+5. `UStorageBoxWidget` 은 storage/hotbar component 참조 제공과 UI root 역할만 담당하며,
    drop 조합 라우팅을 소유하지 않는다.
-5. cancel/abort 시 액션은 아래를 복구한다.
+6. cancel/abort 시 액션은 아래를 복구한다.
    - widget 제거
    - 커서 숨김 + `FInputModeGameOnly`
    - 입력 잠금 해제
+   - controller 의 active storage component 해제
 
 ## 컴포넌트/의존 관계
 

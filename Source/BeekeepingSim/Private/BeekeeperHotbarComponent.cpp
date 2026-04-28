@@ -41,6 +41,11 @@ void UBeekeeperHotbarComponent::InitializeSlots()
 
 void UBeekeeperHotbarComponent::HandleSlotInput(int32 Index)
 {
+	if (bIsEngagedFocusActive && ActiveFocusAction && ActiveFocusAction->ShouldBlockHotbarSlotInputWhileEngaged())
+	{
+		return;
+	}
+
 	if (!IsIndexValid(Index))
 	{
 		return;
@@ -70,6 +75,11 @@ void UBeekeeperHotbarComponent::HandleSlotInput(int32 Index)
 
 void UBeekeeperHotbarComponent::HandleWheelInput(bool bForward)
 {
+	if (bIsEngagedFocusActive && ActiveFocusAction && ActiveFocusAction->ShouldBlockHotbarWheelInputWhileEngaged())
+	{
+		return;
+	}
+
 	if (SlotCount <= 0)
 	{
 		return;
@@ -154,6 +164,12 @@ void UBeekeeperHotbarComponent::ReevaluateSlots()
 	{
 		BroadcastHotbarChanged();
 	}
+}
+
+void UBeekeeperHotbarComponent::NotifyHotbarItemsChanged()
+{
+	ReevaluateSlotsInternal();
+	BroadcastHotbarChanged();
 }
 
 FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefinition* ItemDefinition, int32 Quantity)
@@ -349,6 +365,103 @@ bool UBeekeeperHotbarComponent::SwapSlots(const int32 FromIndex, const int32 ToI
 	return true;
 }
 
+FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 FromIndex, const int32 ToIndex, const int32 Quantity)
+{
+	FItemSlotMoveResult Result;
+	Result.RequestedQuantity = FMath::Max(0, Quantity);
+	Result.RemainingQuantity = Result.RequestedQuantity;
+
+	if (!IsIndexValid(FromIndex) || !IsIndexValid(ToIndex) || FromIndex == ToIndex || Result.RequestedQuantity <= 0)
+	{
+		return Result;
+	}
+
+	UItemInstance* SourceItem = Cast<UItemInstance>(Slots[FromIndex].ItemInstance.Get());
+	if (!SourceItem || !SourceItem->GetDefinition())
+	{
+		return Result;
+	}
+
+	UItemDefinition* SourceDefinition = SourceItem->GetDefinition();
+	const int32 MaxStack = FMath::Max(1, SourceDefinition->MaxStack);
+	int32 SourceCount = SourceItem->GetStackCount();
+	if (SourceCount <= 0)
+	{
+		return Result;
+	}
+
+	int32 QuantityToMove = FMath::Min(Result.RequestedQuantity, SourceCount);
+	UItemInstance* TargetItem = Cast<UItemInstance>(Slots[ToIndex].ItemInstance.Get());
+
+	if (!TargetItem)
+	{
+		const int32 StackToCreate = FMath::Min(QuantityToMove, MaxStack);
+		UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate);
+		if (!NewItem)
+		{
+			return Result;
+		}
+
+		Slots[ToIndex].ItemInstance = NewItem;
+		Result.MovedQuantity += StackToCreate;
+		QuantityToMove -= StackToCreate;
+	}
+	else
+	{
+		if (TargetItem->GetDefinition() != SourceDefinition)
+		{
+			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
+			return Result;
+		}
+
+		const int32 TargetCount = TargetItem->GetStackCount();
+		const int32 Available = FMath::Max(0, MaxStack - TargetCount);
+		const int32 AddCount = FMath::Min(QuantityToMove, Available);
+		if (AddCount > 0)
+		{
+			TargetItem->SetStackCount(TargetCount + AddCount);
+			Result.MovedQuantity += AddCount;
+			QuantityToMove -= AddCount;
+		}
+
+		while (QuantityToMove > 0)
+		{
+			const int32 EmptyIndex = FindFirstEmptySlot();
+			if (EmptyIndex == INDEX_NONE || EmptyIndex == ToIndex)
+			{
+				break;
+			}
+
+			const int32 StackToCreate = FMath::Min(QuantityToMove, MaxStack);
+			UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate);
+			if (!NewItem)
+			{
+				break;
+			}
+
+			Slots[EmptyIndex].ItemInstance = NewItem;
+			Result.MovedQuantity += StackToCreate;
+			QuantityToMove -= StackToCreate;
+		}
+	}
+
+	if (Result.MovedQuantity > 0)
+	{
+		SourceItem->SetStackCount(SourceCount - Result.MovedQuantity);
+		if (SourceItem->GetStackCount() <= 0)
+		{
+			Slots[FromIndex].ItemInstance = nullptr;
+		}
+
+		ReevaluateSlotsInternal();
+		BroadcastHotbarChanged();
+		Result.bSuccess = true;
+	}
+
+	Result.RemainingQuantity = Result.RequestedQuantity - Result.MovedQuantity;
+	return Result;
+}
+
 FText UBeekeeperHotbarComponent::GetSelectedItemDisplayName() const
 {
 	const UItemInstance* ItemInstance = GetSelectedItemInstance();
@@ -430,38 +543,29 @@ bool UBeekeeperHotbarComponent::IsSlotAllowedByActiveRule(int32 Index) const
 	{
 		return false;
 	}
-	
-	//UE_LOG(LogTemp, Warning, TEXT("IsIndexValid"));
 
 	if (!bIsEngagedFocusActive)
 	{
 		return true;
 	}
-	
-	//UE_LOG(LogTemp, Warning, TEXT("bIsEngagedFocusActive"));
-	
-	//UE_LOG(LogTemp, Warning, TEXT("Slots[Index].ItemInstance"));
+
+	if (!Slots[Index].ItemInstance)
+	{
+		return true;
+	}
 
 	const FGameplayTagContainer& AllowedItemTags = ActiveFocusRule.AllowedItemTags;
 	if (AllowedItemTags.IsEmpty())
 	{
 		return false;
 	}
-	
-	//UE_LOG(LogTemp, Warning, TEXT("AllowedItemTags"));
 
 	if (AllItemsRootTag.IsValid() && AllowedItemTags.HasTagExact(AllItemsRootTag))
 	{
 		return true;
 	}
-	
-	if (!Slots[Index].ItemInstance)
-	{
-		return false;
-	}
 
 	const FGameplayTagContainer ItemTags = GetItemTagsForSlot(Index);
-	//UE_LOG(LogTemp, Warning, TEXT("ItemTags : %s, AllowedItemTags tags: %s"), *ItemTags.ToString(), *AllowedItemTags.ToString());
 	return ItemTags.HasAny(AllowedItemTags);
 }
 

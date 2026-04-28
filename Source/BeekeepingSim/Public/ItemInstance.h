@@ -48,6 +48,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item")
 	float GetDurability() const { return Durability; }
 
+	UFUNCTION(BlueprintPure, Category = "Item|Durability")
+	bool HasDurability() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Durability")
+	float GetCurrentDurability() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Durability")
+	float GetMaxDurability() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Durability")
+	float GetDurabilityRatio() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void SetDurability(float NewDurability);
 

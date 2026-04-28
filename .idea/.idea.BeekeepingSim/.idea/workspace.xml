@@ -18,31 +18,29 @@
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_UNREAL.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/QNA_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_IMPLEMENTATION.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/QNA_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/BP/BP_Item_Patty.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/BP/BP_Item_Patty.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeeBrush.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeeBrush.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeePollenPatty.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeePollenPatty.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_Knife.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_Knife.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_Sprayer.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_Sprayer.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Mesh/BeePollenPatty/M_BeePollenPatty.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Mesh/BeePollenPatty/M_BeePollenPatty.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/UI/WBP_Hotbar.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/UI/WBP_Hotbar.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/AnchoredFocusCursorActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/AnchoredFocusCursorActionComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperHeldItemVisualizerComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperHeldItemVisualizerComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/UI/WBP_ItemSlot.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/UI/WBP_ItemSlot.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/UI/WBP_StorageBox.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/UI/WBP_StorageBox.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/BeekeepingSim.Build.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/BeekeepingSim.Build.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperCharacter.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperController.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperController.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusActionComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusTargetComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/FocusTargetComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/AnchoredFocusCursorActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/AnchoredFocusCursorActionComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperFocusComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperFocusComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperHeldItemVisualizerComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperHeldItemVisualizerComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/ItemInstance.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/ItemInstance.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageBoxComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageBoxComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperController.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperController.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/FocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/FocusActionComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/ItemDefinition.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/ItemDefinition.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/ItemInstance.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/ItemInstance.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageBoxComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageBoxComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageBoxFocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageBoxFocusActionComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageSlotDragDropTypes.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/StorageSlotDragDropTypes.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -259,7 +257,8 @@
       <workItem from="1777195810182" duration="4238000" />
       <workItem from="1777237253459" duration="2149000" />
       <workItem from="1777239518562" duration="11940000" />
-      <workItem from="1777290620959" duration="2840000" />
+      <workItem from="1777290620959" duration="7471000" />
+      <workItem from="1777362445783" duration="2475000" />
     </task>
     <servers />
   </component>

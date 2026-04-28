@@ -1,6 +1,7 @@
 #include "Public/StorageBoxComponent.h"
 
 #include "Public/BeekeeperHotbarComponent.h"
+#include "Public/ItemDefinition.h"
 #include "Public/ItemInstance.h"
 
 UStorageBoxComponent::UStorageBoxComponent()
@@ -92,7 +93,6 @@ bool UStorageBoxComponent::MoveHotbarItemToStorage(UBeekeeperHotbarComponent* Ho
 	UItemInstance* StorageItem = Slots[StorageIndex].ItemInstance.Get();
 	if (!StorageItem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MoveHotbarItemToStorage"));
 		Slots[StorageIndex].ItemInstance = HotbarItemInstance;
 		HotbarComponent->SetSlotItem(HotbarIndex, nullptr);
 		BroadcastStorageChanged();
@@ -153,6 +153,287 @@ bool UStorageBoxComponent::SwapHotbarAndStorage(UBeekeeperHotbarComponent* Hotba
 	return true;
 }
 
+FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int32 FromIndex, const int32 ToIndex, const int32 Quantity)
+{
+	FItemSlotMoveResult Result;
+	Result.RequestedQuantity = FMath::Max(0, Quantity);
+	Result.RemainingQuantity = Result.RequestedQuantity;
+
+	if (!IsIndexValid(FromIndex) || !IsIndexValid(ToIndex) || FromIndex == ToIndex || Result.RequestedQuantity <= 0)
+	{
+		return Result;
+	}
+
+	UItemInstance* SourceItem = Slots[FromIndex].ItemInstance.Get();
+	if (!SourceItem || !SourceItem->GetDefinition())
+	{
+		return Result;
+	}
+
+	UItemDefinition* Definition = SourceItem->GetDefinition();
+	const int32 MaxStack = FMath::Max(1, Definition->MaxStack);
+	int32 QuantityToMove = FMath::Min(Result.RequestedQuantity, SourceItem->GetStackCount());
+	UItemInstance* TargetItem = Slots[ToIndex].ItemInstance.Get();
+
+	if (!TargetItem)
+	{
+		const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+		if (!NewItem)
+		{
+			return Result;
+		}
+		Slots[ToIndex].ItemInstance = NewItem;
+		Result.MovedQuantity += CreateCount;
+		QuantityToMove -= CreateCount;
+	}
+	else
+	{
+		if (TargetItem->GetDefinition() != Definition)
+		{
+			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
+			return Result;
+		}
+
+		const int32 Available = FMath::Max(0, MaxStack - TargetItem->GetStackCount());
+		const int32 MergeCount = FMath::Min(QuantityToMove, Available);
+		if (MergeCount > 0)
+		{
+			TargetItem->SetStackCount(TargetItem->GetStackCount() + MergeCount);
+			Result.MovedQuantity += MergeCount;
+			QuantityToMove -= MergeCount;
+		}
+
+		while (QuantityToMove > 0)
+		{
+			const int32 EmptyIndex = FindFirstEmptyStorageSlot();
+			if (EmptyIndex == INDEX_NONE || EmptyIndex == ToIndex)
+			{
+				break;
+			}
+
+			const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+			if (!NewItem)
+			{
+				break;
+			}
+
+			Slots[EmptyIndex].ItemInstance = NewItem;
+			Result.MovedQuantity += CreateCount;
+			QuantityToMove -= CreateCount;
+		}
+	}
+
+	if (Result.MovedQuantity > 0)
+	{
+		SourceItem->SetStackCount(SourceItem->GetStackCount() - Result.MovedQuantity);
+		if (SourceItem->GetStackCount() <= 0)
+		{
+			Slots[FromIndex].ItemInstance = nullptr;
+		}
+		BroadcastStorageChanged();
+		Result.bSuccess = true;
+	}
+
+	Result.RemainingQuantity = Result.RequestedQuantity - Result.MovedQuantity;
+	return Result;
+}
+
+FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
+	UBeekeeperHotbarComponent* HotbarComponent,
+	const int32 StorageIndex,
+	const int32 HotbarIndex,
+	const int32 Quantity)
+{
+	FItemSlotMoveResult Result;
+	Result.RequestedQuantity = FMath::Max(0, Quantity);
+	Result.RemainingQuantity = Result.RequestedQuantity;
+
+	if (!IsIndexValid(StorageIndex) || !IsHotbarIndexValid(HotbarComponent, HotbarIndex) || Result.RequestedQuantity <= 0)
+	{
+		return Result;
+	}
+
+	UItemInstance* SourceItem = Slots[StorageIndex].ItemInstance.Get();
+	if (!SourceItem || !SourceItem->GetDefinition())
+	{
+		return Result;
+	}
+
+	UItemDefinition* Definition = SourceItem->GetDefinition();
+	const int32 MaxStack = FMath::Max(1, Definition->MaxStack);
+	int32 QuantityToMove = FMath::Min(Result.RequestedQuantity, SourceItem->GetStackCount());
+
+	UItemInstance* TargetItem = Cast<UItemInstance>(GetHotbarItemAt(HotbarComponent, HotbarIndex));
+	if (!TargetItem)
+	{
+		const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+		UItemInstance* NewItem = NewObject<UItemInstance>(HotbarComponent);
+		if (!NewItem)
+		{
+			return Result;
+		}
+		NewItem->InitializeFromDefinition(Definition, CreateCount);
+		HotbarComponent->SetSlotItem(HotbarIndex, NewItem);
+		Result.MovedQuantity += CreateCount;
+		QuantityToMove -= CreateCount;
+	}
+	else
+	{
+		if (TargetItem->GetDefinition() != Definition)
+		{
+			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
+			return Result;
+		}
+
+		const int32 Available = FMath::Max(0, MaxStack - TargetItem->GetStackCount());
+		const int32 MergeCount = FMath::Min(QuantityToMove, Available);
+		if (MergeCount > 0)
+		{
+			TargetItem->SetStackCount(TargetItem->GetStackCount() + MergeCount);
+			Result.MovedQuantity += MergeCount;
+			QuantityToMove -= MergeCount;
+		}
+
+		if (QuantityToMove > 0)
+		{
+			const TArray<FHotbarSlotData>& HotbarSlots = HotbarComponent->GetSlots();
+			for (int32 Index = 0; Index < HotbarSlots.Num() && QuantityToMove > 0; ++Index)
+			{
+				if (HotbarSlots[Index].ItemInstance)
+				{
+					continue;
+				}
+
+				const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+				UItemInstance* NewItem = NewObject<UItemInstance>(HotbarComponent);
+				if (!NewItem)
+				{
+					break;
+				}
+				NewItem->InitializeFromDefinition(Definition, CreateCount);
+				HotbarComponent->SetSlotItem(Index, NewItem);
+				Result.MovedQuantity += CreateCount;
+				QuantityToMove -= CreateCount;
+			}
+		}
+	}
+
+	if (Result.MovedQuantity > 0)
+	{
+		SourceItem->SetStackCount(SourceItem->GetStackCount() - Result.MovedQuantity);
+		if (SourceItem->GetStackCount() <= 0)
+		{
+			Slots[StorageIndex].ItemInstance = nullptr;
+		}
+
+		HotbarComponent->NotifyHotbarItemsChanged();
+		BroadcastStorageChanged();
+		Result.bSuccess = true;
+	}
+
+	Result.RemainingQuantity = Result.RequestedQuantity - Result.MovedQuantity;
+	return Result;
+}
+
+FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
+	UBeekeeperHotbarComponent* HotbarComponent,
+	const int32 HotbarIndex,
+	const int32 StorageIndex,
+	const int32 Quantity)
+{
+	FItemSlotMoveResult Result;
+	Result.RequestedQuantity = FMath::Max(0, Quantity);
+	Result.RemainingQuantity = Result.RequestedQuantity;
+
+	if (!IsHotbarIndexValid(HotbarComponent, HotbarIndex) || !IsIndexValid(StorageIndex) || Result.RequestedQuantity <= 0)
+	{
+		return Result;
+	}
+
+	UItemInstance* SourceItem = Cast<UItemInstance>(GetHotbarItemAt(HotbarComponent, HotbarIndex));
+	if (!SourceItem || !SourceItem->GetDefinition())
+	{
+		return Result;
+	}
+
+	UItemDefinition* Definition = SourceItem->GetDefinition();
+	const int32 MaxStack = FMath::Max(1, Definition->MaxStack);
+	int32 QuantityToMove = FMath::Min(Result.RequestedQuantity, SourceItem->GetStackCount());
+
+	UItemInstance* TargetItem = Slots[StorageIndex].ItemInstance.Get();
+	if (!TargetItem)
+	{
+		const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+		if (!NewItem)
+		{
+			return Result;
+		}
+
+		Slots[StorageIndex].ItemInstance = NewItem;
+		Result.MovedQuantity += CreateCount;
+		QuantityToMove -= CreateCount;
+	}
+	else
+	{
+		if (TargetItem->GetDefinition() != Definition)
+		{
+			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
+			return Result;
+		}
+
+		const int32 Available = FMath::Max(0, MaxStack - TargetItem->GetStackCount());
+		const int32 MergeCount = FMath::Min(QuantityToMove, Available);
+		if (MergeCount > 0)
+		{
+			TargetItem->SetStackCount(TargetItem->GetStackCount() + MergeCount);
+			Result.MovedQuantity += MergeCount;
+			QuantityToMove -= MergeCount;
+		}
+
+		while (QuantityToMove > 0)
+		{
+			const int32 EmptyIndex = FindFirstEmptyStorageSlot();
+			if (EmptyIndex == INDEX_NONE || EmptyIndex == StorageIndex)
+			{
+				break;
+			}
+
+			const int32 CreateCount = FMath::Min(QuantityToMove, MaxStack);
+			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+			if (!NewItem)
+			{
+				break;
+			}
+
+			Slots[EmptyIndex].ItemInstance = NewItem;
+			Result.MovedQuantity += CreateCount;
+			QuantityToMove -= CreateCount;
+		}
+	}
+
+	if (Result.MovedQuantity > 0)
+	{
+		SourceItem->SetStackCount(SourceItem->GetStackCount() - Result.MovedQuantity);
+		if (SourceItem->GetStackCount() <= 0)
+		{
+			HotbarComponent->SetSlotItem(HotbarIndex, nullptr);
+		}
+		else
+		{
+			HotbarComponent->NotifyHotbarItemsChanged();
+		}
+
+		BroadcastStorageChanged();
+		Result.bSuccess = true;
+	}
+
+	Result.RemainingQuantity = Result.RequestedQuantity - Result.MovedQuantity;
+	return Result;
+}
+
 void UStorageBoxComponent::BroadcastStorageChanged()
 {
 	OnStorageChanged.Broadcast();
@@ -177,4 +458,34 @@ UObject* UStorageBoxComponent::GetHotbarItemAt(const UBeekeeperHotbarComponent* 
 	}
 
 	return HotbarComponent->GetSlots()[Index].ItemInstance.Get();
+}
+
+int32 UStorageBoxComponent::FindFirstEmptyStorageSlot() const
+{
+	for (int32 Index = 0; Index < Slots.Num(); ++Index)
+	{
+		if (!Slots[Index].ItemInstance)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+UItemInstance* UStorageBoxComponent::CreateStorageItemInstance(UItemDefinition* ItemDefinition, const int32 StackCount)
+{
+	if (!ItemDefinition || StackCount <= 0)
+	{
+		return nullptr;
+	}
+
+	UItemInstance* NewItem = NewObject<UItemInstance>(this);
+	if (!NewItem)
+	{
+		return nullptr;
+	}
+
+	NewItem->InitializeFromDefinition(ItemDefinition, StackCount);
+	return NewItem;
 }

@@ -3,6 +3,7 @@
 
 #include "Public/BeekeeperCharacter.h"
 #include "Public/BeekeeperCameraShakeComponent.h"
+#include "Public/BeekeeperController.h"
 #include "Public/BeekeeperFocusComponent.h"
 #include "Public/BeekeeperHeldItemVisualizerComponent.h"
 #include "Public/BeekeeperHotbarComponent.h"
@@ -222,13 +223,22 @@ void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)
 
 void ABeekeeperCharacter::HotbarWheelInput(const FInputActionValue& Value)
 {
-	if (!BeekeeperHotbar)
+	const float WheelValue = Value.Get<float>();
+	if (FMath::IsNearlyZero(WheelValue))
 	{
 		return;
 	}
 
-	const float WheelValue = Value.Get<float>();
-	if (FMath::IsNearlyZero(WheelValue))
+	if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(GetController()))
+	{
+		if (BeekeeperController->GetActiveItemSlotDragOperation())
+		{
+			BeekeeperController->AdjustActiveItemSlotDragQuantity(WheelValue);
+			return;
+		}
+	}
+
+	if (!BeekeeperHotbar)
 	{
 		return;
 	}
