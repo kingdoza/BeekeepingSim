@@ -1,9 +1,9 @@
-#include "UI/StorageSlotDragDropOperation.h"
+#include "UI/ItemSlotDragDropOperation.h"
 #include "Inventory/ItemInstance.h"
 #include "UI/ItemSlotWidget.h"
 #include "UI/ItemVisualWidget.h"
 
-void UStorageSlotDragDropOperation::InitializeMoveQuantity()
+void UItemSlotDragDropOperation::InitializeMoveQuantity()
 {
 	const int32 SourceStackCount = ItemInstance ? ItemInstance->GetStackCount() : 0;
 	MaxMoveQuantity = FMath::Max(0, SourceStackCount);
@@ -17,7 +17,7 @@ void UStorageSlotDragDropOperation::InitializeMoveQuantity()
 	MoveQuantity = MaxMoveQuantity;
 }
 
-void UStorageSlotDragDropOperation::AdjustMoveQuantity(const int32 Delta)
+void UItemSlotDragDropOperation::AdjustMoveQuantity(const int32 Delta)
 {
 	if (DragMode != EItemSlotDragMode::PartialStack)
 	{
@@ -32,7 +32,7 @@ void UStorageSlotDragDropOperation::AdjustMoveQuantity(const int32 Delta)
 	SetMoveQuantityClamped(MoveQuantity + Delta);
 }
 
-void UStorageSlotDragDropOperation::SetMoveQuantityClamped(const int32 NewQuantity)
+void UItemSlotDragDropOperation::SetMoveQuantityClamped(const int32 NewQuantity)
 {
 	const int32 MinQuantity = MaxMoveQuantity > 0 ? 1 : 0;
 	const int32 ClampedQuantity = FMath::Clamp(NewQuantity, MinQuantity, MaxMoveQuantity);

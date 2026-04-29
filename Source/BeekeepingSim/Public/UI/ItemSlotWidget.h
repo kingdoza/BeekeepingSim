@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "UI/StorageSlotDragDropOperation.h"
-#include "UI/StorageSlotDragDropTypes.h"
+#include "UI/ItemSlotDragDropOperation.h"
+#include "UI/ItemSlotDragDropTypes.h"
 #include "ItemSlotWidget.generated.h"
 
 class ABeekeeperController;
@@ -11,7 +11,7 @@ class UBeekeeperHotbarComponent;
 class UItemInstance;
 class UItemVisualWidget;
 class UStorageBoxComponent;
-class UStorageSlotDragDropOperation;
+class UItemSlotDragDropOperation;
 
 UCLASS(BlueprintType, Blueprintable)
 class BEEKEEPINGSIM_API UItemSlotWidget : public UUserWidget
@@ -21,7 +21,7 @@ class BEEKEEPINGSIM_API UItemSlotWidget : public UUserWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "Item Slot")
 	void InitializeSlotContext(
-		EStorageSlotContainerType InContainerType,
+		EItemSlotContainerType InContainerType,
 		int32 InSlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "Item Slot")
@@ -54,20 +54,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item Slot|Partial Drag Preview")
 	void ClearPartialDragPreviewState();
 
-	UFUNCTION(BlueprintCallable, Category = "Item Slot|Partial Drag Preview")
-	void RefreshPartialDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation);
+	void RefreshPartialDragPreviewFromOperation(UItemSlotDragDropOperation* Operation);
 
 	// Legacy wrappers for Blueprint compatibility during migration.
 	UFUNCTION(BlueprintPure, Category = "Item Slot")
 	bool ShouldHideItemVisualForCurrentDrag() const;
 
-	// Legacy wrapper for Blueprint compatibility during migration.
-	UFUNCTION(BlueprintPure, Category = "Item Slot")
-	int32 GetDragPreviewDisplayStackCount() const;
-
-	// Legacy wrapper for Blueprint compatibility during migration.
-	UFUNCTION(BlueprintCallable, Category = "Item Slot")
-	void RefreshDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation);
+	// C++-only compatibility wrapper used by drag operation internals.
+	void RefreshDragPreviewFromOperation(UItemSlotDragDropOperation* Operation);
 
 protected:
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
@@ -96,7 +90,7 @@ protected:
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Slot")
-	EStorageSlotContainerType ContainerType = EStorageSlotContainerType::None;
+	EItemSlotContainerType ContainerType = EItemSlotContainerType::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Slot")
 	int32 SlotIndex = INDEX_NONE;

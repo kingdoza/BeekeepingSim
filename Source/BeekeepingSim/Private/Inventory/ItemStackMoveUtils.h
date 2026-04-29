@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UI/StorageSlotDragDropTypes.h"
+#include "UI/ItemSlotDragDropTypes.h"
 
 class UItemDefinition;
 class UItemInstance;

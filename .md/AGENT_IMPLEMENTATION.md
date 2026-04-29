@@ -1,199 +1,162 @@
 # Codex Agent — Implementation Mode
 
----
+## 역할
 
-## 역할 정의
+이 에이전트는 BeekeepingSim의 **구현 담당**이다.
 
-이 에이전트는 **구현 담당**이다.
-설계는 `.md/0_ARCHITECTURE.md`를 기준으로 수행하며, 임의로 구조를 변경하지 않는다.
+구현은 현재 정본 아키텍처 문서와 사용자 지시를 기준으로 수행한다. 임의의 구조 변경, Public API 삭제, Blueprint 계약 변경은 금지한다.
 
----
+## 정본 문서
 
-## 파일 경로 규칙
+작업 시작 시 반드시 읽는다.
+
+- `.md/0_ARCHITECTURE.md`
+- 작업과 직접 관련된 `.md/Architecture/{System}.md`
+- `.md/QNA_IMPLEMENTATION.md`
+
+필요 시 함께 참고한다.
+
+- `.md/Architecture/CoreSystem.md`: Core Redirect와 공통 규칙
+- `.md/REFACTORING_BLUEPRINT_REFERENCE_AUDIT.md`: Blueprint 참조 검사 기록
+- `.md/USER_UNREAL.md`: Editor 수동 검증이 필요한 경우
+
+## 주요 작업 경로
 
 | 용도 | 경로 |
 |---|---|
-| 공통 설계 문서 | `.md/0_ARCHITECTURE.md` |
+| 전체 아키텍처 지도 | `.md/0_ARCHITECTURE.md` |
+| 시스템별 아키텍처 | `.md/Architecture/*.md` |
 | 구현 QnA | `.md/QNA_IMPLEMENTATION.md` |
-| 코드 리뷰 프롬프트 | `.md/PROMPT_REVIEW.md` |
-| 언리얼 AI 프롬프트 | `.md/PROMPT_UNREAL.md` |
+| 리뷰 프롬프트 | `.md/PROMPT_REVIEW.md` |
+| Unreal Editor 사용자 작업 | `.md/USER_UNREAL.md` |
+| Unreal 프롬프트 | `.md/PROMPT_UNREAL.md` |
 
-> 위 4개 파일 외 다른 문서는 명시적 지시 없이 수정 금지.
+## Source 구조 기준
 
----
+현재 C++ 시스템 폴더:
 
-## 설계 참조 규칙
+- `Source/BeekeepingSim/Public/Character`, `Private/Character`
+- `Source/BeekeepingSim/Public/Camera`, `Private/Camera`
+- `Source/BeekeepingSim/Public/Focus`, `Private/Focus`
+- `Source/BeekeepingSim/Public/Interaction`, `Private/Interaction`
+- `Source/BeekeepingSim/Public/Inventory`, `Private/Inventory`
+- `Source/BeekeepingSim/Public/UI`, `Private/UI`
+- `Source/BeekeepingSim/Public/WorldActors`, `Private/WorldActors`
 
-- 작업 시작 전 반드시 `.md/0_ARCHITECTURE.md`를 읽고 현재 구조를 파악한다
-- `.md/QNA_IMPLEMENTATION.md`가 존재할 경우 함께 읽고 최신 사용자 답변을 반영한다
-- 설계와 코드가 불일치할 경우 먼저 보고하고 지시를 기다린다
-- 추측이 포함된 경우 반드시 "추측"이라고 명시한다
-
----
+`Core`는 문서상 경계이며 소스 폴더가 아니다.
 
 ## 구현 절차
 
-코드 작성 지시를 받은 경우 다음 순서를 따른다:
+1. `.md/0_ARCHITECTURE.md`와 관련 시스템 문서를 읽는다.
+2. 작업 범위와 영향 파일을 보고한다.
+3. Blueprint/API/Core Redirect 영향이 있는지 확인한다.
+4. 애매한 점이 있으면 `.md/QNA_IMPLEMENTATION.md`에 질문을 작성하고 중단한다.
+5. 구현한다.
+6. 빌드 또는 가능한 검증을 수행한다.
+7. 구조 변경이 있으면 `.md/0_ARCHITECTURE.md`와 관련 `.md/Architecture/{System}.md`를 갱신한다.
+8. 리뷰용 프롬프트가 필요하면 `.md/PROMPT_REVIEW.md`를 작성한다.
+9. Editor 수동 검증이 필요하면 `.md/USER_UNREAL.md` 또는 최종 보고에 사용자 작업을 명시한다.
 
-1. 작업 범위 요약 보고
-2. 영향받는 파일 목록 제시
-3. 신규 파일 생성 계획 제시
-4. **승인 후** 구현 수행
-5. 구현 완료 후 결과 보고
-6. `.md/0_ARCHITECTURE.md` 최신화 (변경된 부분만 수정)
-7. 인간 검토가 필요한 핵심 로직 식별 및 보고
-8. 코드 리뷰 프롬프트 생성 → `.md/PROMPT_REVIEW.md` 작성
-9. 언리얼 AI 프롬프트 요청이 있을 경우 → `.md/PROMPT_UNREAL.md` 작성
+## QnA 규칙
 
----
-
-## QnA 규칙 (애매한 사항 처리)
-
-**애매하거나 유저의 판단이 필요한 사항이 있으면 절대 작업을 진행하지 말고**,
-`.md/QNA_IMPLEMENTATION.md`에 질문을 작성한 뒤 다음 작업에서 답변을 확인하고 반영한다.
-
-### 질문 생성 기준
-
-다음 상황에서는 반드시 질문을 생성한다:
+다음 상황에서는 구현하지 말고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
 - 구현 방식이 여러 가지로 나뉘는 경우
-- 성능 vs 구조 트레이드오프가 존재하는 경우
-- 기존 코드와 충돌 가능성이 있는 경우
-- 설계 해석이 모호한 경우
-- Unreal 사용 방식이 여러 선택지를 가지는 경우
+- 기존 아키텍처 문서와 충돌하는 경우
+- Public Blueprint API 삭제/rename 가능성이 있는 경우
+- UCLASS/USTRUCT/UENUM rename 또는 file rename이 필요한 경우
+- Core Redirect 필요 여부가 불명확한 경우
+- Content 에셋 compile/save가 필요한 경우
+- 성능과 구조 사이의 트레이드오프가 큰 경우
 
-### QnA 작성 양식
+질문 형식:
 
-```
+```text
 ### [질문 항목]
 
 1. 질문 제목
 - 질문 내용
 - 필요한 이유
 - 선택지
-  - 옵션 A: …
-  - 옵션 B: …
-  - 옵션 C: …
+  - 옵션 A: ...
+  - 옵션 B: ...
+  - 옵션 C: ...
+- 권장 옵션:
 ```
-
-### 구현 진행 조건
-
-다음 중 하나를 만족해야 구현을 진행할 수 있다:
-
-1. 구현 방식이 명확한 경우
-2. `.md/QNA_IMPLEMENTATION.md`의 질문에 대해 사용자 답변이 완료된 경우
-
-### 사용자 응답 처리
-
-- 해당 문서를 다시 읽고 최신 상태를 반영한다
-- 사용자 응답을 기존 판단보다 우선한다
-- 필요 시 `.md/0_ARCHITECTURE.md`에도 반영한다
-
----
-
-## 설계 문서 업데이트 규칙
-
-- 코드 변경으로 구조가 변경된 경우, `.md/0_ARCHITECTURE.md`를 최신 상태로 업데이트한다
-- 전체를 다시 작성하지 말고 **변경된 부분만** 수정한다
-- 구조 중심으로 간결하게 작성한다
-
----
-
-## 코드 리뷰 프롬프트 생성 규칙 (`.md/PROMPT_REVIEW.md`)
-
-구현 완료 후 다른 AI에게 코드 리뷰를 요청하기 위한 프롬프트를 생성한다.
-
-포함 내용:
-- 변경된 파일 목록
-- 변경 목적
-- 핵심 로직 설명
-- 리뷰 시 집중해야 할 포인트
-
-작성 규칙:
-- 실제 AI에 그대로 전달 가능한 형태로 작성한다
-- 불필요한 설명 없이 실행 가능한 명령 형태로 작성한다
-
----
-
-## 언리얼 AI 프롬프트 생성 규칙 (`.md/PROMPT_UNREAL.md`)
-
-언리얼 에디터 내장 AI 또는 관련 어시스턴트용 프롬프트 요청이 있을 경우 작성한다.
-
-포함 내용:
-- 목표 (예: CameraShake, Animation, Blueprint 설정 등)
-- 사용될 시스템 또는 기능
-- 원하는 결과의 느낌 또는 스타일
-- Unreal 엔진 제약 조건
-- 출력 요구사항
-
-작성 규칙:
-- 에디터에서 바로 사용할 수 있는 형태로 작성한다
-- 파라미터, 값 범위, 설정 방향을 명확히 포함한다
-- 추상적 표현보다 구체적인 설정 지침을 우선한다
-
----
 
 ## 코드 작성 원칙
 
-- 기존 프로젝트의 코딩 컨벤션을 따른다
-- 불필요한 구조 변경을 하지 않는다
-- 기존 코드 삭제는 사전 승인 후 수행한다
-- Public / Private 구조를 준수한다
-- Unreal 규칙을 따른다
+- 기존 시스템 경계를 따른다.
+- 상태 오너와 표시/입력 라우터를 분리한다.
+- Widget은 domain mutation을 직접 구현하지 않는다.
+- Inventory 상태 변경은 Hotbar/Storage 컴포넌트 API로 모은다.
+- Focus 상태와 crosshair visibility 기준은 `UBeekeeperFocusComponent`를 우선한다.
+- `Private` helper는 public header로 노출하지 않는다.
+- `#include "Public/..."` 형태를 만들지 않는다.
+- 삭제/rename은 참조 검색과 Blueprint 영향 확인 후 진행한다.
 
----
+## Blueprint/Core Redirect 원칙
 
-## Unreal Rules
+- Blueprint native parent로 쓰이는 class rename은 사용자 승인 없이 진행하지 않는다.
+- Blueprint 참조가 확인된 UFUNCTION/UPROPERTY는 대체 노드 migration 전까지 삭제하지 않는다.
+- UCLASS/USTRUCT/UENUM rename 시 `Config/DefaultEngine.ini` `[CoreRedirects]` 검토가 필요하다.
+- Core Redirect 작업은 Editor 재시작, Blueprint compile/save, post-migration scan까지 검증 범위에 포함한다.
 
-- UObject의 GC 및 Lifecycle을 고려한다
-- Actor는 상태 중심, 기능은 Component로 분리한다
-- Tick 사용을 최소화한다
-- 핵심 로직은 C++로 작성한다
-- Blueprint는 UI 및 단순 로직에 한정한다
+## 문서 업데이트 규칙
 
----
+구조 변경 시 다음을 갱신한다.
+
+- 전체 시스템 목록, Blueprint 계약, 완료된 고위험 리팩토링: `.md/0_ARCHITECTURE.md`
+- 시스템 책임/flow/API 변경: 해당 `.md/Architecture/{System}.md`
+- Core Redirect 또는 공통 규칙 변경: `.md/Architecture/CoreSystem.md`
+
+단순 버그 수정이나 내부 구현만 바뀐 경우에는 문서 갱신이 필요 없을 수 있다. 이때 최종 보고에 "아키텍처 문서 반영 불필요" 사유를 적는다.
+
+## Unreal 검증
+
+가능한 경우 UBT 빌드를 수행한다.
+
+```powershell
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
+```
+
+경로가 없으면 임의의 엔진 버전을 사용하지 말고 사용자에게 확인한다.
 
 ## 인간 검토 필요 영역
 
-구현 완료 후 아래 항목을 반드시 식별하여 보고한다:
+구현 완료 후 아래 항목을 보고한다.
 
-- 로직이 복잡하거나 분기 처리가 많은 부분
-- 성능에 영향을 줄 가능성이 있는 부분
-- 메모리 관리 (UObject, 포인터 등) 관련 부분
-- 멀티스레드 또는 비동기 처리 관련 로직
-- 게임플레이 밸런스에 영향을 주는 계산 로직
-
----
-
-## 금지 사항
-
-- 추측 기반 구현 금지
-- `.md/QNA_IMPLEMENTATION.md` 무시 금지
-- 사용자 선택 무시 금지
-- 명시적 지시 없이 코드 수정 금지
-- 허용된 4개 파일 외 문서 임의 수정 금지
-
----
-
-## 작업 시작 전 체크리스트
-
-> 매 작업 시작 시 아래를 반드시 확인한다.
-
-- [ ] `.md/0_ARCHITECTURE.md` 읽고 현재 구조 파악
-- [ ] `.md/QNA_IMPLEMENTATION.md` 존재 여부 확인 및 미답변 질문 없는지 확인
-- [ ] 작업 범위 및 영향 파일 파악 후 보고 → 승인 대기
-- [ ] 애매한 사항 있으면 즉시 QnA 작성 후 작업 중단
-
----
+- Blueprint compile/save가 필요한 항목
+- Core Redirect 검증이 필요한 항목
+- 게임플레이 밸런스에 영향을 주는 계산
+- UObject lifetime, GC, transient 참조
+- local player 전용 로직
+- Tick 비용이 늘어난 부분
 
 ## 보고 형식
 
-```
-[상태] 대기 중 / 작업 중 / 완료
-[요약] 수행 내용
-[영향 파일] 변경 또는 참조 파일 목록
-[0_ARCHITECTURE.md 반영 여부] 반영 내용 요약
-[검토 필요 로직] 인간 검토 필요 항목
-[PROMPT_REVIEW.md 생성 여부] 생성 완료 / 해당 없음
-[다음] 추가 지시 대기
+```text
+[상태] 작업 중 / 질문 필요 / 완료
+
+[참조 문서]
+- 읽은 아키텍처 문서
+
+[수행 내용]
+- 구현 요약
+
+[영향 파일]
+- 변경 파일
+
+[검증]
+- 빌드/검색/수동 검증 결과
+
+[아키텍처 문서 반영]
+- 반영 / 불필요
+- 대상 문서
+
+[검토 필요]
+- 사용자 또는 리뷰 에이전트가 확인할 항목
+
+[PROMPT_REVIEW.md]
+- 작성 / 미작성
 ```

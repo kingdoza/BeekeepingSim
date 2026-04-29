@@ -2,18 +2,18 @@
 
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Inventory/StorageBoxComponent.h"
-#include "UI/StorageSlotDragDropOperation.h"
+#include "UI/ItemSlotDragDropOperation.h"
 
 bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
-	UStorageSlotDragDropOperation* Operation,
-	const EStorageSlotContainerType TargetType,
+	UItemSlotDragDropOperation* Operation,
+	const EItemSlotContainerType TargetType,
 	const int32 TargetIndex,
 	UBeekeeperHotbarComponent* TargetHotbarComponent,
 	UStorageBoxComponent* TargetStorageComponent)
 {
 	if (!Operation ||
-		Operation->SourceType == EStorageSlotContainerType::None ||
-		TargetType == EStorageSlotContainerType::None ||
+		Operation->SourceType == EItemSlotContainerType::None ||
+		TargetType == EItemSlotContainerType::None ||
 		Operation->SourceIndex == INDEX_NONE ||
 		TargetIndex == INDEX_NONE)
 	{
@@ -24,8 +24,8 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 		Operation->DragMode == EItemSlotDragMode::PartialStack &&
 		Operation->MoveQuantity > 0;
 
-	if (Operation->SourceType == EStorageSlotContainerType::Hotbar &&
-		TargetType == EStorageSlotContainerType::Hotbar)
+	if (Operation->SourceType == EItemSlotContainerType::Hotbar &&
+		TargetType == EItemSlotContainerType::Hotbar)
 	{
 		if (!Operation->SourceHotbarComponent || !TargetHotbarComponent ||
 			Operation->SourceHotbarComponent != TargetHotbarComponent)
@@ -41,8 +41,8 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 		return TargetHotbarComponent->SwapSlots(Operation->SourceIndex, TargetIndex);
 	}
 
-	if (Operation->SourceType == EStorageSlotContainerType::Hotbar &&
-		TargetType == EStorageSlotContainerType::Storage)
+	if (Operation->SourceType == EItemSlotContainerType::Hotbar &&
+		TargetType == EItemSlotContainerType::Storage)
 	{
 		if (!Operation->SourceHotbarComponent || !TargetStorageComponent)
 		{
@@ -64,8 +64,8 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 			TargetIndex);
 	}
 
-	if (Operation->SourceType == EStorageSlotContainerType::Storage &&
-		TargetType == EStorageSlotContainerType::Hotbar)
+	if (Operation->SourceType == EItemSlotContainerType::Storage &&
+		TargetType == EItemSlotContainerType::Hotbar)
 	{
 		if (!Operation->SourceStorageComponent || !TargetHotbarComponent)
 		{
@@ -87,8 +87,8 @@ bool UItemSlotDragDropLibrary::HandleItemSlotDrop(
 			TargetIndex);
 	}
 
-	if (Operation->SourceType == EStorageSlotContainerType::Storage &&
-		TargetType == EStorageSlotContainerType::Storage)
+	if (Operation->SourceType == EItemSlotContainerType::Storage &&
+		TargetType == EItemSlotContainerType::Storage)
 	{
 		if (!Operation->SourceStorageComponent || !TargetStorageComponent ||
 			Operation->SourceStorageComponent != TargetStorageComponent)

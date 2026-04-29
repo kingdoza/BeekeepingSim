@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "UI/StorageSlotDragDropTypes.h"
+#include "UI/ItemSlotDragDropTypes.h"
 #include "StorageBoxComponent.generated.h"
 
 class UBeekeeperHotbarComponent;

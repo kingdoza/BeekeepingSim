@@ -7,7 +7,7 @@
 #include "Character/BeekeeperCharacter.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Inventory/StorageBoxComponent.h"
-#include "UI/StorageSlotDragDropOperation.h"
+#include "UI/ItemSlotDragDropOperation.h"
 
 ABeekeeperController::ABeekeeperController()
 {
@@ -40,7 +40,7 @@ UBeekeeperHotbarComponent* ABeekeeperController::GetPlayerHotbarComponent() cons
 	return BeekeeperCharacter ? BeekeeperCharacter->GetBeekeeperHotbar() : nullptr;
 }
 
-void ABeekeeperController::SetActiveItemSlotDragOperation(UStorageSlotDragDropOperation* InOperation)
+void ABeekeeperController::SetActiveItemSlotDragOperation(UItemSlotDragDropOperation* InOperation)
 {
 	ActiveItemSlotDragOperation = InOperation;
 }

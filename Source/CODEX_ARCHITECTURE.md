@@ -1,5 +1,7 @@
 # Codex Agent — 행동 원칙
 
+> Legacy note: 이 파일은 리팩토링 전 에이전트 지침 기록이다. 현재 작업 기준은 프로젝트 루트의 `AGENTS.md`, `.md/0_ARCHITECTURE.md`, `.md/Architecture/*.md`를 우선한다. 아래 내용 중 `Source/ARCHITECTURE.md`를 정본으로 보는 규칙은 더 이상 현재 구조의 기준이 아니다.
+
 ---
 
 ## 최우선 규칙

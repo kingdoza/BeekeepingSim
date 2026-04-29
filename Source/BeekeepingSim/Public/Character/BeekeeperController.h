@@ -9,7 +9,7 @@
 class UInputMappingContext;
 class UBeekeeperHotbarComponent;
 class UStorageBoxComponent;
-class UStorageSlotDragDropOperation;
+class UItemSlotDragDropOperation;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeekeeperController : public APlayerController
@@ -31,13 +31,13 @@ public:
 	UBeekeeperHotbarComponent* GetPlayerHotbarComponent() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Item Slot|Drag Drop")
-	void SetActiveItemSlotDragOperation(UStorageSlotDragDropOperation* InOperation);
+	void SetActiveItemSlotDragOperation(UItemSlotDragDropOperation* InOperation);
 
 	UFUNCTION(BlueprintCallable, Category = "Item Slot|Drag Drop")
 	void ClearActiveItemSlotDragOperation();
 
 	UFUNCTION(BlueprintPure, Category = "Item Slot|Drag Drop")
-	UStorageSlotDragDropOperation* GetActiveItemSlotDragOperation() const { return ActiveItemSlotDragOperation; }
+	UItemSlotDragDropOperation* GetActiveItemSlotDragOperation() const { return ActiveItemSlotDragOperation; }
 
 	UFUNCTION(BlueprintCallable, Category = "Item Slot|Drag Drop")
 	bool AdjustActiveItemSlotDragQuantity(float WheelDelta);
@@ -51,7 +51,7 @@ protected:
 	TObjectPtr<UStorageBoxComponent> ActiveStorageComponent;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UStorageSlotDragDropOperation> ActiveItemSlotDragOperation;
+	TObjectPtr<UItemSlotDragDropOperation> ActiveItemSlotDragOperation;
 	
 	virtual void SetupInputComponent() override;
 };

@@ -16,35 +16,62 @@
 
 ## Responsibilities
 
-- PreviewFocus/EngagedFocus 전환 상태 관리
-- 라인트레이스 기반 포커스 타겟 탐지 및 프롬프트/아웃라인 제어
-- confirm/cancel 액션 실행과 카메라 블렌드 흐름 관리
-- 크로스헤어/커서 정책 브로드캐스트
+- PreviewFocus와 EngagedFocus 상태 관리
+- 라인트레이스 기반 focus target 탐지
+- prompt data, item rule, crosshair visibility 브로드캐스트
+- confirm/cancel/abort 흐름에서 FocusAction 실행 위임
+- focus target outline과 `IFocusInteractable` 이벤트 전달
+- anchored focus camera blend 및 cursor/input mode 정책 제공
 
 ## Key Classes
 
-- `UBeekeeperFocusComponent`: 포커스 상태 오너
-- `UFocusTargetComponent`: 타겟 프롬프트/아웃라인/규칙 데이터 오너
-- `UFocusActionComponent`: 상호작용 액션 베이스
-- `UAnchoredFocusActionComponent`: 앵커 이동/카메라 블렌드 액션
-- `UAnchoredFocusCursorActionComponent`: 앵커 액션 + 커서/UI 모드 정책
-- `IFocusInteractable`: 포커스 이벤트 인터페이스
+- `UBeekeeperFocusComponent`: focus 상태의 단일 오너
+- `UFocusTargetComponent`: prompt, item rule, outline, focus event dispatch 오너
+- `UFocusActionComponent`: confirm/cancel/abort 공통 액션 베이스
+- `UAnchoredFocusActionComponent`: 캐릭터 앵커 이동과 카메라 블렌드 액션
+- `UAnchoredFocusCursorActionComponent`: anchored action에 cursor/input mode 정책 추가
+- `IFocusInteractable`: actor-level focus 이벤트 인터페이스
+
+## State Model
+
+- `PreviewFocus`
+  - 매 Tick 카메라 전방 trace로 갱신한다.
+  - outline과 prompt만 활성화한다.
+  - hotbar item rule은 적용하지 않는다.
+- `EngagedFocus`
+  - confirm 성공 후 target/action을 고정한다.
+  - `OnFocusRuleChanged(true, Rule)`을 브로드캐스트한다.
+  - action 정책에 따라 crosshair visibility와 hotbar presentation mode가 바뀐다.
+  - action이 더 이상 engaged가 아니면 focus component가 정리한다.
+
+## Crosshair Policy
+
+- 크로스헤어 가시성의 단일 기준점은 `UBeekeeperFocusComponent`다.
+- 구체 action은 `WantsCrosshairHiddenWhileEngaged()`와 `ShouldRestoreCrosshairOnCancelStart()`로 정책만 제공한다.
+- UI/HUD/Blueprint는 action component를 직접 찾지 말고 `ShouldHideCrosshair()` 또는 `OnCrosshairVisibilityChanged`를 사용한다.
+- cancel 시작 시 즉시 복구가 필요한 action은 `ShouldRestoreCrosshairOnCancelStart()`를 true로 반환한다.
 
 ## Dependencies
 
 - Character
 - Camera
 - Inventory
-- UI
 
-## Refactoring Notes
+## Completed Refactoring Notes
 
-- `UFocusTargetComponent::bClearFocusOnConfirm` / `ShouldClearFocusOnConfirm()` 유지
-- 위 필드는 현재 정책 필드로 보존(미사용 여부는 추후 검토 대상)
-- concrete action 직접 결합 대신 `UFocusActionComponent` 경유 구조 유지
+- `UFocusTargetComponent::bClearFocusOnConfirm` 제거
+- `UFocusTargetComponent::ShouldClearFocusOnConfirm()` 제거
+- 제거 근거: C++/Content post-migration 검사에서 참조 없음
+
+## Design Notes
+
+- Focus system은 widget 인스턴스를 직접 참조하지 않는다.
+- Action component는 UI를 직접 제어하지 않고 정책을 반환하거나, 필요한 경우 PlayerController input mode만 적용한다.
+- `UAnchoredFocusCursorActionComponent`는 cursor/input mode를 담당하지만 crosshair 최종 브로드캐스트는 Focus component가 담당한다.
+- Focus target의 item rule은 Inventory/Hotbar가 구독하는 공통 정책 데이터다.
 
 ## Manual Review Points
 
-- engaged 진입/취소 시 크로스헤어 가시성 전환 타이밍
-- cancel 시 커서 복구와 입력 모드 복구 순서
-- `bClearFocusOnConfirm` 실제 사용 경로 존재 여부(향후 정리 후보)
+- confirm 실패 시 preview target 복원 여부
+- cancel/abort 시 crosshair, cursor, input mode, hotbar rule 복구 순서
+- FocusTargetComponent가 배치된 Blueprint/level 로드 시 missing property 경고 재발 여부

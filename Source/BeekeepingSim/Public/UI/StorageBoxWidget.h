@@ -13,7 +13,6 @@ class BEEKEEPINGSIM_API UStorageBoxWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void InitializeStorageWidget(UStorageBoxComponent* InStorageComponent, UBeekeeperHotbarComponent* InHotbarComponent);
 
 	UFUNCTION(BlueprintPure, Category = "Storage")
@@ -21,18 +20,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Storage")
 	UBeekeeperHotbarComponent* GetHotbarComponent() const { return HotbarComponent; }
-
-	UFUNCTION(BlueprintCallable, Category = "Storage")
-	bool MoveHotbarItemToStorage(int32 HotbarIndex, int32 StorageIndex);
-
-	UFUNCTION(BlueprintCallable, Category = "Storage")
-	bool MoveStorageItemToHotbar(int32 StorageIndex, int32 HotbarIndex);
-
-	UFUNCTION(BlueprintCallable, Category = "Storage")
-	bool SwapStorageSlots(int32 FromStorageIndex, int32 ToStorageIndex);
-
-	UFUNCTION(BlueprintCallable, Category = "Storage")
-	bool SwapHotbarAndStorage(int32 HotbarIndex, int32 StorageIndex);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Storage")
 	void OnStorageWidgetInitialized();

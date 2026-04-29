@@ -1,51 +1,35 @@
 # BeekeepingSim Architecture Map
 
-## 프로젝트 개요
+## 문서 기준
 
-- 이 문서는 `Source/BeekeepingSim/Public`, `Source/BeekeepingSim/Private` 기준의 **전체 지도 문서**다.
-- 상세 클래스 설명과 실행 흐름은 시스템별 문서로 분리한다.
-- 현재 리팩토링 기준 시스템 분할:
-  - Character
-  - Camera
-  - Focus
-  - Interaction
-  - Inventory
-  - UI
-  - WorldActors
-  - Core(문서 경계 전용)
+- 기준일: 2026-04-29
+- 상태: 1차 구조 리팩토링과 보류 리팩토링 완료 후 현재 구조 기준
+- 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
+- legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
 ## 분석 범위
 
-- 주 분석 범위: 위 7개 시스템(소스 파일 이동 대상 60개)
-- 문서 경계만 존재: Core
-- 분석 범위 밖 실제 코드(동일 모듈 내 병존):
-  - `Source/BeekeepingSim` 루트 템플릿/기본 클래스
-  - Variant 계열 코드
-- 리팩토링 중 분석 범위 밖 코드는 **include 경로 보정** 외 변경하지 않는다.
+- 주 분석 범위:
+  - `Source/BeekeepingSim/Public`
+  - `Source/BeekeepingSim/Private`
+- 현재 대상 C++ 파일 수: 60개
+  - Public header: 33개
+  - Private cpp/header: 27개
+- `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
+- `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
-## 시스템 문서 링크
+## 시스템 문서
 
-- [CharacterSystem.md](Architecture/CharacterSystem.md)
-- [CameraSystem.md](Architecture/CameraSystem.md)
-- [FocusSystem.md](Architecture/FocusSystem.md)
-- [InteractionSystem.md](Architecture/InteractionSystem.md)
-- [InventorySystem.md](Architecture/InventorySystem.md)
-- [UISystem.md](Architecture/UISystem.md)
-- [WorldActorsSystem.md](Architecture/WorldActorsSystem.md)
-- [CoreSystem.md](Architecture/CoreSystem.md)
+- [CharacterSystem.md](Architecture/CharacterSystem.md): 캐릭터 입력, 컨트롤러, 이동, held item 시각화
+- [CameraSystem.md](Architecture/CameraSystem.md): 이동/착지 기반 카메라 셰이크
+- [FocusSystem.md](Architecture/FocusSystem.md): PreviewFocus/EngagedFocus, 타겟, 액션, 크로스헤어 정책
+- [InteractionSystem.md](Architecture/InteractionSystem.md): pickup/storage 상호작용 액션
+- [InventorySystem.md](Architecture/InventorySystem.md): hotbar, storage, item model, stack 이동 계산
+- [UISystem.md](Architecture/UISystem.md): slot widget, storage widget, drag/drop payload와 routing
+- [WorldActorsSystem.md](Architecture/WorldActorsSystem.md): beehive, pickup, storage box actor 구성
+- [CoreSystem.md](Architecture/CoreSystem.md): 공통 문서 규칙, Core Redirect, 시스템 경계
 
-## 시스템 간 주요 의존 관계
-
-- Character -> Camera, Focus, Inventory, UI
-- Camera -> Character
-- Focus -> Character, Camera, Inventory, UI
-- Interaction -> Focus, Inventory, WorldActors
-- Inventory -> Focus(규칙 반영), UI
-- UI -> Inventory, Focus, Character(Controller drag 상태)
-- WorldActors -> Focus, Interaction, Inventory
-- Core -> 공통 규칙/문서 허브(전용 소스 없음)
-
-## 리팩토링 후 Source 구조 요약
+## Source 구조
 
 ```text
 Source/BeekeepingSim/
@@ -67,4 +51,72 @@ Source/BeekeepingSim/
     WorldActors/
 ```
 
-- `Core`는 문서상 경계만 유지하며 빈 소스 폴더를 만들지 않는다.
+- `Core`는 소스 폴더가 아니라 문서상 공통 경계다.
+- 시스템 하위 폴더명은 include 경로의 1차 네임스페이스 역할을 한다.
+
+## 시스템 간 책임 흐름
+
+- Character는 로컬 플레이어 입력과 컴포넌트 조립 지점이다.
+- Controller는 active storage와 active drag operation 같은 UI 세션 컨텍스트를 보관한다.
+- Focus는 현재 타겟, engaged action, prompt, item rule, crosshair visibility의 단일 상태 오너다.
+- Interaction은 FocusAction의 구체 구현이며 pickup/storage 같은 도메인별 상호작용을 실행한다.
+- Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
+- UI는 위젯 상태, drag payload, drop 라우팅, Blueprint 표시 API를 제공한다.
+- WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
+
+## 주요 의존 방향
+
+- Character -> Camera, Focus, Inventory, UI
+- Camera -> Character
+- Focus -> Character, Camera, Inventory
+- Interaction -> Focus, Inventory, UI, WorldActors
+- Inventory -> Focus, UI
+- UI -> Character, Inventory
+- WorldActors -> Focus, Interaction, Inventory
+
+의존 방향은 완전한 단방향 레이어가 아니라 Unreal 컴포넌트 조합을 반영한다. 새 기능을 추가할 때는 "상태 오너"와 "표시/입력 라우터"를 먼저 구분한다.
+
+## 현재 Blueprint 계약
+
+Blueprint native parent로 확인된 핵심 C++ 클래스:
+
+- `ABeekeeperCharacter`
+- `ABeekeeperController`
+- `ABeehive`
+- `AStorageBox`
+- `AItemPresentationActor`
+- `UItemSlotWidget`
+- `UItemVisualWidget`
+- `UStorageBoxWidget`
+
+현재 유지해야 하는 Blueprint API:
+
+- `UItemSlotWidget::InitializeSlotContext`
+- `UItemSlotWidget::ShouldHideItemVisualForCurrentDrag`
+- `UItemSlotWidget::IsPartialDragPreviewActive`
+- `UItemSlotWidget::GetPartialDragPreviewDisplayStackCount`
+- `UStorageBoxWidget::OnStorageWidgetInitialized`
+
+`ShouldHideItemVisualForCurrentDrag`는 legacy wrapper지만 `WBP_ItemSlot` 참조가 남아 있으므로 삭제하지 않는다.
+
+## 완료된 고위험 리팩토링
+
+- `UItemDragVisualWidget` 삭제
+- `UFocusTargetComponent::bClearFocusOnConfirm` 제거
+- `UFocusTargetComponent::ShouldClearFocusOnConfirm()` 제거
+- `UStorageBoxWidget`의 이동/스왑 wrapper API 제거
+- `UItemSlotWidget::GetDragPreviewDisplayStackCount()` 제거
+- Drag/Drop 타입명 정리:
+  - `UStorageSlotDragDropOperation` -> `UItemSlotDragDropOperation`
+  - `EStorageSlotContainerType` -> `EItemSlotContainerType`
+  - `StorageSlotDragDropOperation.*` -> `ItemSlotDragDropOperation.*`
+  - `StorageSlotDragDropTypes.h` -> `ItemSlotDragDropTypes.h`
+- `Config/DefaultEngine.ini` `[CoreRedirects]`에 class/enum redirect 추가
+
+## 현재 설계 원칙
+
+- C++ 상태 변경은 Inventory/Focus/Interaction 쪽 컴포넌트가 맡고, Widget은 입력과 표시 상태를 라우팅한다.
+- Blueprint API는 실제 사용 여부와 에셋 직렬화 참조를 분리해 판단한다.
+- UCLASS/USTRUCT/UENUM rename은 Core Redirect, Editor 재시작, Blueprint compile/save, post-migration scan까지 한 세트로 처리한다.
+- UI drag/drop은 `UItemSlotDragDropOperation` payload와 `UItemSlotDragDropLibrary` routing으로 통일한다.
+- Quick move 대상 선택은 현재 `UItemSlotWidget`에 남아 있다. 규칙이 복잡해지면 Inventory 쪽 서비스/helper로 이동하는 것이 다음 후보다.

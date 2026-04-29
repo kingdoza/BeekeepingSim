@@ -8,10 +8,10 @@
 #include "UI/ItemSlotDragDropLibrary.h"
 #include "UI/ItemVisualWidget.h"
 #include "Inventory/StorageBoxComponent.h"
-#include "UI/StorageSlotDragDropOperation.h"
+#include "UI/ItemSlotDragDropOperation.h"
 
 void UItemSlotWidget::InitializeSlotContext(
-	const EStorageSlotContainerType InContainerType,
+	const EItemSlotContainerType InContainerType,
 	const int32 InSlotIndex)
 {
 	ContainerType = InContainerType;
@@ -25,7 +25,7 @@ void UItemSlotWidget::RefreshFromData()
 	bIsSelected = false;
 	bIsActivated = false;
 
-	if (ContainerType == EStorageSlotContainerType::Hotbar)
+	if (ContainerType == EItemSlotContainerType::Hotbar)
 	{
 		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();
 		if (HotbarComponent)
@@ -39,7 +39,7 @@ void UItemSlotWidget::RefreshFromData()
 			}
 		}
 	}
-	else if (ContainerType == EStorageSlotContainerType::Storage)
+	else if (ContainerType == EItemSlotContainerType::Storage)
 	{
 		UStorageBoxComponent* StorageComponent = ResolveStorageComponentForSlot();
 		if (StorageComponent && StorageComponent->IsIndexValid(SlotIndex))
@@ -153,7 +153,7 @@ void UItemSlotWidget::ClearPartialDragPreviewState()
 	RefreshVisual();
 }
 
-void UItemSlotWidget::RefreshPartialDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation)
+void UItemSlotWidget::RefreshPartialDragPreviewFromOperation(UItemSlotDragDropOperation* Operation)
 {
 	if (!Operation || Operation->DragMode != EItemSlotDragMode::PartialStack || !ItemInstance || Operation->SourceSlotWidget != this)
 	{
@@ -185,22 +185,7 @@ bool UItemSlotWidget::ShouldHideItemVisualForCurrentDrag() const
 	return ShouldHideItemVisualForPartialDragPreview();
 }
 
-int32 UItemSlotWidget::GetDragPreviewDisplayStackCount() const
-{
-	if (!ItemInstance)
-	{
-		return 0;
-	}
-
-	if (!bIsDragSource || ActiveDragMode != EItemSlotDragMode::PartialStack)
-	{
-		return ItemInstance->GetStackCount();
-	}
-
-	return GetPartialDragPreviewDisplayStackCount();
-}
-
-void UItemSlotWidget::RefreshDragPreviewFromOperation(UStorageSlotDragDropOperation* Operation)
+void UItemSlotWidget::RefreshDragPreviewFromOperation(UItemSlotDragDropOperation* Operation)
 {
 	RefreshPartialDragPreviewFromOperation(Operation);
 }
@@ -241,8 +226,8 @@ void UItemSlotWidget::NativeOnDragDetected(
 		return;
 	}
 
-	UStorageSlotDragDropOperation* DragOperation = Cast<UStorageSlotDragDropOperation>(
-		UWidgetBlueprintLibrary::CreateDragDropOperation(UStorageSlotDragDropOperation::StaticClass()));
+	UItemSlotDragDropOperation* DragOperation = Cast<UItemSlotDragDropOperation>(
+		UWidgetBlueprintLibrary::CreateDragDropOperation(UItemSlotDragDropOperation::StaticClass()));
 	if (!DragOperation)
 	{
 		return;
@@ -260,8 +245,8 @@ void UItemSlotWidget::NativeOnDragDetected(
 	DragOperation->SourceType = ContainerType;
 	DragOperation->SourceIndex = SlotIndex;
 	DragOperation->ItemInstance = ItemInstance;
-	DragOperation->SourceHotbarComponent = ContainerType == EStorageSlotContainerType::Hotbar ? ResolveHotbarComponentForSlot() : nullptr;
-	DragOperation->SourceStorageComponent = ContainerType == EStorageSlotContainerType::Storage ? ResolveStorageComponentForSlot() : nullptr;
+	DragOperation->SourceHotbarComponent = ContainerType == EItemSlotContainerType::Hotbar ? ResolveHotbarComponentForSlot() : nullptr;
+	DragOperation->SourceStorageComponent = ContainerType == EItemSlotContainerType::Storage ? ResolveStorageComponentForSlot() : nullptr;
 	DragOperation->InitializeMoveQuantity();
 	DragOperation->SourceSlotWidget = this;
 
@@ -306,7 +291,7 @@ bool UItemSlotWidget::NativeOnDrop(
 	const FDragDropEvent& InDragDropEvent,
 	UDragDropOperation* InOperation)
 {
-	UStorageSlotDragDropOperation* DragOperation = Cast<UStorageSlotDragDropOperation>(InOperation);
+	UItemSlotDragDropOperation* DragOperation = Cast<UItemSlotDragDropOperation>(InOperation);
 	if (!DragOperation)
 	{
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
@@ -367,7 +352,7 @@ bool UItemSlotWidget::TryQuickMove()
 		return false;
 	}
 
-	if (ContainerType == EStorageSlotContainerType::Hotbar)
+	if (ContainerType == EItemSlotContainerType::Hotbar)
 	{
 		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();
 		if (!HotbarComponent)
@@ -423,7 +408,7 @@ bool UItemSlotWidget::TryQuickMove()
 		return ActiveStorage->MovePartialHotbarToStorage(HotbarComponent, SlotIndex, TargetStorageIndex, SourceQuantity).bSuccess;
 	}
 
-	if (ContainerType == EStorageSlotContainerType::Storage)
+	if (ContainerType == EItemSlotContainerType::Storage)
 	{
 		UStorageBoxComponent* StorageComponent = ResolveStorageComponentForSlot();
 		UBeekeeperHotbarComponent* HotbarComponent = ResolveHotbarComponentForSlot();

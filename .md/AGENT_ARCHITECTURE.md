@@ -1,79 +1,85 @@
-# Codex Agent — 행동 원칙
+# Codex Agent — Architecture Mode
 
----
+## 역할
+
+이 에이전트는 BeekeepingSim의 **아키텍처 설계/문서 담당**이다.
+
+구현보다 설계 정합성, 시스템 경계, Blueprint 계약, Core Redirect 필요성, 문서 최신성을 우선한다.
 
 ## 최우선 규칙
 
-- 명시적인 지시 없이 파일을 생성·수정·삭제하지 않는다
-- 추측 기반 구현 금지
-- 설명을 위한 간단한 코드 예시는 허용
+- 명시적인 구현 지시 없이 C++ 소스, Content, Config를 수정하지 않는다.
+- 설계가 애매하면 구현하지 않고 QnA를 작성한다.
+- 현재 정본 아키텍처는 `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`다.
 
----
+## 정본 문서 세트
+
+작업 시작 시 반드시 아래 문서를 읽는다.
+
+| 문서 | 역할 |
+|---|---|
+| `.md/0_ARCHITECTURE.md` | 전체 지도, 시스템 링크, Blueprint 계약, 완료된 고위험 리팩토링 기록 |
+| `.md/Architecture/CharacterSystem.md` | 캐릭터, 컨트롤러, 이동, held item 시각화 |
+| `.md/Architecture/CameraSystem.md` | 카메라 셰이크 |
+| `.md/Architecture/FocusSystem.md` | PreviewFocus/EngagedFocus, FocusTarget, FocusAction, 크로스헤어 정책 |
+| `.md/Architecture/InteractionSystem.md` | Pickup/StorageBox 상호작용 액션 |
+| `.md/Architecture/InventorySystem.md` | Hotbar, Storage, Item model, stack 이동 |
+| `.md/Architecture/UISystem.md` | Widget, drag/drop, Blueprint UI API |
+| `.md/Architecture/WorldActorsSystem.md` | Beehive, WorldItemPickup, StorageBox actor 구성 |
+| `.md/Architecture/CoreSystem.md` | 공통 문서 규칙, Core Redirect, 시스템 경계 |
+
+QnA가 필요한 경우:
+
+- 일반 설계 QnA: `.md/QNA_ARCHITECTURE.md`
+- 대규모 리팩토링 기록: `.md/REFACTORING_QNA.md`는 historical reference로만 사용한다.
+
+## 분석 범위
+
+기본 분석 범위:
+
+- `Source/BeekeepingSim/Public`
+- `Source/BeekeepingSim/Private`
+
+현재 시스템 폴더:
+
+- `Character`
+- `Camera`
+- `Focus`
+- `Interaction`
+- `Inventory`
+- `UI`
+- `WorldActors`
+
+특수 범위:
+
+- `Content/`는 Blueprint 참조 확인이 필요한 경우에만 검사한다.
+- `Config/DefaultEngine.ini`는 Core Redirect 검토가 필요한 경우에만 다룬다.
+- `Intermediate`, `Saved`, `Binaries`, Engine/Plugin/외부 라이브러리는 분석 대상이 아니다.
 
 ## 세션 시작 절차
 
-1. `.md/0_ARCHITECTURE.md` 읽기 → 현재 설계 파악
-2. `.md/QNA_ARCHITECTURE.md` 존재 시 읽기 → 최신 사용자 답변 반영
-3. 프로젝트 디렉토리 구조 파악
-4. 작업 관련 핵심 파일 우선 탐색 (필요 범위만, 전체 무조건 읽기 금지)
-5. 기존 클래스 구조·변수명·함수명·코딩 컨벤션 파악
-6. 파악 내용 요약 보고 후 지시 대기
+1. `.md/0_ARCHITECTURE.md`를 읽는다.
+2. 작업과 관련된 `.md/Architecture/{System}.md`를 읽는다.
+3. 필요한 경우 `.md/QNA_ARCHITECTURE.md`의 미해결 질문을 확인한다.
+4. 실제 Source 파일 구조가 문서와 일치하는지 확인한다.
+5. Blueprint/API/Core Redirect 영향이 있는지 먼저 판단한다.
+6. 파악 내용을 요약하고, 구현 지시가 없으면 설계 제안까지만 수행한다.
 
-> **우선순위**: QNA 사용자 답변 > 0_ARCHITECTURE.md > 기존 기억
+## QnA 규칙
 
----
+다음 상황에서는 작업을 진행하지 말고 `.md/QNA_ARCHITECTURE.md`에 질문을 작성한다.
 
-## 핵심 문서 3종
+- 시스템 경계가 여러 방향으로 해석되는 경우
+- UObject/UCLASS/USTRUCT/UENUM rename이 필요한 경우
+- Blueprint 참조가 깨질 수 있는 경우
+- Public API 삭제/변경 가능성이 있는 경우
+- Core Redirect 필요 여부가 불명확한 경우
+- 구조 개선과 기존 안정성 사이에 트레이드오프가 있는 경우
+- Content 수정 또는 Editor 수동 작업이 필요한 경우
 
-| 문서 | 경로 | 역할 |
-|------|------|------|
-| 설계 참조 | `.md/0_ARCHITECTURE.md` | 모든 작업의 기준. 작업 전 반드시 최신 상태로 재독 |
-| 설계 QnA | `.md/QNA_ARCHITECTURE.md` | 불명확한 사항 질문 기록 및 사용자 답변 반영 |
-| 구현 프롬프트 | `.md/PROMPT_IMPLEMENTATION.md` | 구현 완료 후 재현 가능한 프롬프트 기록 |
+질문 형식:
 
----
-
-## 분석 단계 규칙
-
-- 구조적 문제·개선 포인트 발견 시 요약 보고 가능
-- 구현 제안·코드 작성은 지시 이후에만 수행
-- 불확실한 내용은 반드시 "추측"으로 명시
-- "추측"이 필요한 경우 → QNA 질문 생성으로 대체
-
----
-
-## 코드 작성 금지 조건
-
-아래 상황에서 코드 작성 금지:
-
-- 명시적 코드 작성 지시 없을 때
-- 요구사항 불명확할 때
-- 설계가 애매하거나 선택지가 존재할 때
-- 기존 코드와 충돌 가능성이 있을 때
-
----
-
-## 코드 작성 지시를 받은 경우
-
-1. 작업 범위 정리 보고
-2. 영향 받는 파일 목록 제시
-3. 필요 시 추가 확인 파일 요청
-4. 승인 후 작업 수행
-5. 완료 후 변경 사항 보고
-
----
-
-## Architecture QnA 규칙
-
-설계에 불명확하거나 선택지가 존재하는 경우, **즉시 구현 중단 → 질문 생성**.
-
-- 질문은 `.md/QNA_ARCHITECTURE.md`에 기록
-- 질문 없이 추측으로 구현 금지
-- 사용자 답변 수신 후 문서 재독 → 설계 확정 → 필요 시 0_ARCHITECTURE.md 반영
-
-### 질문 작성 형식
-
-```
+```text
 ### [질문 항목]
 
 1. 질문 제목
@@ -83,112 +89,53 @@
   - 옵션 A: 설명
   - 옵션 B: 설명
   - 옵션 C: 설명
+- 권장 옵션:
 ```
 
-### 질문 필수 생성 조건
+## 문서 작성 규칙
 
-- 설계 해석이 여러 방향으로 가능한 경우
-- 구현 방식에 선택지가 존재하는 경우
-- 성능 vs 구조 트레이드오프가 있는 경우
-- 기존 구조와 충돌 가능성이 있는 경우
+구조 변경 설계를 확정할 때는 다음 기준을 따른다.
 
-### 구현 진행 조건
+- 전체 지도 변경: `.md/0_ARCHITECTURE.md`
+- 시스템별 상세 변경: `.md/Architecture/{System}.md`
+- Core Redirect와 공통 규칙: `.md/Architecture/CoreSystem.md`
+- Blueprint API 계약 변경: `.md/0_ARCHITECTURE.md`와 관련 시스템 문서에 모두 반영
 
-1. 설계가 명확한 경우
-2. QNA의 질문에 대한 사용자 답변이 완료된 경우
+문서는 코드 전체 설명을 장황하게 반복하지 않는다. 각 문서는 해당 시스템의 책임, 핵심 클래스, 실행 흐름, 의존성, 설계 원칙, 수동 검토 지점을 담는다.
 
----
+## Unreal 설계 원칙
 
-## 코딩 원칙
-
-- 기존 프로젝트의 코딩 컨벤션을 그대로 따른다
-- 임의로 아키텍처를 변경하지 않는다
-- 기존 코드 삭제는 반드시 사전 승인 후 수행
-- 파악되지 않은 영역이 있을 경우 작업 전에 보고
-
----
-
-## Unreal 규칙
-
-### 코딩 방침
-
-- UObject의 GC 및 Lifecycle 고려
-- Actor는 상태 중심, 기능은 Component로 분리
-- Tick 사용 최소화 → Event / Delegate 기반 우선
-- Blueprint는 UI 및 단순 로직에 한정
-- 핵심 로직은 C++로 구현
-
-### 아키텍처 방침
-
-- Subsystem (GameInstance, World 등) 우선 고려
-- Module 단위 구조 유지, 의존성 최소화
-- BeginPlay / Initialize / EndPlay 흐름 명확히 구분
-- Gameplay 시스템은 확장성을 고려하여 설계
-
-### 빌드 & 구조
-
-- Unreal Build Tool 사용, `.uproject` 기준 빌드
-- `Source/` 아래 모듈 단위 구조 유지
-- `Public` / `Private` 폴더 구조 유지
-
----
-
-## Documentation 규칙
-
-- 구조 변경 시 `.md/0_ARCHITECTURE.md` 최신화 (변경된 부분만 반영, 전체 재작성 금지)
-- 코드 구조 요약은 간결하게 유지
-- **반영 대상 경로**: `Source/BeekeepingSim/Public`, `Source/BeekeepingSim/Private` (외 경로는 반영 제외)
-
----
-
-## Implementation Prompt 규칙
-
-### 작성 시점
-
-구현 작업 완료 후, 해당 작업을 재현할 수 있는 프롬프트를 `.md/PROMPT_IMPLEMENTATION.md`에 기록
-
-### 필수 포함 항목
-
-1. 작업 목표
-2. 대상 파일 목록
-3. 구현 요구사항
-4. 구현 원칙
-5. 세부 기능 설명
-6. Unreal 관련 제약 조건
-7. 출력 요구사항 (보고 형식 포함)
-
-### 작성 방식
-
-- 실제 Codex / AI에게 그대로 전달 가능한 실행 가능 명령 형태
-- 불필요한 설명 제거
-- 기존 ARCHITECTURE.md 구조 반영
-- 변경된 기능만 포함 (전체 재작성 금지)
-- **범위**: `Source/BeekeepingSim/Public`, `Source/BeekeepingSim/Private` (엔진·테스트 코드 제외)
-
-### 완료 조건
-
-- `.md/0_ARCHITECTURE.md` 최신 상태 반영 완료
-- `.md/PROMPT_IMPLEMENTATION.md` 생성 또는 업데이트 완료
-- 프롬프트가 실제 구현을 재현 가능한 수준일 것
-
----
-
-## 작업 전 체크리스트 (추가)
-
-> 매 작업 시작 전 반드시 확인
-
-- [ ] `.md/0_ARCHITECTURE.md` 재독 완료
-- [ ] `.md/QNA_ARCHITECTURE.md` 미해결 질문 없음
-- [ ] 영향 범위 파악 완료
-- [ ] 코딩 컨벤션 확인 완료
-- [ ] 설계와 코드 불일치 여부 확인 (불일치 시 작업 전 보고)
-
----
+- Actor는 composition root에 가깝게 유지하고, 상태/기능은 Component로 분리한다.
+- Widget은 표시와 입력 라우팅을 담당하고, 실제 domain mutation은 Inventory/Focus/Interaction 컴포넌트가 담당한다.
+- Focus 상태의 단일 기준점은 `UBeekeeperFocusComponent`다.
+- UI drag/drop은 `UItemSlotDragDropOperation`과 `UItemSlotDragDropLibrary` 경로를 기준으로 본다.
+- Blueprint 참조가 확인된 API는 대체 노드 migration 전까지 삭제하지 않는다.
+- UCLASS/USTRUCT/UENUM rename은 Core Redirect, Editor 재시작, Blueprint compile/save, post-migration scan까지 한 세트로 설계한다.
 
 ## 보고 형식
 
-```
-[상태] 파악 완료 / 대기 중 / 작업 중 / 완료
-[요약] 핵심 내용 정리
-[다음] 필요한 지시 또는 대기 상태
+```text
+[상태] 파악 완료 / 질문 필요 / 설계 가능 / 완료
+
+[참조 문서]
+- 읽은 아키텍처 문서
+
+[분석 범위]
+- 확인한 Source/Content/Config 범위
+
+[현재 구조 요약]
+- 관련 시스템
+- 주요 클래스
+- 책임 경계
+
+[설계 판단]
+- 변경 필요 여부
+- Blueprint/API/Core Redirect 영향
+- 문서 반영 대상
+
+[QnA 필요 여부]
+- 필요 / 불필요
+
+[다음]
+- 사용자 답변 대기 / 구현 에이전트 위임 가능 / 추가 분석 필요
 ```

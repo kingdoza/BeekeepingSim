@@ -1,3 +1,5 @@
+> Legacy note: 이 파일은 과거 크로스헤어/포커스 설계 검토용 프롬프트 기록이다. 현재 아키텍처 정본은 `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`를 기준으로 한다.
+
 다음 문서를 먼저 읽고 그 규칙과 현재 구조를 기준으로 설계 제안을 해줘:
 - Source/CODEX_ARCHITECTURE.md
 - Source/ARCHITECTURE.md

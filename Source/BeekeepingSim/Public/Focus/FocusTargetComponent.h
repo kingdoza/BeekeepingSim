@@ -57,9 +57,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Focus")
 	const FFocusItemRule& GetItemRule() const { return FocusItemRule; }
 
-	UFUNCTION(BlueprintPure, Category = "Focus")
-	bool ShouldClearFocusOnConfirm() const { return bClearFocusOnConfirm; }
-
 	void NotifyFocusEnter(ABeekeeperCharacter* InteractingCharacter);
 
 	void NotifyFocusExit(ABeekeeperCharacter* InteractingCharacter);
@@ -84,9 +81,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
 	FFocusItemRule FocusItemRule;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
-	bool bClearFocusOnConfirm = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus|Outline")
 	bool bUseCustomDepthOutline = true;

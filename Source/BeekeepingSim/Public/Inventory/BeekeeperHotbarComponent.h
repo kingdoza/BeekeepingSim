@@ -7,7 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Inventory/HotbarPresentationTypes.h"
 #include "Focus/FocusTargetComponent.h"
-#include "UI/StorageSlotDragDropTypes.h"
+#include "UI/ItemSlotDragDropTypes.h"
 #include "BeekeeperHotbarComponent.generated.h"
 
 class ABeekeeperCharacter;

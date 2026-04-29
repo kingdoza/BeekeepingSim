@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/DragDropOperation.h"
-#include "UI/StorageSlotDragDropTypes.h"
-#include "StorageSlotDragDropOperation.generated.h"
+#include "UI/ItemSlotDragDropTypes.h"
+#include "ItemSlotDragDropOperation.generated.h"
 
 class UBeekeeperHotbarComponent;
 class UStorageBoxComponent;
@@ -21,7 +21,7 @@ enum class EItemSlotDragMode : uint8
 };
 
 UCLASS(BlueprintType, Blueprintable)
-class BEEKEEPINGSIM_API UStorageSlotDragDropOperation : public UDragDropOperation
+class BEEKEEPINGSIM_API UItemSlotDragDropOperation : public UDragDropOperation
 {
 	GENERATED_BODY()
 
@@ -39,7 +39,7 @@ public:
 	FItemDragMoveQuantityChangedSignature OnMoveQuantityChanged;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
-	EStorageSlotContainerType SourceType = EStorageSlotContainerType::None;
+	EItemSlotContainerType SourceType = EItemSlotContainerType::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Drag Drop")
 	int32 SourceIndex = INDEX_NONE;
