@@ -1,118 +1,109 @@
-# 코드 리뷰 요청 프롬프트 (1~6회차 통합)
+# 코드 리뷰 요청 프롬프트 (8단계 리팩토링 검증)
 
-아래 변경사항을 Unreal Engine 5.7 C++/UMG 기준으로 리뷰하라.
+아래 변경은 **완료된 8단계 리팩토링 구현**이다.  
+Unreal Engine 5.7 C++ 기준으로 **동작 회귀/구조 준수/리팩토링 규칙 위반 여부**를 리뷰하라.
 
-리뷰 목표:
-- 기능 정확성
-- 회귀 위험
-- 객체 수명/소유권(Outer, GC) 안정성
-- 입력 정책 충돌 여부
-- 책임 분리(Widget vs Logic Component)
+## 리뷰 목표
 
-리뷰 스타일:
-- 버그/리스크를 심각도 순으로 제시
-- 각 이슈에 파일/함수 기준 근거 포함
-- 필요한 경우 재현 시나리오와 수정 제안 포함
+1. 파일 이동/폴더 구조 재구성이 계획대로 반영됐는지
+2. include 경로 정리가 완전한지 (`Public/...` 잔여 금지)
+3. 클래스명/UCLASS/USTRUCT/UENUM/public Blueprint API 변경 여부
+4. Inventory 스택 이동 중복 통합이 **동작 변경 없이** 수행됐는지
+5. 지정된 주석 정리가 정확히 반영됐는지
+6. Architecture 문서 분할이 요구 형식을 충족하는지
+7. 빌드 가능 상태 유지 여부(UBT)
 
 ---
 
-## 리뷰 대상 범위
+## 고정 제약(리뷰 기준)
 
-### 핵심 코드
+- 클래스명/파일명 rename 금지
+- public Blueprint API 삭제/시그니처 변경 금지
+- `UItemDragVisualWidget` 유지
+- `UFocusTargetComponent::bClearFocusOnConfirm` 유지
+- `ShouldClearFocusOnConfirm()` 유지
+- `UStorageSlotDragDropOperation`, `EStorageSlotContainerType`, `FItemSlotMoveResult` 이름 유지
+- 분석 범위 밖 C++ 수정은 include 보정만 허용
+- 동작 변경 전제 리팩토링 금지
 
-- `Source/BeekeepingSim/Public/FocusActionComponent.h`
-- `Source/BeekeepingSim/Private/FocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/StorageBoxFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/StorageBoxFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/BeekeeperController.h`
-- `Source/BeekeepingSim/Private/BeekeeperController.cpp`
-- `Source/BeekeepingSim/Private/BeekeeperCharacter.cpp`
-- `Source/BeekeepingSim/Public/BeekeeperHotbarComponent.h`
-- `Source/BeekeepingSim/Private/BeekeeperHotbarComponent.cpp`
-- `Source/BeekeepingSim/Public/ItemDefinition.h`
-- `Source/BeekeepingSim/Public/ItemInstance.h`
-- `Source/BeekeepingSim/Private/ItemInstance.cpp`
-- `Source/BeekeepingSim/Public/StorageSlotDragDropTypes.h`
-- `Source/BeekeepingSim/Public/StorageSlotDragDropOperation.h`
-- `Source/BeekeepingSim/Private/StorageSlotDragDropOperation.cpp`
-- `Source/BeekeepingSim/Public/ItemSlotWidget.h`
-- `Source/BeekeepingSim/Private/ItemSlotWidget.cpp`
-- `Source/BeekeepingSim/Public/ItemVisualWidget.h`
-- `Source/BeekeepingSim/Private/ItemVisualWidget.cpp`
-- `Source/BeekeepingSim/Public/ItemDragVisualWidget.h`
-- `Source/BeekeepingSim/Private/ItemDragVisualWidget.cpp`
-- `Source/BeekeepingSim/Public/StorageBoxComponent.h`
-- `Source/BeekeepingSim/Private/StorageBoxComponent.cpp`
-- `Source/BeekeepingSim/Public/ItemSlotDragDropLibrary.h`
-- `Source/BeekeepingSim/Private/ItemSlotDragDropLibrary.cpp`
-- `Source/BeekeepingSim/BeekeepingSim.Build.cs`
+---
 
-### 문서
+## 리뷰 대상 핵심 경로
 
+- `Source/BeekeepingSim/Public/{Character,Camera,Focus,Interaction,Inventory,UI,WorldActors}/**/*.h`
+- `Source/BeekeepingSim/Private/{Character,Camera,Focus,Interaction,Inventory,UI,WorldActors}/**/*.{h,cpp}`
+- `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.h`
+- `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
 - `.md/0_ARCHITECTURE.md`
-- `.md/PROMPT_IMPLEMENTATION.md`
+- `.md/Architecture/*.md`
 
 ---
 
-## 회차별 기대 동작(검증 기준)
+## 단계별 검증 포인트
 
-1) StorageFocus 입력 정책
-- StorageFocus engaged 시 기존 hotbar 선택 해제
-- engaged 중 숫자키/wheel hotbar 선택 차단
-- 다른 focus action 정책과 불필요하게 결합되지 않을 것
+### 1~3단계: 구조 이동
+- 60개 대상 파일이 시스템 폴더로 이동되었는지
+- `git mv` 결과로 추적 가능한 rename 상태인지
+- `Core` 소스 폴더가 생성되지 않았는지
 
-2) Active Context + Wheel 라우팅
-- controller 에 active storage / active drag op 등록·해제 일관성
-- drag 중 wheel 입력이 hotbar 순환으로 누수되지 않을 것
+### 4단계: include 정리
+- `#include "Public/...` 잔여가 없는지
+- 이동된 public 헤더가 `System/File.h` 형식으로 참조되는지
+- `.generated.h` 규칙(마지막 include) 위반이 없는지
 
-3) Durability + ItemVisualWidget
-- durability getter 안전성(0 division, null definition)
-- ItemVisualWidget null-safe fallback
-- ItemVisualWidget/ItemDragVisualWidget 이 표시 책임만 갖는지
+### 5단계: Inventory helper 통합
+- `TryAcquireItem`, partial move 계열 API 시그니처 유지
+- `ItemStackMoveUtils`가 계산/생성 공통화만 담당하는지
+- delegate broadcast/reevaluate 순서가 기존과 동일한지
+- outer 소유권 규칙 유지:
+  - Hotbar 생성 아이템 outer = `UBeekeeperHotbarComponent`
+  - Storage 생성 아이템 outer = `UStorageBoxComponent`
+- QuickMove 대상 선택 우선순위(merge 가능 슬롯 -> 빈 슬롯) 회귀 없는지
 
-4) DragDropOperation + ItemSlotWidget 기본 입력
-- LMB FullStack / RMB PartialStack 초기 MoveQuantity=1
-- source visual hide/restore 경로 누락 없는지
+### 6단계: 주석 정리
+- 아래만 제거됐는지, 그 외 의미 있는 주석 손상 없는지
+  - `BeekeeperCharacter.cpp` 템플릿/예시 주석
+  - `BeekeeperHotbarComponent.cpp` 구 `HandleWheelInput` 주석 코드
+  - `BeekeeperMovementComponent.cpp` 주석 코드/예시 주석
+  - `BeekeeperCameraShakeComponent.h` `IdleSpeedThreshold` 추측 주석
+- 파일 상단 copyright 주석 유지 여부
+- `ItemSlotWidget.h` compatibility wrapper 주석 유지 여부
 
-5) Partial Move API + Drop Router
-- `FullStack` 기존 경로 회귀 없음
-- `PartialStack`에서 swap 금지, merge/split 규칙 준수
-- source 0 수량 시 slot clear
-- split 생성 인스턴스 Outer 가 target container 소유인지
-- merge overflow 시 빈 슬롯 확장 로직의 일관성
+### 7단계: 문서 분할
+- `.md/0_ARCHITECTURE.md`가 지도 문서로 축소되었는지
+- `.md/Architecture/` 8개 문서 존재 여부
+- 각 문서 필수 섹션 존재 여부:
+  - `Scope`
+  - `Responsibilities`
+  - `Key Classes`
+  - `Dependencies`
+  - `Refactoring Notes`
+  - `Manual Review Points`
+- `CoreSystem.md`에 “Core 전용 source 파일 없음” 명시 여부
+- `FocusSystem.md`, `UISystem.md`의 유지/미래검토 메모 반영 여부
 
-6) Double Click Quick Move
-- LMB double click만 quick move 처리
-- Hotbar -> ActiveStorage, Storage -> Hotbar 동작
-- 대상 슬롯 선택 우선순위(merge 가능 슬롯 -> 빈 슬롯)
-- active storage 없음 시 실패 처리
-
----
-
-## 특히 봐야 할 리스크 포인트
-
-- `UItemSlotWidget`:
-  - `NativeOnMouseButtonDown`, `NativeOnMouseButtonDoubleClick`
-  - drag delegate(`OnDrop`, `OnDragCancelled`) 중복/누락 처리
-  - drag 성공/실패/취소 케이스별 source visual 복구 보장
-- `UStorageBoxComponent` partial move 계열:
-  - hotbar/storage 간 이동 시 Broadcast 호출 타이밍
-  - 동일 프레임 다중 `SetSlotItem()` 호출 시 과도한 브로드캐스트
-  - `ReevaluateSlots()` 호출 경로 일관성
-- `UBeekeeperHotbarComponent::MovePartialToSlot()`:
-  - target full + 빈 슬롯 fallback 로직의 정책 적합성
-  - source/target 동일 index 방어
-- `UItemSlotDragDropLibrary::HandleItemSlotDrop()`:
-  - source/target component 동일성 검사 정확성
-  - unsupported 조합 false 반환 일관성
-- Build 설정:
-  - `SlateCore` 추가가 링크 문제 해결 외 부작용 없는지
+### 8단계: 검증 결과
+- UBT 빌드 성공 여부(`BeekeepingSimEditor Win64 Development`)
+- 빌드 실패 시 include/전방선언/헤더 추가 범위 밖 수정이 없는지
 
 ---
 
-## 리뷰 결과 출력 형식 요청
+## 리뷰 시 권장 확인 명령
 
-1. Findings (High -> Medium -> Low)
-2. Open Questions / Assumptions
-3. Regression Test Checklist
-4. Optional Refactor Suggestions (비필수, 동작 변경 없는 범위)
+- `rg '#include "Public/' Source/BeekeepingSim`
+- `rg 'class BEEKEEPINGSIM_API UStorageSlotDragDropOperation|enum class EStorageSlotContainerType|struct FItemSlotMoveResult' Source/BeekeepingSim`
+- `git diff --name-status`
+- `git diff -- Source/BeekeepingSim/Private/Inventory/BeekeeperHotbarComponent.cpp`
+- `git diff -- Source/BeekeepingSim/Private/Inventory/StorageBoxComponent.cpp`
+
+---
+
+## 출력 형식
+
+1. **Findings (Severity 순: High -> Medium -> Low)**  
+   - 각 항목에 파일/함수/라인 근거 포함
+2. **Open Questions / Assumptions**
+3. **Regression Risk Checklist**
+4. **Pass/Fail 요약**
+
+이슈가 없으면 “치명/중간 이슈 없음”을 명시하고, 남은 테스트 공백만 적어라.

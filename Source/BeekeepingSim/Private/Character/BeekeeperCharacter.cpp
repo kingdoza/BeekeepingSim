@@ -1,0 +1,353 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+
+#include "Character/BeekeeperCharacter.h"
+#include "Camera/BeekeeperCameraShakeComponent.h"
+#include "Character/BeekeeperController.h"
+#include "Focus/BeekeeperFocusComponent.h"
+#include "Character/BeekeeperHeldItemVisualizerComponent.h"
+#include "Inventory/BeekeeperHotbarComponent.h"
+#include "Character/BeekeeperMovementComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "EnhancedInputComponent.h"
+#include "InputActionValue.h"
+
+
+ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitializer) 
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UBeekeeperMovementComponent>(ACharacter::CharacterMovementComponentName))
+{
+	BeekeeperMovement = Cast<UBeekeeperMovementComponent>(GetCharacterMovement());
+	BeekeeperCameraShake = CreateDefaultSubobject<UBeekeeperCameraShakeComponent>(TEXT("BeekeeperCameraShake"));
+	BeekeeperFocus = CreateDefaultSubobject<UBeekeeperFocusComponent>(TEXT("BeekeeperFocus"));
+	BeekeeperHotbar = CreateDefaultSubobject<UBeekeeperHotbarComponent>(TEXT("BeekeeperHotbar"));
+	BeekeeperHeldItemVisualizer = CreateDefaultSubobject<UBeekeeperHeldItemVisualizerComponent>(TEXT("BeekeeperHeldItemVisualizer"));
+	
+	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("First Person Camera"));
+	FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
+	FirstPersonCamera->SetRelativeLocationAndRotation(FVector(-2.8f, 5.89f, 0.0f), FRotator(0.0f, 90.0f, -90.0f));
+	FirstPersonCamera->bUsePawnControlRotation = true;
+	
+	GetMesh()->SetOwnerNoSee(true);
+	GetMesh()->CastShadow = false;
+	GetMesh()->bVisibleInReflectionCaptures = false;
+	GetMesh()->bVisibleInRayTracing = false;
+	GetMesh()->bHiddenInGame = true;
+	GetMesh()->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::WorldSpaceRepresentation;
+	GetMesh()->MarkRenderStateDirty();
+	
+	GetCapsuleComponent()->SetCapsuleSize(34, 96);
+	
+	GetCharacterMovement()->BrakingDecelerationFalling = 1500;
+	GetCharacterMovement()->AirControl = 0.5f;
+}
+
+void ABeekeeperCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (FirstPersonCamera)
+	{
+		DefaultFirstPersonCameraRelativeLocation = FirstPersonCamera->GetRelativeLocation();
+		DefaultFirstPersonCameraRelativeRotation = FirstPersonCamera->GetRelativeRotation();
+	}
+}
+
+void ABeekeeperCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+}
+
+void ABeekeeperCharacter::MoveInput(const FInputActionValue& Value)
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	FVector2D MovementValue = Value.Get<FVector2D>();
+	FVector2D ScaledMovementValue = MovementValue * MoveSpeedScale;
+	DoMove(ScaledMovementValue.X, ScaledMovementValue.Y);
+}
+
+void ABeekeeperCharacter::LookInput(const FInputActionValue& Value)
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	FVector2D LookAxisValue = Value.Get<FVector2D>();
+	FVector2D ScaledLookAxisValue = LookAxisValue * LookSpeedScale;
+	DoLook(ScaledLookAxisValue.X, ScaledLookAxisValue.Y);
+}
+
+void ABeekeeperCharacter::DoMove(float Right, float Forward)
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	if (GetController())
+	{
+		AddMovementInput(GetActorRightVector(), Right);
+		AddMovementInput(GetActorForwardVector(), Forward);
+	}
+}
+	
+void ABeekeeperCharacter::DoLook(float Yaw, float Pitch)
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	if (GetController())
+	{
+		AddControllerYawInput(Yaw);
+		AddControllerPitchInput(Pitch);
+	}
+}
+
+void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::MoveInput);
+		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::LookInput);
+		
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::DoJumpStart);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::DoJumpEnd);
+		
+		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::SprintStartInput);
+		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::SprintReleaseInput);
+
+		if (FocusConfirmAction)
+		{
+			EnhancedInputComponent->BindAction(FocusConfirmAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusConfirmInput);
+		}
+
+		if (FocusCancelAction)
+		{
+			EnhancedInputComponent->BindAction(FocusCancelAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusCancelInput);
+		}
+
+		if (HotbarSlotAction)
+		{
+			EnhancedInputComponent->BindAction(HotbarSlotAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::HotbarSlotInput);
+		}
+
+		if (HotbarWheelAction)
+		{
+			EnhancedInputComponent->BindAction(HotbarWheelAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::HotbarWheelInput);
+		}
+	}
+}
+
+void ABeekeeperCharacter::SprintStartInput()
+{
+	if (bIsFocusInteractionInputLocked || !BeekeeperMovement)
+	{
+		return;
+	}
+
+	if (bIsSprintToggle)
+	{
+		BeekeeperMovement->SwitchSprinting();
+	}
+	else
+	{
+		BeekeeperMovement->StartSprinting();
+	}
+}
+
+void ABeekeeperCharacter::SprintReleaseInput()
+{
+	if (bIsFocusInteractionInputLocked || bIsSprintToggle || !BeekeeperMovement)
+	{
+		return;
+	}
+
+	BeekeeperMovement->StopSprinting();
+}
+
+void ABeekeeperCharacter::FocusConfirmInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->ConfirmFocus();
+}
+
+void ABeekeeperCharacter::FocusCancelInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->CancelFocus();
+}
+
+void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)
+{
+	if (!BeekeeperHotbar)
+	{
+		return;
+	}
+
+	const int32 SlotNumber = FMath::RoundToInt(Value.Get<float>());
+	if (SlotNumber <= 0)
+	{
+		return;
+	}
+
+	BeekeeperHotbar->HandleSlotInput(SlotNumber - 1);
+}
+
+void ABeekeeperCharacter::HotbarWheelInput(const FInputActionValue& Value)
+{
+	const float WheelValue = Value.Get<float>();
+	if (FMath::IsNearlyZero(WheelValue))
+	{
+		return;
+	}
+
+	if (ABeekeeperController* BeekeeperController = Cast<ABeekeeperController>(GetController()))
+	{
+		if (BeekeeperController->GetActiveItemSlotDragOperation())
+		{
+			BeekeeperController->AdjustActiveItemSlotDragQuantity(WheelValue);
+			return;
+		}
+	}
+
+	if (!BeekeeperHotbar)
+	{
+		return;
+	}
+
+	BeekeeperHotbar->HandleWheelInput(WheelValue > 0.0f);
+}
+
+void ABeekeeperCharacter::DoJumpStart()
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	Jump();
+}
+
+void ABeekeeperCharacter::DoJumpEnd()
+{
+	if (bIsFocusInteractionInputLocked)
+	{
+		return;
+	}
+
+	StopJumping();
+}
+
+void ABeekeeperCharacter::SetFocusInteractionInputLocked(bool bLocked)
+{
+	bIsFocusInteractionInputLocked = bLocked;
+}
+
+void ABeekeeperCharacter::BeginFocusCameraOverride()
+{
+	if (!FirstPersonCamera || bIsFocusCameraOverrideActive)
+	{
+		return;
+	}
+
+	bStoredUsePawnControlRotation = FirstPersonCamera->bUsePawnControlRotation;
+	FirstPersonCamera->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	FirstPersonCamera->bUsePawnControlRotation = false;
+	bIsFocusCameraOverrideActive = true;
+}
+
+void ABeekeeperCharacter::UpdateFocusCameraOverride(const FVector& WorldLocation, const FRotator& WorldRotation)
+{
+	if (!FirstPersonCamera)
+	{
+		return;
+	}
+
+	FirstPersonCamera->SetWorldLocationAndRotation(WorldLocation, WorldRotation);
+}
+
+void ABeekeeperCharacter::EndFocusCameraOverride()
+{
+	if (!FirstPersonCamera || !bIsFocusCameraOverrideActive)
+	{
+		return;
+	}
+
+	if (GetMesh())
+	{
+		FirstPersonCamera->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepWorldTransform, FirstPersonCameraAttachSocketName);
+	}
+
+	FirstPersonCamera->SetRelativeLocationAndRotation(DefaultFirstPersonCameraRelativeLocation, DefaultFirstPersonCameraRelativeRotation);
+	FirstPersonCamera->bUsePawnControlRotation = bStoredUsePawnControlRotation;
+	bIsFocusCameraOverrideActive = false;
+}
+
+FTransform ABeekeeperCharacter::GetDefaultFocusCameraWorldTransform() const
+{
+	if (!FirstPersonCamera)
+	{
+		return FTransform::Identity;
+	}
+
+	if (!GetMesh())
+	{
+		return FirstPersonCamera->GetComponentTransform();
+	}
+
+	const FTransform SocketTransform = GetMesh()->GetSocketTransform(FirstPersonCameraAttachSocketName);
+	const FTransform RelativeTransform(DefaultFirstPersonCameraRelativeRotation, DefaultFirstPersonCameraRelativeLocation);
+	return RelativeTransform * SocketTransform;
+}
+
+void ABeekeeperCharacter::SyncControlRotationTo(const FRotator& NewControlRotation)
+{
+	if (!GetController())
+	{
+		return;
+	}
+
+	GetController()->SetControlRotation(NewControlRotation);
+}
+
+bool ABeekeeperCharacter::MoveToCharacterAnchor(const FTransform& AnchorTransform)
+{
+	UCharacterMovementComponent* CharacterMovementComponent = GetCharacterMovement();
+	const bool bWasFalling = CharacterMovementComponent && CharacterMovementComponent->IsFalling();
+
+	if (CharacterMovementComponent)
+	{
+		CharacterMovementComponent->StopMovementImmediately();
+	}
+
+	SetActorLocationAndRotation(AnchorTransform.GetLocation(), AnchorTransform.GetRotation().Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+	SyncControlRotationTo(AnchorTransform.GetRotation().Rotator());
+
+	if (!CharacterMovementComponent)
+	{
+		return false;
+	}
+
+	FFindFloorResult FloorResult;
+	CharacterMovementComponent->FindFloor(AnchorTransform.GetLocation(), FloorResult, false);
+	const bool bHasWalkableFloor = FloorResult.IsWalkableFloor();
+	CharacterMovementComponent->SetMovementMode(bHasWalkableFloor ? MOVE_Walking : MOVE_Falling);
+	return bWasFalling && bHasWalkableFloor;
+}

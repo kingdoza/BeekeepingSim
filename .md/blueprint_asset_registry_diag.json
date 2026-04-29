@@ -1,0 +1,194 @@
+{
+  "registry_type": "<class 'AssetRegistry'>",
+  "registry_dir_sample": [
+    "get_all_assets",
+    "get_asset_by_object_path",
+    "get_assets",
+    "get_assets_by_class",
+    "get_assets_by_package_name",
+    "get_assets_by_path",
+    "get_assets_by_paths",
+    "get_dependencies",
+    "get_in_memory_assets",
+    "get_referencers",
+    "has_assets",
+    "is_loading_assets",
+    "is_search_all_assets",
+    "k2_get_asset_by_object_path",
+    "run_assets_through_filter",
+    "scan_modified_asset_files",
+    "search_all_assets",
+    "use_filter_to_exclude_assets"
+  ],
+  "assets": [
+    {
+      "package_name": "/Game/UI/WBP_ItemSlot",
+      "asset_data": "<Struct 'AssetData' (0x0000024B09EC5FA0) {package_name: \"/Game/UI/WBP_ItemSlot\", package_path: \"/Game/UI\", asset_name: \"WBP_ItemSlot\", asset_class_path: {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B09EC5FDC) {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}>",
+      "package_name_from_data": "/Game/UI/WBP_ItemSlot",
+      "export_text_name": "/Script/UMGEditor.WidgetBlueprint'/Game/UI/WBP_ItemSlot.WBP_ItemSlot'",
+      "native_class": "<Object '/Script/UMGEditor.WidgetBlueprint' (0x00007FF3FD5A6B28) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.ItemSlotWidget'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.ItemSlotWidget'",
+        "GeneratedClass": "/Script/UMG.WidgetBlueprintGeneratedClass'/Game/UI/WBP_ItemSlot.WBP_ItemSlot_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/SlateCore",
+        "/Script/UMGEditor",
+        "/Script/UMG",
+        "/Script/BeekeepingSim",
+        "/Engine/EditorLandscapeResources/WhiteSquareTexture",
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Game/Image/UI/border",
+        "/Game/UI/WBP_ItemVisual"
+      ],
+      "referencers": [
+        "/Game/UI/WBP_Hotbar",
+        "/Game/UI/WBP_StorageBox"
+      ]
+    },
+    {
+      "package_name": "/Game/UI/WBP_ItemVisual",
+      "asset_data": "<Struct 'AssetData' (0x0000024B09EC1CC0) {package_name: \"/Game/UI/WBP_ItemVisual\", package_path: \"/Game/UI\", asset_name: \"WBP_ItemVisual\", asset_class_path: {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B09EC1CFC) {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}>",
+      "package_name_from_data": "/Game/UI/WBP_ItemVisual",
+      "export_text_name": "/Script/UMGEditor.WidgetBlueprint'/Game/UI/WBP_ItemVisual.WBP_ItemVisual'",
+      "native_class": "<Object '/Script/UMGEditor.WidgetBlueprint' (0x00007FF3FD5A6B28) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.ItemVisualWidget'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.ItemVisualWidget'",
+        "GeneratedClass": "/Script/UMG.WidgetBlueprintGeneratedClass'/Game/UI/WBP_ItemVisual.WBP_ItemVisual_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/SlateCore",
+        "/Script/UMGEditor",
+        "/Script/UMG",
+        "/Script/BeekeepingSim",
+        "/Engine/EditorLandscapeResources/WhiteSquareTexture",
+        "/Engine/EngineResources/AICON-Green"
+      ],
+      "referencers": [
+        "/Game/UI/WBP_ItemSlot"
+      ]
+    },
+    {
+      "package_name": "/Game/UI/WBP_Hotbar",
+      "asset_data": "<Struct 'AssetData' (0x0000024B01A38340) {package_name: \"/Game/UI/WBP_Hotbar\", package_path: \"/Game/UI\", asset_name: \"WBP_Hotbar\", asset_class_path: {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B01A3837C) {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}>",
+      "package_name_from_data": "/Game/UI/WBP_Hotbar",
+      "export_text_name": "/Script/UMGEditor.WidgetBlueprint'/Game/UI/WBP_Hotbar.WBP_Hotbar'",
+      "native_class": "<Object '/Script/UMGEditor.WidgetBlueprint' (0x00007FF3FD5A6B28) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/UMG.UserWidget'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/UMG.UserWidget'",
+        "GeneratedClass": "/Script/UMG.WidgetBlueprintGeneratedClass'/Game/UI/WBP_Hotbar.WBP_Hotbar_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/SlateCore",
+        "/Script/UMGEditor",
+        "/Script/UMG",
+        "/Script/BeekeepingSim",
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Game/UI/WBP_HotbarSlot",
+        "/Game/UI/WBP_ItemSlot"
+      ],
+      "referencers": [
+        "/Game/Beekeeper/BP_BeekeeperCharacter"
+      ]
+    },
+    {
+      "package_name": "/Game/UI/WBP_StorageBox",
+      "asset_data": "<Struct 'AssetData' (0x0000024B09EC1CC0) {package_name: \"/Game/UI/WBP_StorageBox\", package_path: \"/Game/UI\", asset_name: \"WBP_StorageBox\", asset_class_path: {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B09EC1CFC) {package_name: \"/Script/UMGEditor\", asset_name: \"WidgetBlueprint\"}>",
+      "package_name_from_data": "/Game/UI/WBP_StorageBox",
+      "export_text_name": "/Script/UMGEditor.WidgetBlueprint'/Game/UI/WBP_StorageBox.WBP_StorageBox'",
+      "native_class": "<Object '/Script/UMGEditor.WidgetBlueprint' (0x00007FF3FD5A6B28) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.StorageBoxWidget'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.StorageBoxWidget'",
+        "GeneratedClass": "/Script/UMG.WidgetBlueprintGeneratedClass'/Game/UI/WBP_StorageBox.WBP_StorageBox_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/SlateCore",
+        "/Script/UMGEditor",
+        "/Script/UMG",
+        "/Script/BeekeepingSim",
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Game/UI/WBP_ItemSlot"
+      ],
+      "referencers": [
+        "/Game/Stuff/BP_StorageBox",
+        "/Game/UI/WBP_StorageSlot"
+      ]
+    },
+    {
+      "package_name": "/Game/Beehive/BP_Beehive",
+      "asset_data": "<Struct 'AssetData' (0x0000024B01A3FB40) {package_name: \"/Game/Beehive/BP_Beehive\", package_path: \"/Game/Beehive\", asset_name: \"BP_Beehive\", asset_class_path: {package_name: \"/Script/Engine\", asset_name: \"Blueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B01A3FB7C) {package_name: \"/Script/Engine\", asset_name: \"Blueprint\"}>",
+      "package_name_from_data": "/Game/Beehive/BP_Beehive",
+      "export_text_name": "/Script/Engine.Blueprint'/Game/Beehive/BP_Beehive.BP_Beehive'",
+      "native_class": "<Object '/Script/Engine.Blueprint' (0x00007FF3FD5A4B78) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.Beehive'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.Beehive'",
+        "GeneratedClass": "/Script/Engine.BlueprintGeneratedClass'/Game/Beehive/BP_Beehive.BP_Beehive_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/GameplayTags",
+        "/Script/BeekeepingSim",
+        "/Game/Beehive/SM_BehiveBody",
+        "/Game/Beehive/SM_BehiveLid"
+      ],
+      "referencers": [
+        "/Game/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4"
+      ]
+    },
+    {
+      "package_name": "/Game/Stuff/BP_StorageBox",
+      "asset_data": "<Struct 'AssetData' (0x0000024B09EC15E0) {package_name: \"/Game/Stuff/BP_StorageBox\", package_path: \"/Game/Stuff\", asset_name: \"BP_StorageBox\", asset_class_path: {package_name: \"/Script/Engine\", asset_name: \"Blueprint\"}}>",
+      "asset_class_path": "<Struct 'TopLevelAssetPath' (0x0000024B09EC161C) {package_name: \"/Script/Engine\", asset_name: \"Blueprint\"}>",
+      "package_name_from_data": "/Game/Stuff/BP_StorageBox",
+      "export_text_name": "/Script/Engine.Blueprint'/Game/Stuff/BP_StorageBox.BP_StorageBox'",
+      "native_class": "<Object '/Script/Engine.Blueprint' (0x00007FF3FD5A4B78) Class 'Class'>",
+      "object_path_error": "'AssetData' object has no attribute 'object_path'",
+      "tags": {
+        "ParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.StorageBox'",
+        "NativeParentClass": "/Script/CoreUObject.Class'/Script/BeekeepingSim.StorageBox'",
+        "GeneratedClass": "/Script/Engine.BlueprintGeneratedClass'/Game/Stuff/BP_StorageBox.BP_StorageBox_C'",
+        "ImplementedInterfaces": null,
+        "BlueprintType": "BPTYPE_Normal",
+        "BlueprintDescription": null
+      },
+      "dependencies": [
+        "/Script/GameplayTags",
+        "/Script/BeekeepingSim",
+        "/Game/Beehive/SM_BehiveBody",
+        "/Game/UI/WBP_StorageBox"
+      ],
+      "referencers": [
+        "/Game/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/2/ST/QSPTDUSKEIWMNDDA0XYW5Y"
+      ]
+    }
+  ]
+}
