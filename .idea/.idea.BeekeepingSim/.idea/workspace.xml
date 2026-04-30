@@ -12,60 +12,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/AGENT_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/AGENT_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/AGENT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/AGENT_IMPLEMENTATION.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/AGENT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/AGENT_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/CameraSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CameraSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/CoreSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CoreSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/InteractionSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/InteractionSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/InventorySystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/InventorySystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/UISystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/UISystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/REFACTORING_BLUEPRINT_REFERENCE_AUDIT.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/REFACTORING_BLUEPRINT_REFERENCE_AUDIT.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/asset_data_dir_diag.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/asset_data_dir_diag.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_asset_registry_diag.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_asset_registry_diag.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_native_dependency_audit.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_native_dependency_audit.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_audit.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_audit.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_diag.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_diag.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_diag2.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_ref_diag2.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_symbol_scan.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/blueprint_symbol_scan.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultEngine.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultEngine.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/ARCHITECTURE_PROMPT.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/ARCHITECTURE_PROMPT.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemDragVisualWidget.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemSlotDragDropLibrary.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemSlotDragDropLibrary.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemSlotWidget.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemSlotWidget.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/StorageBoxWidget.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/StorageBoxWidget.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/StorageSlotDragDropOperation.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/UI/ItemSlotDragDropOperation.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusTargetComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusTargetComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/StorageBoxComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/StorageBoxComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemDragVisualWidget.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotDragDropLibrary.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotDragDropLibrary.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotWidget.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotWidget.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/StorageBoxWidget.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/StorageBoxWidget.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/StorageSlotDragDropOperation.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotDragDropOperation.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/StorageSlotDragDropTypes.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/UI/ItemSlotDragDropTypes.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/CODEX_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/CODEX_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Source/QNA_ARCHITECTURE.md" afterDir="false" />
-    </list>
+    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -285,7 +232,7 @@
       <workItem from="1777362445783" duration="5541000" />
       <workItem from="1777385301698" duration="166000" />
       <workItem from="1777434093777" duration="153000" />
-      <workItem from="1777451938477" duration="3681000" />
+      <workItem from="1777451938477" duration="3766000" />
     </task>
     <servers />
   </component>
