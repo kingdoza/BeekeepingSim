@@ -1,98 +1,85 @@
-# 코드 리뷰 요청 프롬프트 (보류 리팩토링 후속 구현 최종 검토)
+# 코드 리뷰 요청 프롬프트 (Environment 24시간 하늘/조명/태양/달 시스템)
 
-아래 변경은 Unreal Engine 5.7 기준 **보류 리팩토링 후속 구현**이다.  
-이번 변경은 고위험 항목을 포함하며, C++/Config 리팩토링 + 사용자의 Blueprint 수동 마이그레이션(컴파일/저장 완료)까지 반영된 상태다.
-
-리뷰 목표는 **회귀 위험, 직렬화 호환성, API 파손 여부, 문서-코드 불일치**를 찾는 것이다.
+아래 변경은 Unreal Engine 5.7 기준 `Environment` 신규 시스템 구현이다.  
+리뷰 목표는 **시간 모델 정확성, 태양/달 활성 정책, Blueprint 계약 안정성, 문서-코드 일치성** 검증이다.
 
 ---
 
-## 현재 구현 사실(리뷰 전제)
+## 리뷰 전제 (구현 사실)
 
-- 완료된 주요 변경:
-  - `UFocusTargetComponent::bClearFocusOnConfirm` 제거
-  - `UFocusTargetComponent::ShouldClearFocusOnConfirm()` 제거
-  - `UStorageBoxWidget` 이동/스왑 wrapper API 제거
-  - `UItemSlotWidget::GetDragPreviewDisplayStackCount()` 제거
-  - `UItemSlotWidget` 일부 함수 Blueprint 노출 제거(C++ 전용 유지)
-  - `UItemDragVisualWidget` 삭제
-  - Drag/Drop 타입 rename
-    - `UStorageSlotDragDropOperation` -> `UItemSlotDragDropOperation`
-    - `EStorageSlotContainerType` -> `EItemSlotContainerType`
-  - 파일명 rename
-    - `StorageSlotDragDropOperation.h/.cpp` -> `ItemSlotDragDropOperation.h/.cpp`
-    - `StorageSlotDragDropTypes.h` -> `ItemSlotDragDropTypes.h`
-  - `Config/DefaultEngine.ini` Core Redirect 추가
-
-- 사용자 측 작업(완료):
-  - 관련 Blueprint 수동 마이그레이션/컴파일/저장 완료
-  - 동작 정상 확인 완료
+- 신규 Source 추가:
+  - `Source/BeekeepingSim/Public/Environment/TimeOfDayTypes.h`
+  - `Source/BeekeepingSim/Public/Environment/EnvironmentTimeOfDayActor.h`
+  - `Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp`
+- 신규 타입:
+  - `FTimeOfDayCurveSet`
+  - `FTimeOfDayVisualState`
+  - `AEnvironmentTimeOfDayActor`
+- Blueprint 계약:
+  - `SetCurrentHour24(float)`
+  - `GetCurrentHour24() const`
+  - `SetTimeProgressionEnabled(bool)`
+  - `ApplyPreviewTime()`
+  - `EvaluateCurrentVisualState() const`
+  - `OnTimeOfDayChanged(float, const FTimeOfDayVisualState&)`
 
 ---
 
 ## 리뷰 목표
 
-1. C++ rename/삭제가 일관되게 반영됐는지
-2. Core Redirect 설정이 안전하고 누락 없는지
-3. Blueprint 연동 전제 하에 런타임 회귀 가능성이 남아있는지
-4. include/forward declaration/UHT 생성 규칙 위반이 없는지
-5. 문서(`.md`)가 실제 구현 결과를 정확히 반영하는지
+1. `CurrentHour24` wrap/진행 로직이 24시간 모델에 맞는지
+2. 태양/달 궤도와 light on/off 정책이 요구사항과 일치하는지
+3. curve null 시 fallback 경로가 안전한지
+4. editor preview 경로(`PostEditChangeProperty`, `CallInEditor`)가 runtime clock과 분리되어 있는지
+5. tick/로그/skylight recapture 정책이 과도하지 않은지
+6. 문서 반영(`0_ARCHITECTURE`, `EnvironmentSystem`, `USER_UNREAL`)이 구현과 일치하는지
 
 ---
 
 ## 리뷰 대상 경로
 
-- `Source/BeekeepingSim/Public/**`
-- `Source/BeekeepingSim/Private/**`
-- `Config/DefaultEngine.ini`
+- `Source/BeekeepingSim/Public/Environment/**`
+- `Source/BeekeepingSim/Private/Environment/**`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/UISystem.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/REFACTORING_BLUEPRINT_REFERENCE_AUDIT.md`
-- `.md/REFACTORING_BLUEPRINT_REFERENCE_AUDIT.md`
+- `.md/Architecture/EnvironmentSystem.md`
+- `.md/USER_UNREAL.md`
 
 ---
 
 ## 필수 검증 포인트
 
-### A. 타입/파일 rename 정합성
-- 구심볼이 C++ 코드에 잔존하지 않는지:
-  - `UStorageSlotDragDropOperation`
-  - `EStorageSlotContainerType`
-  - `StorageSlotDragDropOperation.*`
-  - `StorageSlotDragDropTypes.h`
-- 신심볼 사용이 일관적인지:
-  - `UItemSlotDragDropOperation`
-  - `EItemSlotContainerType`
-  - `ItemSlotDragDropOperation.*`
-  - `ItemSlotDragDropTypes.h`
+### A. 시간/궤도 계산
+- `DayLengthSeconds` 기반 `HoursPerSecond = 24 / DayLengthSeconds` 적용 여부
+- `CurrentHour24` normalize/wrap 안전성
+- `SunriseHour`, `SunsetHour`, `MaxSunAltitudeDegrees`, `CelestialYawOffsetDegrees` 반영 여부
+- `MoonHour = CurrentHour24 + 12` wrap 평가 여부
 
-### B. 삭제 항목 회귀
-- `UItemDragVisualWidget` 삭제 후 C++ 직접 참조 잔존 여부
-- 제거된 Focus/Storage/UI API를 호출하는 코드가 남아있지 않은지
+### B. light 활성 정책
+- 태양이 지평선 아래면 `SunIntensity = 0` 강제 여부
+- 태양이 떠 있으면 moon intensity가 0으로 강제되는지
+- `bMoonLightActive = !bSunAboveHorizon && bMoonAboveHorizon` 정책 일치 여부
 
-### C. Redirect 안정성
-- `DefaultEngine.ini` `[CoreRedirects]` 문법/섹션 위치/중복/충돌 점검
-- ClassRedirect/EnumRedirect 대상명이 실제 UCLASS/UENUM 변경과 정확히 대응하는지
+### C. curve/fallback 안전성
+- 모든 curve pointer가 optional로 동작하는지
+- null curve에서 fallback이 사용되는지
+- 음수 강도/밀도 clamp 처리 적절성
 
-### D. 빌드/로딩 신뢰도
-- UBT 빌드 성공 기준에서 경고성 리스크가 없는지
-- Editor-Cmd 로그 기준 missing class/enum/property 경고가 남는지
+### D. 적용 경로 안전성
+- `SkyLight` recapture가 tick마다 발생하지 않는지 (`bRecaptureSkyLightOnApply` opt-in)
+- `SkyParameterCollection` 미설정/instance 실패 시 crash 없이 동작하는지
+- warning 로그가 tick마다 반복되지 않는지
 
-### E. 문서 정확도
-- 문서가 “이미 삭제/rename 완료된 상태”를 반영하는지
-- 아직 보류로 남겨야 할 항목과 완료 항목이 혼동 없이 구분되는지
+### E. Blueprint/API 안정성
+- 요구된 함수/프로퍼티/델리게이트 이름이 정확히 일치하는지
+- `#include "Public/..."` 위반이 없는지
 
 ---
 
 ## 권장 확인 명령
 
 - `rg '#include "Public/' Source/BeekeepingSim`
-- `rg 'UStorageSlotDragDropOperation|EStorageSlotContainerType|StorageSlotDragDropOperation|StorageSlotDragDropTypes|UItemDragVisualWidget' Source/BeekeepingSim`
-- `rg 'UItemSlotDragDropOperation|EItemSlotContainerType|ItemSlotDragDropOperation|ItemSlotDragDropTypes' Source/BeekeepingSim`
-- `git diff --name-status`
-- `git diff -- Config/DefaultEngine.ini`
+- `rg "EnvironmentTimeOfDayActor|TimeOfDay|OnTimeOfDayChanged" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
+- `git diff -- Source/BeekeepingSim/Public/Environment Source/BeekeepingSim/Private/Environment .md/0_ARCHITECTURE.md .md/Architecture/EnvironmentSystem.md .md/USER_UNREAL.md .md/PROMPT_REVIEW.md`
 
 ---
 
@@ -104,4 +91,4 @@
 3. **Regression Risk Checklist**
 4. **최종 판정: Pass / Conditional Pass / Fail**
 
-이슈가 없으면 **“High/Medium 이슈 없음”**을 명시하고, 남은 테스트 공백만 간단히 적어라.
+이슈가 없으면 **“High/Medium 이슈 없음”**을 명시하고, 남은 테스트 공백을 짧게 정리한다.

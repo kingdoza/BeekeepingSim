@@ -27,6 +27,7 @@
 - [InventorySystem.md](Architecture/InventorySystem.md): hotbar, storage, item model, stack 이동 계산
 - [UISystem.md](Architecture/UISystem.md): slot widget, storage widget, drag/drop payload와 routing
 - [WorldActorsSystem.md](Architecture/WorldActorsSystem.md): beehive, pickup, storage box actor 구성
+- [EnvironmentSystem.md](Architecture/EnvironmentSystem.md): 24시간 가속 시간, 하늘/조명, 태양/달, 에디터 프리뷰
 - [CoreSystem.md](Architecture/CoreSystem.md): 공통 문서 규칙, Core Redirect, 시스템 경계
 
 ## Source 구조
@@ -41,6 +42,7 @@ Source/BeekeepingSim/
     Inventory/
     UI/
     WorldActors/
+    Environment/
   Private/
     Character/
     Camera/
@@ -49,6 +51,7 @@ Source/BeekeepingSim/
     Inventory/
     UI/
     WorldActors/
+    Environment/
 ```
 
 - `Core`는 소스 폴더가 아니라 문서상 공통 경계다.
@@ -63,6 +66,7 @@ Source/BeekeepingSim/
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, Blueprint 표시 API를 제공한다.
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
+- Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
 
 ## 주요 의존 방향
 
@@ -73,6 +77,7 @@ Source/BeekeepingSim/
 - Inventory -> Focus, UI
 - UI -> Character, Inventory
 - WorldActors -> Focus, Interaction, Inventory
+- Environment -> Core
 
 의존 방향은 완전한 단방향 레이어가 아니라 Unreal 컴포넌트 조합을 반영한다. 새 기능을 추가할 때는 "상태 오너"와 "표시/입력 라우터"를 먼저 구분한다.
 

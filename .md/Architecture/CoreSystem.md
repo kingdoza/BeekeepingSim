@@ -10,7 +10,7 @@
 
 ## Responsibilities
 
-- Character/Camera/Focus/Interaction/Inventory/UI/WorldActors 시스템 경계 유지
+- Character/Camera/Focus/Interaction/Inventory/UI/WorldActors/Environment 시스템 경계 유지
 - Source 구조와 문서 구조 동기화
 - Blueprint migration 및 Core Redirect 같은 cross-system 변경 기록
 - legacy 문서가 현재 구조와 충돌하지 않도록 정본 경로 안내

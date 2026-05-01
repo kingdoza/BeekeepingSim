@@ -26,6 +26,7 @@
 | `.md/Architecture/InventorySystem.md` | Hotbar, Storage, Item model, stack 이동 |
 | `.md/Architecture/UISystem.md` | Widget, drag/drop, Blueprint UI API |
 | `.md/Architecture/WorldActorsSystem.md` | Beehive, WorldItemPickup, StorageBox actor 구성 |
+| `.md/Architecture/EnvironmentSystem.md` | 24시간 가속 시간, 하늘/조명, 태양/달, 에디터 프리뷰 |
 | `.md/Architecture/CoreSystem.md` | 공통 문서 규칙, Core Redirect, 시스템 경계 |
 
 QnA가 필요한 경우:
@@ -49,6 +50,7 @@ QnA가 필요한 경우:
 - `Inventory`
 - `UI`
 - `WorldActors`
+- `Environment`
 
 특수 범위:
 
