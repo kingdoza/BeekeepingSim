@@ -41,6 +41,10 @@
   - color temperature curves
   - fog density curve
   - ambient/skylight intensity curve
+- `UGameTimeBucketSubsystem` (`UWorldSubsystem`):
+  - `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 구독한다.
+  - listener subscription별로 00:00 기준 n분 bucket 경계 변경 시점에만 이벤트를 발행한다.
+  - `LatestOnly` / `CatchUp` 정책과 BeginPlay 즉시 적용 옵션을 처리한다.
 
 ## Runtime Flow
 
@@ -52,6 +56,7 @@
 6. 태양/달 directional light의 회전, intensity, color temperature를 적용한다.
 7. skylight/ambient 값과 exponential height fog density를 적용한다.
 8. `OnTimeOfDayChanged` Blueprint delegate를 broadcast한다.
+9. `UGameTimeBucketSubsystem`은 매 broadcast를 그대로 전달하지 않고 bucket 경계 변경 시점만 listener에 dispatch한다.
 
 ## Time Model
 
@@ -61,6 +66,10 @@
 - 예시: `DayLengthSeconds = 600`이면 게임 내 하루가 실제 10분에 진행된다.
 - runtime clock은 24시간에서 wrap된다.
 - 하늘/조명/안개/태양/달 상태는 항상 `CurrentHour24`에서 결정되어야 하며, 개별 actor가 별도 시간을 누적하면 안 된다.
+- bucket 경계 계산도 같은 시간 기준을 사용한다:
+  - `MinuteOfDay = FloorToInt(NormalizeHour24(Hour24) * 60)`
+  - `BucketIndex = MinuteOfDay / BucketMinutes`
+  - 마지막 bucket은 `Min(BucketStart + BucketMinutes, 1440)`로 짧아질 수 있다.
 
 ## Sky And Lighting Curves
 
@@ -171,12 +180,15 @@
 
 - Core
 - WorldActors는 레벨 composition 관계로만 연결하며 C++ 의존성은 두지 않는다.
+- 벌떼 SpawnAmount 연동은 `AEnvironmentTimeOfDayActor`를 WorldActors가 직접 include/탐색하지 않고, `UGameTimeBucketSubsystem` + listener interface 경로로 연결한다.
 
 Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 의존하지 않는다.
 
 ## Design Notes
 
 - Environment는 레벨 전역 연출 authority다. gameplay actor나 UI가 별도 시간 흐름을 소유하지 않는다.
+- `ABeehiveDualSwarmActor`는 환경 concrete class를 모른 채 상위 actor(`ABeehive`)가 계산한 최종 parameter를 전달받는다.
+- `AEnvironmentTimeOfDayActor`는 BeginPlay에서 `UGameTimeBucketSubsystem::SetTimeOfDayActor(this)`를 호출해 수동 지정 우선 경로를 제공한다.
 - 시간대별 연출 값은 curve asset 데이터로 authoring하고, C++은 평가/적용만 담당한다.
 - 새벽 안개, 아침 주황, 낮 하늘색, 저녁 노을, 밤 남색은 `Sky*ColorCurve`와 `FogDensityCurve`로 표현한다.
 - 태양/달 활성 정책은 light intensity curve만 믿지 않고 지평선 판정으로 한 번 더 강제한다.
@@ -193,3 +205,7 @@ Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 �
 - 태양이 지평선 아래일 때 sun light가 남지 않는지 확인한다.
 - 태양이 올라왔을 때 moon light가 꺼지는지 확인한다.
 - editor preview가 의도치 않게 level asset을 더럽히는지 확인한다.
+## Bucket Payload Note
+
+- For catch-up dispatch, `bWrappedDay` is true only on the midnight boundary bucket event (`BucketStartMinute == 0`).
+- Bucket minute conversion uses `FloorToInt(NormalizeHour24(Hour24) * 60.0f)` with no epsilon offset.

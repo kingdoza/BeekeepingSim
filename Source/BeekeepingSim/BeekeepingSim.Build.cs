@@ -20,10 +20,16 @@ public class BeekeepingSim : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "PropertyEditor" });
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"BeekeepingSim",

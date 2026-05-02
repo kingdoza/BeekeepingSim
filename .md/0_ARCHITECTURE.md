@@ -66,7 +66,11 @@ Source/BeekeepingSim/
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, Blueprint 표시 API를 제공한다.
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
+- WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
+- `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
+- 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
+- Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
 
 ## 주요 의존 방향
 
@@ -78,6 +82,8 @@ Source/BeekeepingSim/
 - UI -> Character, Inventory
 - WorldActors -> Focus, Interaction, Inventory
 - Environment -> Core
+
+Environment와 WorldActors의 C++ 의존 경계는 유지한다. 월드 actor 시간 반응은 Environment concrete actor 직접 참조 대신 `IGameTimeBucketListener` interface + subsystem dispatch 경로로 연결한다.
 
 의존 방향은 완전한 단방향 레이어가 아니라 Unreal 컴포넌트 조합을 반영한다. 새 기능을 추가할 때는 "상태 오너"와 "표시/입력 라우터"를 먼저 구분한다.
 
