@@ -21,7 +21,7 @@ void UGameTimeBucketSubsystem::Deinitialize()
 void UGameTimeBucketSubsystem::SetTimeOfDayActor(AEnvironmentTimeOfDayActor* InTimeOfDayActor)
 {
 	BindTimeActor(InTimeOfDayActor);
-	if (TimeOfDayActor)
+	if (IsValid(TimeOfDayActor))
 	{
 		ProcessSubscriptionsForCurrentTime(TimeOfDayActor->GetCurrentHour24(), false);
 	}
@@ -47,7 +47,7 @@ void UGameTimeBucketSubsystem::RegisterListener(AActor* ListenerActor)
 		RegisteredSubscriptions.Add(MoveTemp(Entry));
 	}
 
-	if (TimeOfDayActor)
+	if (IsValid(TimeOfDayActor))
 	{
 		ProcessSubscriptionsForCurrentTime(TimeOfDayActor->GetCurrentHour24(), false);
 	}
@@ -100,7 +100,7 @@ void UGameTimeBucketSubsystem::HandleTimeOfDayChanged(float Hour24, const FTimeO
 
 bool UGameTimeBucketSubsystem::EnsureTimeActorBound()
 {
-	if (TimeOfDayActor)
+	if (IsValid(TimeOfDayActor))
 	{
 		return true;
 	}
@@ -146,7 +146,7 @@ void UGameTimeBucketSubsystem::BindTimeActor(AEnvironmentTimeOfDayActor* InActor
 	CurrentDayOffset = 0;
 	LastObservedMinuteOfDay = INDEX_NONE;
 
-	if (TimeOfDayActor)
+	if (IsValid(TimeOfDayActor))
 	{
 		TimeOfDayActor->OnTimeOfDayChanged.AddDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
 	}
@@ -154,11 +154,11 @@ void UGameTimeBucketSubsystem::BindTimeActor(AEnvironmentTimeOfDayActor* InActor
 
 void UGameTimeBucketSubsystem::UnbindTimeActor()
 {
-	if (TimeOfDayActor)
+	if (IsValid(TimeOfDayActor))
 	{
 		TimeOfDayActor->OnTimeOfDayChanged.RemoveDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
-		TimeOfDayActor = nullptr;
 	}
+	TimeOfDayActor = nullptr;
 }
 
 void UGameTimeBucketSubsystem::RemoveListenerEntries(AActor* ListenerActor)

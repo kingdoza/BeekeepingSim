@@ -52,3 +52,10 @@
 2. Open Questions / Assumptions
 3. Regression Risk Checklist
 4. 최종 판정: Pass / Conditional Pass / Fail
+## Review Checklist: Time Clock Widget
+
+- Widget does not search `AEnvironmentTimeOfDayActor` directly.
+- UI owner/controller resolves environment actor and injects `Hour24`.
+- `HH:MM` formatting uses floor minute conversion and `24.0 -> 00:00`.
+- Text update happens only when displayed minute changes.
+- Clock path does not use `UGameTimeBucketSubsystem`.

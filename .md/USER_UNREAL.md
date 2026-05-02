@@ -72,3 +72,10 @@
 - `MaxSpawnAmount` clamp가 적용되는지
 - spline point 자동 생성/삭제/재배치가 발생하지 않는지
 - BeginPlay 즉시 1회 + 이후 n분 bucket 경계에서만 `ApplyBeeSwarmHour24`가 호출되는지
+## Time Clock Widget Setup (Manual)
+
+1. Create `WBP_TimeOfDayClock` and set parent class to `UTimeOfDayClockWidget`.
+2. Add `TextBlock_Time` and implement `OnDisplayedTimeChanged(NewTimeText, Hour, Minute)`.
+3. Set `TextBlock_Time` text from `NewTimeText`.
+4. Assign `TimeOfDayClockWidgetClass` on `BP_BeekeeperController`.
+5. Ensure exactly one `AEnvironmentTimeOfDayActor` (or its BP child) exists in level.

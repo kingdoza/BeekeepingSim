@@ -131,3 +131,8 @@ Blueprint native parent로 확인된 핵심 C++ 클래스:
 - UCLASS/USTRUCT/UENUM rename은 Core Redirect, Editor 재시작, Blueprint compile/save, post-migration scan까지 한 세트로 처리한다.
 - UI drag/drop은 `UItemSlotDragDropOperation` payload와 `UItemSlotDragDropLibrary` routing으로 통일한다.
 - Quick move 대상 선택은 현재 `UItemSlotWidget`에 남아 있다. 규칙이 복잡해지면 Inventory 쪽 서비스/helper로 이동하는 것이 다음 후보다.
+## Time Clock Widget Summary
+
+- `UTimeOfDayClockWidget` displays runtime `Hour24` in fixed `HH:MM` format.
+- Display minute uses floor conversion and updates only when the displayed minute changes.
+- The widget does not search world actors; `ABeekeeperController` resolves `AEnvironmentTimeOfDayActor` and pushes `Hour24`.

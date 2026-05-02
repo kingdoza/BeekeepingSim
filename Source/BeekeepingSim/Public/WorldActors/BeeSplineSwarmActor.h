@@ -9,8 +9,6 @@ class UNiagaraComponent;
 class USceneComponent;
 class USplineComponent;
 
-DECLARE_LOG_CATEGORY_EXTERN(LogBeekeepingBeeSwarm, Log, All);
-
 UCLASS(Blueprintable)
 class BEEKEEPINGSIM_API ABeeSplineSwarmActor : public AActor
 {

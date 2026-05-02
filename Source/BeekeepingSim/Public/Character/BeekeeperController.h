@@ -10,6 +10,9 @@ class UInputMappingContext;
 class UBeekeeperHotbarComponent;
 class UStorageBoxComponent;
 class UItemSlotDragDropOperation;
+class UTimeOfDayClockWidget;
+class AEnvironmentTimeOfDayActor;
+struct FTimeOfDayVisualState;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeekeeperController : public APlayerController
@@ -43,6 +46,8 @@ public:
 	bool AdjustActiveItemSlotDragQuantity(float WheelDelta);
 	
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Input Mappings")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -52,6 +57,21 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UItemSlotDragDropOperation> ActiveItemSlotDragOperation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Time Of Day")
+	TSubclassOf<UTimeOfDayClockWidget> TimeOfDayClockWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTimeOfDayClockWidget> TimeOfDayClockWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AEnvironmentTimeOfDayActor> BoundTimeOfDayActor;
 	
 	virtual void SetupInputComponent() override;
+
+private:
+	AEnvironmentTimeOfDayActor* FindTimeOfDayActor() const;
+
+	UFUNCTION()
+	void HandleTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState);
 };

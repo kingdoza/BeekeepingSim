@@ -209,3 +209,8 @@ Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 �
 
 - For catch-up dispatch, `bWrappedDay` is true only on the midnight boundary bucket event (`BucketStartMinute == 0`).
 - Bucket minute conversion uses `FloorToInt(NormalizeHour24(Hour24) * 60.0f)` with no epsilon offset.
+## Time Clock UI Integration
+
+- Runtime clock UI may subscribe to `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged` directly.
+- Clock UI does not use `UGameTimeBucketSubsystem`; bucket dispatch is for gameplay bucket logic.
+- Recommended flow: UI owner (for example `ABeekeeperController`) resolves the environment actor and injects `Hour24` into widget.

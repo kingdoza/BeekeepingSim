@@ -5,6 +5,8 @@
 
 class UCurveFloat;
 
+DECLARE_LOG_CATEGORY_EXTERN(LogBeekeepingBeeSwarm, Log, All);
+
 UENUM(BlueprintType)
 enum class EBeehiveSwarmState : uint8
 {
