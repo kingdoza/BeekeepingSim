@@ -79,3 +79,19 @@
 3. Set `TextBlock_Time` text from `NewTimeText`.
 4. Assign `TimeOfDayClockWidgetClass` on `BP_BeekeeperController`.
 5. Ensure exactly one `AEnvironmentTimeOfDayActor` (or its BP child) exists in level.
+## Beehive Attraction Swarm Setup (Manual)
+
+1. Open `BP_Beehive`.
+2. Set Niagara system asset on `AttractionSwarmNiagara` component.
+3. Move `AttractionSwarmNiagara` component to place attraction center.
+4. Configure `AttractionSwarmSettings`:
+   - `AttractionPower`
+   - `NoisePower`
+   - `SpawnSphereRadius`
+   - `SpawnAmountScale`
+   - `MaxSpawnAmount`
+5. Verify Niagara user parameter types:
+   - `User.AttractionPower` Float
+   - `User.NoisePower` Float
+   - `User.SpawnSphereRadius` Float
+   - `User.SpawnAmount` Int32

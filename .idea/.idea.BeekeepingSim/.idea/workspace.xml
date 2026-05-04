@@ -15,20 +15,22 @@
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/EnvironmentSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/EnvironmentSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/USER_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/USER_UNREAL.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Environment/M_NatureSkyDome.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Environment/M_NatureSkyDome.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Niagaras/NS_Dir2.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Niagaras/NS_Dir2.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Niagaras/NS_Swarm.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Niagaras/NS_Swarm.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/0/QU/TNHDVW2KTTEXHFD3S44F0I.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/0/QU/TNHDVW2KTTEXHFD3S44F0I.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeBucketSubsystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeBucketSubsystem.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/D/7N/FC1QS4AOV9ME78VY5UEB48.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -246,7 +248,7 @@
       <workItem from="1777655326043" duration="852000" />
       <workItem from="1777700797399" duration="2746000" />
       <workItem from="1777706933379" duration="13406000" />
-      <workItem from="1777745453685" duration="603000" />
+      <workItem from="1777745453685" duration="3457000" />
     </task>
     <servers />
   </component>

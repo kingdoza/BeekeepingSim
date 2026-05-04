@@ -59,3 +59,12 @@
 - `HH:MM` formatting uses floor minute conversion and `24.0 -> 00:00`.
 - Text update happens only when displayed minute changes.
 - Clock path does not use `UGameTimeBucketSubsystem`.
+## Review Checklist: Beehive Attraction Swarm
+
+- `ABeehive` directly owns `AttractionSwarmNiagara` (no extra child actor).
+- Attraction swarm does not subscribe to time bucket or hour-based auto updates.
+- `User.SpawnAmount` is applied with `SetVariableInt`.
+- `SpawnAmount` uses `RoundToInt(ColonyBeeCount * SpawnAmountScale)` and `MaxSpawnAmount` clamp.
+- `ColonyBeeCount` changes immediately propagate to attraction spawn amount.
+- Niagara user-parameter editing UI is hidden for `AttractionSwarmNiagara` via editor customization.
+- Existing outgoing/ingoing spline swarm behavior remains intact.

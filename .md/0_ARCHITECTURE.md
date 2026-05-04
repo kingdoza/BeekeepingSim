@@ -136,3 +136,8 @@ Blueprint native parent로 확인된 핵심 C++ 클래스:
 - `UTimeOfDayClockWidget` displays runtime `Hour24` in fixed `HH:MM` format.
 - Display minute uses floor conversion and updates only when the displayed minute changes.
 - The widget does not search world actors; `ABeekeeperController` resolves `AEnvironmentTimeOfDayActor` and pushes `Hour24`.
+## Beehive Attraction Niagara Summary
+
+- `ABeehive` includes `AttractionSwarmNiagara` directly for attraction-style local swarm motion.
+- The component position is the attraction center, editable per placed beehive instance.
+- Spawn count is computed from `ColonyBeeCount` and attraction settings, not from time buckets.

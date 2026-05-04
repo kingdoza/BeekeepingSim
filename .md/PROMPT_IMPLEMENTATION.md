@@ -1,349 +1,326 @@
-# 구현 프롬프트: HH:MM 게임 시간 표시 위젯
+# 구현 프롬프트: Beehive Attraction Swarm Niagara
 
 ## 목표
 
-현재 게임 시간 `Hour24`를 화면에 `HH:MM` 형식으로 표시하는 UI 위젯을 구현한다.
+`ABeehive`에 구심점을 기준으로 비행하는 신규 NiagaraComponent를 추가한다.
 
-예:
+신규 Niagara User Parameter:
 
-```text
-0.0    -> 00:00
-6.5    -> 06:30
-12.25  -> 12:15
-23.99  -> 23:59
-24.0   -> 00:00
-```
+- `User.AttractionPower` : Float
+- `User.NoisePower` : Float
+- `User.SpawnSphereRadius` : Float
+- `User.SpawnAmount` : Int32
 
-이번 구현은 시간 표시 UI에 한정한다.
+요구:
 
-## 확정 정책
+- `AttractionPower`, `NoisePower`, `SpawnSphereRadius`는 `ABeehive` 액터 단계에서 노출한다.
+- 위 값들은 변경 시 즉시 Niagara User Parameter에 반영한다.
+- Niagara `User.SpawnAmount`는 `ColonyBeeCount * SpawnAmountScale`로 계산한다.
+- 계산 결과는 `RoundToInt` 후 `MaxSpawnAmount`로 clamp한다.
+- `User.SpawnAmount`는 특정 시간/10분 경계마다 자동 갱신하지 않는다.
+- `ColonyBeeCount`, 설정값 변경, Construction/BeginPlay 등 벌통 값 적용 시점에만 재계산/적용한다.
+- Niagara User Parameter 직접 수정 UI는 숨긴다.
 
-사용자가 모든 애매한 사항에 대해 권장안을 채택했다.
+## 확정 QnA
+
+`.md/QNA_ARCHITECTURE.md`의 “Beehive 구심점 비행 Niagara 설계 QnA” 답변을 따른다.
 
 확정 사항:
 
-- 시간 원천은 `AEnvironmentTimeOfDayActor`
-- `UGameTimeBucketSubsystem`은 사용하지 않는다.
-  - Bucket 시스템은 gameplay n분 경계 이벤트용이다.
-  - 시계 UI는 실제 현재 시간을 표시해야 하므로 `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 직접 사용한다.
-- `OnTimeOfDayChanged` 이벤트는 받을 수 있지만, TextBlock 갱신은 분이 바뀔 때만 수행한다.
-- 표시 계산은 내림(`Floor`) 기준이다.
-  - 실제 시간이 12:30이 되기 전에는 12:29로 표시한다.
-- `24:00`은 `00:00`으로 표시한다.
-- 위젯 생성 주체는 기존 UI 시스템이 있으면 그 시스템을 따르고, 없으면 `ABeekeeperController`가 담당한다.
-- `AEnvironmentTimeOfDayActor` 참조는 위젯이 직접 월드 탐색하지 않는다.
-  - `ABeekeeperController` 또는 UI 생성 주체가 찾아서 위젯에 주입한다.
-- 표시 형식은 이번 범위에서 무조건 `HH:MM` 고정이다.
-- 에디터 프리뷰 UI 갱신은 이번 범위에서 제외한다.
-  - PIE/런타임 동작만 구현한다.
-- 시간 진행이 정지되면 마지막 표시를 유지한다.
-- `SetCurrentHour24()` 등 수동 시간 변경으로 `OnTimeOfDayChanged`가 broadcast되면 즉시 반영한다.
-- 위젯 생성 직후 현재 시간으로 즉시 초기 표시한다.
+- `ABeehive`가 `UNiagaraComponent* AttractionSwarmNiagara`를 직접 소유한다.
+- 별도 child actor를 만들지 않는다.
+- 구심점은 `AttractionSwarmNiagara` 컴포넌트 위치 자체를 사용한다.
+- Niagara System asset은 `BP_Beehive`에서 `AttractionSwarmNiagara` 컴포넌트 details에 직접 지정한다.
+- 설정은 `FBeehiveAttractionSwarmSettings` 구조체로 묶는다.
+- `SpawnAmount = RoundToInt(ColonyBeeCount * SpawnAmountScale)`.
+- 최종 `SpawnAmount`는 `0~MaxSpawnAmount`로 clamp한다.
+- `AttractionPower`, `NoisePower`, `SpawnSphereRadius`는 `OnConstruction`, `PostEditChangeProperty`, `BeginPlay`, 명시적 apply 함수에서 적용한다.
+- 시간 경계 자동 업데이트는 사용하지 않는다.
+- Niagara User Parameter UI는 custom details customization으로 숨기고, Beehive 적용 경로에서도 항상 덮어쓴다.
+- `User.SpawnAmount`는 `SetVariableInt`로 적용한다.
+- `ColonyBeeCount` 변경 시 `SpawnAmount`를 즉시 반영한다.
+- 기존 Outgoing/Ingoing spline swarm과 신규 Attraction swarm은 동시에 동작한다.
 
 ## 구현 전 참고 문서
 
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - `.md/Architecture/EnvironmentSystem.md`
-- `.md/Architecture/UISystem.md`가 있으면 읽는다.
-- `.md/Architecture/FocusSystem.md`는 crosshair/UI 생성 정책 확인용으로 필요 시 참고한다.
+- `.md/QNA_ARCHITECTURE.md`
+- 현재 `ABeehive`, `ABeehiveDualSwarmActor`, `BeeSwarmTypes` 구현
 
 ## 작업 범위
 
-생성 후보:
-
-- `Source/BeekeepingSim/Public/UI/TimeOfDayClockWidget.h`
-- `Source/BeekeepingSim/Private/UI/TimeOfDayClockWidget.cpp`
-
 수정 후보:
 
-- `Source/BeekeepingSim/Public/Character/BeekeeperController.h`
-- `Source/BeekeepingSim/Private/Character/BeekeeperController.cpp`
-- `Source/BeekeepingSim/Public/Environment/EnvironmentTimeOfDayActor.h`
-- `Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
+- `Source/BeekeepingSim/BeekeepingSim.Build.cs`
 
 문서 갱신:
 
-- `.md/Architecture/EnvironmentSystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - `.md/0_ARCHITECTURE.md`
 - `.md/USER_UNREAL.md`
 - `.md/PROMPT_REVIEW.md`
 
 주의:
 
-- `Content/` asset 자동 생성/수정은 하지 않는다.
-- `WBP_TimeOfDayClock` 같은 Blueprint Widget asset 생성은 에디터 수동 작업으로 남긴다.
+- `Content/` asset 자동 생성/수정 금지
+- C++에서 Niagara System asset path 직접 로드 금지
+- `AEnvironmentTimeOfDayActor`, `UGameTimeBucketSubsystem`에 신규 Attraction swarm 업데이트를 연결하지 말 것
 
-## `UTimeOfDayClockWidget` 설계
+## Type 설계
 
-### Class
+### `FBeehiveAttractionSwarmSettings`
 
-```cpp
-UCLASS(BlueprintType, Blueprintable)
-class BEEKEEPINGSIM_API UTimeOfDayClockWidget : public UUserWidget
-```
-
-### Public API
-
-필수:
-
-```cpp
-UFUNCTION(BlueprintCallable, Category = "Time Of Day")
-void SetHour24(float InHour24);
-
-UFUNCTION(BlueprintPure, Category = "Time Of Day")
-float GetCurrentHour24() const;
-
-UFUNCTION(BlueprintPure, Category = "Time Of Day")
-FText GetFormattedTimeText() const;
-```
+`BeeSwarmTypes.h` 또는 Beehive 전용 적절한 타입 파일에 추가한다.
 
 권장:
 
 ```cpp
-UFUNCTION(BlueprintPure, Category = "Time Of Day")
-static FText FormatHour24AsHHMM(float Hour24);
-```
-
-### Blueprint Event
-
-TextBlock binding을 C++에서 강제하지 않고 Blueprint가 표시를 구성할 수 있도록 event를 제공한다.
-
-```cpp
-UFUNCTION(BlueprintImplementableEvent, Category = "Time Of Day")
-void OnDisplayedTimeChanged(const FText& NewTimeText, int32 Hour, int32 Minute);
-```
-
-`SetHour24()`는 표시 분이 바뀐 경우에만 `OnDisplayedTimeChanged()`를 호출한다.
-
-### Internal State
-
-권장:
-
-```cpp
-UPROPERTY(Transient, BlueprintReadOnly, Category = "Time Of Day", meta = (AllowPrivateAccess = "true"))
-float CurrentHour24 = 12.0f;
-
-UPROPERTY(Transient, BlueprintReadOnly, Category = "Time Of Day", meta = (AllowPrivateAccess = "true"))
-int32 LastDisplayedTotalMinutes = INDEX_NONE;
-```
-
-### Format 정책
-
-시간 normalize:
-
-```cpp
-NormalizedHour = FMath::Fmod(Hour24, 24.0f);
-if (NormalizedHour < 0.0f)
+USTRUCT(BlueprintType)
+struct BEEKEEPINGSIM_API FBeehiveAttractionSwarmSettings
 {
-    NormalizedHour += 24.0f;
-}
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+    float AttractionPower = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+    float NoisePower = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+    float SpawnSphereRadius = 200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+    float SpawnAmountScale = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0"))
+    int32 MaxSpawnAmount = 1000;
+};
 ```
 
-분 계산:
+의미:
+
+- `AttractionPower`, `NoisePower`, `SpawnSphereRadius`는 Niagara에 float로 직접 적용한다.
+- `SpawnAmountScale`은 최종 `User.SpawnAmount` 계산에만 사용한다.
+- `MaxSpawnAmount`는 성능 안전장치다.
+
+## `ABeehive` 변경 요구사항
+
+### Component 추가
+
+`ABeehive`에 NiagaraComponent를 직접 추가한다.
+
+권장:
 
 ```cpp
-TotalMinutes = FMath::FloorToInt(NormalizedHour * 60.0f + 0.001f) % 1440;
-Hour = TotalMinutes / 60;
-Minute = TotalMinutes % 60;
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
+TObjectPtr<UNiagaraComponent> AttractionSwarmNiagara;
+```
+
+생성자:
+
+```cpp
+AttractionSwarmNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("AttractionSwarmNiagara"));
+AttractionSwarmNiagara->SetupAttachment(Root);
 ```
 
 주의:
 
-- 반올림하지 않는다.
-- `+0.001f`는 float 오차 보정용이다.
-- `24.0` 또는 `-0.0` 근처 값은 normalize 후 `00:00`으로 표시한다.
+- 별도 `AttractionSwarmCenter` SceneComponent를 만들지 않는다.
+- `AttractionSwarmNiagara`의 위치 자체가 구심점이다.
+- `BP_Beehive`에서 이 컴포넌트를 이동해 구심점 위치를 조정할 수 있어야 한다.
+- Niagara System asset은 `BP_Beehive`에서 컴포넌트 details에 지정한다.
 
-텍스트:
+### Settings 추가
 
-```cpp
-FString::Printf(TEXT("%02d:%02d"), Hour, Minute)
-```
-
-## `ABeekeeperController` 연동 설계
-
-기존 UI 생성 주체가 없다면 `ABeekeeperController`가 런타임에서 시간 위젯을 생성한다.
-
-### Header 추가 후보
+`ABeehive`에 구조체 노출:
 
 ```cpp
-class UTimeOfDayClockWidget;
-class AEnvironmentTimeOfDayActor;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
+FBeehiveAttractionSwarmSettings AttractionSwarmSettings;
 ```
 
-노출값:
+### Apply 함수
+
+권장 public 또는 protected 함수:
 
 ```cpp
-UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Time Of Day")
-TSubclassOf<UTimeOfDayClockWidget> TimeOfDayClockWidgetClass;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Attraction Swarm")
+void ApplyAttractionSwarmSettings();
 
-UPROPERTY(Transient)
-TObjectPtr<UTimeOfDayClockWidget> TimeOfDayClockWidget;
-
-UPROPERTY(Transient)
-TObjectPtr<AEnvironmentTimeOfDayActor> BoundTimeOfDayActor;
+int32 CalculateAttractionSwarmSpawnAmount() const;
 ```
 
-### BeginPlay
-
-`ABeekeeperController`에 `BeginPlay()` override가 없다면 추가한다.
-
-흐름:
+`CalculateAttractionSwarmSpawnAmount()`:
 
 ```text
-BeginPlay
-1. local controller인지 확인
-2. TimeOfDayClockWidgetClass가 있으면 CreateWidget
-3. AddToViewport
-4. AEnvironmentTimeOfDayActor를 월드에서 탐색
-5. 찾으면 OnTimeOfDayChanged에 bind
-6. GetCurrentHour24()로 위젯 초기 표시
+BeeCount = Max(0, ColonyBeeCount)
+Scale = Max(0.0, AttractionSwarmSettings.SpawnAmountScale)
+MaxSpawn = Max(0, AttractionSwarmSettings.MaxSpawnAmount)
+Raw = BeeCount * Scale
+Rounded = RoundToInt(Raw)
+Result = Clamp(Rounded, 0, MaxSpawn)
 ```
 
-local controller 체크:
+`ApplyAttractionSwarmSettings()`:
+
+1. `AttractionSwarmNiagara` 유효성 확인
+2. float user parameters 적용
+   - `User.AttractionPower`
+   - `User.NoisePower`
+   - `User.SpawnSphereRadius`
+3. int user parameter 적용
+   - `User.SpawnAmount`
+4. 모든 값은 음수 방지 clamp 적용
+
+Niagara setter:
 
 ```cpp
-if (!IsLocalController())
-{
-    return;
-}
+AttractionSwarmNiagara->SetVariableFloat(TEXT("User.AttractionPower"), FMath::Max(0.0f, AttractionSwarmSettings.AttractionPower));
+AttractionSwarmNiagara->SetVariableFloat(TEXT("User.NoisePower"), FMath::Max(0.0f, AttractionSwarmSettings.NoisePower));
+AttractionSwarmNiagara->SetVariableFloat(TEXT("User.SpawnSphereRadius"), FMath::Max(0.0f, AttractionSwarmSettings.SpawnSphereRadius));
+AttractionSwarmNiagara->SetVariableInt(TEXT("User.SpawnAmount"), CalculateAttractionSwarmSpawnAmount());
 ```
 
-### Environment 탐색
+### 호출 시점
 
-위젯이 직접 탐색하지 않고 controller가 담당한다.
+필수:
 
-권장:
+- `ABeehive::OnConstruction`
+- `ABeehive::BeginPlay`
+- `ABeehive::PostEditChangeProperty`
+- `ApplyAttractionSwarmSettings()` 명시 호출 시
+
+`ColonyBeeCount` 변경 시 즉시 반영:
+
+- 현재 `ColonyBeeCount`가 단순 UPROPERTY라면 `PostEditChangeProperty`에서 변경 감지 후 `ApplyAttractionSwarmSettings()` 호출
+- gameplay에서 벌 수를 변경하는 setter/API가 있다면 setter에서 `ApplyAttractionSwarmSettings()` 호출
+- setter가 없다면 이번 구현에서 `SetColonyBeeCount(int32 NewBeeCount)` 추가를 고려한다.
+
+권장 setter:
 
 ```cpp
-AEnvironmentTimeOfDayActor* FindTimeOfDayActor() const;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
+void SetColonyBeeCount(int32 NewBeeCount);
 ```
 
 정책:
 
-- 레벨에 1개 배치되어 있다는 전제
-- 없으면 warning
-- 여러 개면 첫 번째 사용 + warning
+- `ColonyBeeCount = Max(0, NewBeeCount)`
+- 기존 dual swarm settings도 벌 수에 의존하면 기존 적용 함수도 같이 호출
+- 신규 attraction swarm settings도 같이 호출
+
+### 시간 기반 자동 업데이트 금지
+
+다음 작업을 하지 않는다.
+
+- `UGameTimeBucketSubsystem` subscription 추가
+- `AttractionSwarm`용 `SubscriptionTag` 추가
+- `OnGameTimeBucketEvent`에서 `ApplyAttractionSwarmSettings()` 호출
+- `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`에 Attraction swarm 갱신 연결
+- 10분 경계마다 `SpawnAmount` 업데이트
+
+`ApplyBeeSwarmHour24()`가 기존 spline swarm을 갱신하더라도, 신규 Attraction swarm의 `SpawnAmount` 시간 갱신은 넣지 않는다.
+
+단, `ApplyAttractionSwarmSettings()`가 다른 일반 설정 적용 경로에서 호출되는 것은 허용된다.
+
+## Niagara User Parameter 숨김
+
+요구사항은 `AttractionSwarmNiagara`의 User Parameter를 모두 숨기는 것이다.
+
+기존 `BeehiveDualSwarmActorCustomization`이 있다면 확장하거나, Beehive용 customization을 추가한다.
+
+권장:
+
+- `ABeehive` details customization 또는 NiagaraComponent details customization에서 owner가 `ABeehive`이고 component name이 `AttractionSwarmNiagara`인 경우 User Parameter 관련 category/property를 숨긴다.
+- 숨김이 완전하지 않더라도 `ApplyAttractionSwarmSettings()`가 Beehive settings로 항상 덮어쓰도록 유지한다.
 
 주의:
 
-- `AEnvironmentTimeOfDayActor`를 UI 위젯이 include하지 않는다.
-- include는 controller cpp에서 처리한다.
+- Editor-only customization은 `#if WITH_EDITOR` / editor module boundary를 안전하게 처리한다.
+- 런타임 패키징에 `UnrealEd`, `PropertyEditor` 의존이 섞이지 않도록 주의한다.
+- 현재 프로젝트가 runtime module에서 editor customization을 처리 중이면 기존 패턴을 따른다.
 
-### Delegate Bind
+## 기존 Dual Spline Swarm과 관계
 
-`AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`는 dynamic multicast delegate다.
-
-Controller에 handler를 둔다.
-
-```cpp
-UFUNCTION()
-void HandleTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState);
-```
-
-handler:
-
-```text
-if TimeOfDayClockWidget:
-    TimeOfDayClockWidget->SetHour24(Hour24)
-```
-
-`VisualState`는 이번 위젯에서는 사용하지 않는다.
-
-### EndPlay
-
-`EndPlay()`에서 delegate unbind한다.
-
-```text
-if BoundTimeOfDayActor:
-    BoundTimeOfDayActor->OnTimeOfDayChanged.RemoveDynamic(...)
-```
-
-위젯 제거:
-
-```text
-if TimeOfDayClockWidget:
-    TimeOfDayClockWidget->RemoveFromParent()
-```
-
-## `AEnvironmentTimeOfDayActor` 변경 여부
-
-가능하면 변경하지 않는다.
-
-현재 필요한 API:
-
-- `GetCurrentHour24()`
-- `OnTimeOfDayChanged`
-
-이미 존재하면 그대로 사용한다.
-
-변경이 필요한 경우에만 최소 수정한다.
-
-## Blueprint/UMG 수동 작업
-
-구현 후 에디터에서 직접 수행한다.
-
-1. `WBP_TimeOfDayClock` 생성
-2. Parent Class를 `UTimeOfDayClockWidget`으로 지정
-3. 위젯에 `TextBlock_Time` 추가
-4. `OnDisplayedTimeChanged(NewTimeText, Hour, Minute)` 구현
-5. `TextBlock_Time.SetText(NewTimeText)` 연결
-6. `BP_BeekeeperController` 또는 사용하는 PlayerController BP에서 `TimeOfDayClockWidgetClass = WBP_TimeOfDayClock` 지정
-7. 레벨에 `AEnvironmentTimeOfDayActor` 또는 해당 BP가 1개 배치되어 있는지 확인
-
-UI 배치 권장:
-
-- 화면 우상단 또는 상단 중앙
-- 텍스트만 간결하게 표시
-- `HH:MM` 외 추가 설명 텍스트는 이번 범위에서 넣지 않는다.
+- 기존 Outgoing/Ingoing spline swarm은 유지한다.
+- 신규 Attraction swarm은 동시에 동작하는 부가 Niagara다.
+- 기존 dual swarm child actor 구조를 제거하거나 비활성화하지 않는다.
+- `ApplyBeeSwarmHour24()`의 기존 역할을 불필요하게 바꾸지 않는다.
 
 ## 금지 작업
 
-- UI 시계가 `UGameTimeBucketSubsystem`을 통해 갱신되는 구조
-- 위젯 내부에서 `AEnvironmentTimeOfDayActor`를 직접 탐색하는 구조
-- 매 프레임 Tick으로 TextBlock을 갱신하는 구조
-- `ABeehive` 또는 WorldActors 시간 연동 로직 수정
-- `AEnvironmentTimeOfDayActor`의 시간 진행 정책 변경
+- 별도 `ABeehiveAttractionSwarmActor` 생성
+- `UChildActorComponent`로 Attraction swarm 소유
+- `AttractionSwarmCenter` SceneComponent 추가
+- C++에서 Niagara System asset path 직접 로드
 - `Content/` asset 자동 생성/수정
-- `HH:MM` 외 AM/PM, 초 표시, 날짜 표시 추가
-- 에디터 프리뷰 UI까지 지원하려는 확장 작업
+- 시간 bucket/10분 경계/시간 delegate에 Attraction swarm `SpawnAmount` 자동 갱신 연결
+- `User.SpawnAmount`에 `SetVariableFloat` 사용
+- `AttractionPower`, `NoisePower`, `SpawnSphereRadius`, `SpawnAmount`를 NiagaraComponent details에서 직접 수정하도록 방치
+- 기존 Outgoing/Ingoing spline swarm 비활성화
 
 ## 문서 반영
 
-### `.md/Architecture/EnvironmentSystem.md`
+### `.md/Architecture/WorldActorsSystem.md`
 
-- `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`는 gameplay bucket뿐 아니라 UI 시계 표시에도 사용될 수 있음을 명시
-- 시계 UI는 `UGameTimeBucketSubsystem`을 거치지 않는다고 명시
+추가:
+
+- `ABeehive`가 `AttractionSwarmNiagara`를 직접 소유
+- `AttractionSwarmNiagara` 위치가 구심점
+- `FBeehiveAttractionSwarmSettings`
+- Niagara User Parameter 목록과 적용 책임
+- `SpawnAmount = RoundToInt(ColonyBeeCount * SpawnAmountScale)` 후 `MaxSpawnAmount` clamp
+- 시간 기반 자동 업데이트는 사용하지 않음
+- 기존 dual spline swarm과 동시에 동작
 
 ### `.md/0_ARCHITECTURE.md`
 
-- UI 시간 표시 위젯 추가 요약
+- Beehive 구성 요약에 Attraction swarm 추가
 
 ### `.md/USER_UNREAL.md`
 
-에디터 작업 추가:
+에디터 작업:
 
-- `WBP_TimeOfDayClock` 생성
-- parent를 `UTimeOfDayClockWidget`으로 설정
-- `OnDisplayedTimeChanged`에서 TextBlock 갱신
-- PlayerController BP에 widget class 지정
-- 레벨에 `AEnvironmentTimeOfDayActor` 1개 배치
+- `BP_Beehive` 열기
+- `AttractionSwarmNiagara` 컴포넌트에 Niagara System asset 지정
+- `AttractionSwarmNiagara` 컴포넌트 위치를 구심점 위치로 조정
+- `AttractionSwarmSettings` 값 설정
+  - `AttractionPower`
+  - `NoisePower`
+  - `SpawnSphereRadius`
+  - `SpawnAmountScale`
+  - `MaxSpawnAmount`
+- Niagara asset에 User Parameter 타입 확인
+  - `User.AttractionPower` Float
+  - `User.NoisePower` Float
+  - `User.SpawnSphereRadius` Float
+  - `User.SpawnAmount` Int32
 
 ### `.md/PROMPT_REVIEW.md`
 
-리뷰 체크 추가:
+리뷰 체크:
 
-- 위젯이 직접 world actor 탐색을 하지 않는지
-- controller/UI 생성 주체가 시간 Actor를 찾아 주입하는지
-- `HH:MM` 포맷이 floor 기준인지
-- `24.0 -> 00:00`인지
-- Text 갱신이 분 변경 시에만 일어나는지
-- Bucket subsystem을 사용하지 않는지
+- `ABeehive`가 직접 NiagaraComponent를 소유하는지
+- 별도 child actor가 생기지 않았는지
+- Attraction swarm에 시간 bucket subscription이 추가되지 않았는지
+- `SetVariableInt("User.SpawnAmount")`를 쓰는지
+- `ColonyBeeCount` 변경 시 즉시 SpawnAmount가 반영되는지
+- User Parameter 숨김 구현의 editor boundary가 안전한지
+- 기존 dual spline swarm 동작이 유지되는지
 
 ## 검증 명령
 
 ```powershell
-rg "TimeOfDayClock|FormatHour24AsHHMM|OnDisplayedTimeChanged|HandleTimeOfDayChanged" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
-rg "GameTimeBucketSubsystem" Source/BeekeepingSim/Public/UI Source/BeekeepingSim/Private/UI Source/BeekeepingSim/Public/Character Source/BeekeepingSim/Private/Character
+rg "AttractionSwarm|AttractionPower|NoisePower|SpawnSphereRadius" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+rg "SetVariableInt\\(.*SpawnAmount|SetVariableFloat\\(.*SpawnAmount" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
+rg "AttractionSwarm.*Bucket|AttractionSwarm.*Hour|AttractionSwarm.*Time|SubscriptionTag.*Attraction" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
 ```
 
 빌드:
@@ -354,24 +331,29 @@ rg "GameTimeBucketSubsystem" Source/BeekeepingSim/Public/UI Source/BeekeepingSim
 
 ## 수동 검증
 
-1. `AEnvironmentTimeOfDayActor.CurrentHour24 = 12.25`로 시작한다.
-2. PIE 시작 시 위젯이 즉시 `12:15`를 표시하는지 확인한다.
-3. 시간이 진행되어 `12:16`이 되는 순간 표시가 `12:16`으로 바뀌는지 확인한다.
-4. `12:15.9` 상태에서는 `12:15`로 표시되는지 확인한다.
-5. `SetCurrentHour24(23.99)` 호출 시 `23:59`로 갱신되는지 확인한다.
-6. `SetCurrentHour24(24.0)` 또는 `SetCurrentHour24(0.0)` 호출 시 `00:00`으로 표시되는지 확인한다.
-7. 시간 진행을 정지하면 마지막 표시가 유지되는지 확인한다.
-8. 시간 정지 중 `SetCurrentHour24()`를 수동 호출하면 즉시 갱신되는지 확인한다.
+1. `BP_Beehive`에 `AttractionSwarmNiagara` 컴포넌트가 보이는지 확인한다.
+2. `AttractionSwarmNiagara`에 Niagara System asset을 지정한다.
+3. `AttractionSwarmNiagara` 컴포넌트를 이동해 구심점 위치가 바뀌는지 확인한다.
+4. `AttractionSwarmSettings.AttractionPower` 변경 시 즉시 Niagara에 반영되는지 확인한다.
+5. `NoisePower`, `SpawnSphereRadius`도 동일하게 확인한다.
+6. `ColonyBeeCount=100`, `SpawnAmountScale=0.5`이면 `User.SpawnAmount=50`이 적용되는지 확인한다.
+7. `MaxSpawnAmount`보다 큰 계산값은 clamp되는지 확인한다.
+8. `ColonyBeeCount=0`이면 `User.SpawnAmount=0`인지 확인한다.
+9. 시간 경계/10분 bucket 변화만으로 Attraction swarm `SpawnAmount`가 재적용되지 않는지 확인한다.
+10. 기존 Outgoing/Ingoing spline swarm이 그대로 동작하는지 확인한다.
+11. `AttractionSwarmNiagara`의 User Parameter 직접 수정 UI가 숨겨졌는지 확인한다.
 
 ## 완료 기준
 
-- `UTimeOfDayClockWidget`이 추가된다.
-- `HH:MM` 포맷 함수가 C++에서 제공된다.
-- 표시 계산은 floor 기준이다.
-- `24:00`은 `00:00`으로 표시된다.
-- 위젯 생성 직후 현재 시간이 즉시 표시된다.
-- `OnTimeOfDayChanged`를 받아도 Text 갱신은 분 변경 시에만 일어난다.
-- 위젯은 `AEnvironmentTimeOfDayActor`를 직접 탐색하지 않는다.
-- `ABeekeeperController` 또는 기존 UI 생성 주체가 시간 Actor를 찾아 위젯에 전달한다.
-- `UGameTimeBucketSubsystem`은 시계 UI에 사용하지 않는다.
+- `ABeehive`가 `AttractionSwarmNiagara`를 직접 소유한다.
+- `AttractionSwarmNiagara` 위치가 구심점이다.
+- `FBeehiveAttractionSwarmSettings`가 노출된다.
+- `AttractionPower`, `NoisePower`, `SpawnSphereRadius` 변경이 즉시 반영된다.
+- `SpawnAmount`는 `ColonyBeeCount * SpawnAmountScale` 기반으로 계산된다.
+- `SpawnAmount`는 `RoundToInt`와 `MaxSpawnAmount` clamp를 거친다.
+- `SpawnAmount`는 `SetVariableInt`로 적용된다.
+- 특정 시간/10분 경계 자동 업데이트는 없다.
+- `ColonyBeeCount` 변경 시 즉시 `SpawnAmount`가 반영된다.
+- Niagara User Parameter 직접 수정 UI가 숨겨진다.
+- 기존 dual spline swarm은 유지된다.
 - 관련 문서가 실제 구현과 일치한다.

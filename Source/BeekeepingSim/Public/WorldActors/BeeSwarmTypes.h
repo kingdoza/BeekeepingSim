@@ -148,6 +148,27 @@ struct BEEKEEPINGSIM_API FBeehiveDirectionalSwarmSettings
 };
 
 USTRUCT(BlueprintType)
+struct BEEKEEPINGSIM_API FBeehiveAttractionSwarmSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+	float AttractionPower = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+	float NoisePower = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+	float SpawnSphereRadius = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0.0"))
+	float SpawnAmountScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Beehive|Attraction Swarm", meta = (ClampMin = "0"))
+	int32 MaxSpawnAmount = 1000;
+};
+
+USTRUCT(BlueprintType)
 struct BEEKEEPINGSIM_API FBeehiveDualSwarmNiagaraParameters
 {
 	GENERATED_BODY()

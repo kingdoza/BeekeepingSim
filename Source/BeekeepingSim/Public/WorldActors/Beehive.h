@@ -12,6 +12,7 @@
 class UFocusTargetComponent;
 class UAnchoredFocusCursorActionComponent;
 class UChildActorComponent;
+class UNiagaraComponent;
 class USceneComponent;
 class USplineComponent;
 class UStaticMeshComponent;
@@ -40,6 +41,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
 	void ApplyBeeSwarmHour24(float Hour24);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Attraction Swarm")
+	void ApplyAttractionSwarmSettings();
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Attraction Swarm")
+	int32 CalculateAttractionSwarmSpawnAmount() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
+	void SetColonyBeeCount(int32 NewBeeCount);
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -65,6 +75,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TObjectPtr<UChildActorComponent> BeehiveSwarmChildActor;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
+	TObjectPtr<UNiagaraComponent> AttractionSwarmNiagara;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
 
@@ -88,6 +101,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	FBeehiveDirectionalSwarmSettings IngoingSwarmSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
+	FBeehiveAttractionSwarmSettings AttractionSwarmSettings;
 
 private:
 	static float NormalizeHour24(float Hour24);

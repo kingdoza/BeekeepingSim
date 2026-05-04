@@ -6,12 +6,21 @@
 #include "Environment/GameTimeBucketSubsystem.h"
 #include "Focus/AnchoredFocusCursorActionComponent.h"
 #include "Components/ChildActorComponent.h"
+#include "NiagaraComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Focus/FocusTargetComponent.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
 #include "Curves/CurveFloat.h"
+
+namespace BeehiveAttractionSwarmNames
+{
+	static const FName AttractionPower(TEXT("User.AttractionPower"));
+	static const FName NoisePower(TEXT("User.NoisePower"));
+	static const FName SpawnSphereRadius(TEXT("User.SpawnSphereRadius"));
+	static const FName SpawnAmount(TEXT("User.SpawnAmount"));
+}
 
 ABeehive::ABeehive()
 {
@@ -31,6 +40,9 @@ ABeehive::ABeehive()
 
 	BeehiveSwarmChildActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("BeehiveSwarmChildActor"));
 	BeehiveSwarmChildActor->SetupAttachment(Root);
+
+	AttractionSwarmNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("AttractionSwarmNiagara"));
+	AttractionSwarmNiagara->SetupAttachment(Root);
 }
 
 void ABeehive::OnConstruction(const FTransform& Transform)
@@ -38,6 +50,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	EnsureDualSwarmChildActorClass();
 	ApplyBeeSwarmSettings();
+	ApplyAttractionSwarmSettings();
 }
 
 void ABeehive::BeginPlay()
@@ -45,6 +58,7 @@ void ABeehive::BeginPlay()
 	Super::BeginPlay();
 	EnsureDualSwarmChildActorClass();
 	ApplyBeeSwarmSettings();
+	ApplyAttractionSwarmSettings();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -76,8 +90,39 @@ void ABeehive::ApplyBeeSwarmSettings()
 void ABeehive::ApplyBeeSwarmHour24(float Hour24)
 {
 	BeeSwarmHour24 = NormalizeHour24(Hour24);
-	ApplyBeeSwarmSettings();
+	ApplySettingsToDualSwarmChildActor();
 	UE_LOG(LogBeekeepingBeeSwarm, Log, TEXT("%s BeeSwarmHour24 set to %f"), *GetName(), BeeSwarmHour24);
+}
+
+void ABeehive::ApplyAttractionSwarmSettings()
+{
+	if (!AttractionSwarmNiagara)
+	{
+		UE_LOG(LogBeekeepingBeeSwarm, Warning, TEXT("%s is missing AttractionSwarmNiagara component."), *GetName());
+		return;
+	}
+
+	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::AttractionPower, FMath::Max(0.0f, AttractionSwarmSettings.AttractionPower));
+	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::NoisePower, FMath::Max(0.0f, AttractionSwarmSettings.NoisePower));
+	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::SpawnSphereRadius, FMath::Max(0.0f, AttractionSwarmSettings.SpawnSphereRadius));
+	AttractionSwarmNiagara->SetVariableInt(BeehiveAttractionSwarmNames::SpawnAmount, CalculateAttractionSwarmSpawnAmount());
+}
+
+int32 ABeehive::CalculateAttractionSwarmSpawnAmount() const
+{
+	const int32 BeeCount = FMath::Max(0, ColonyBeeCount);
+	const float SpawnScale = FMath::Max(0.0f, AttractionSwarmSettings.SpawnAmountScale);
+	const int32 MaxSpawnAmount = FMath::Max(0, AttractionSwarmSettings.MaxSpawnAmount);
+	const float RawSpawnAmount = static_cast<float>(BeeCount) * SpawnScale;
+	const int32 RoundedSpawnAmount = FMath::RoundToInt(RawSpawnAmount);
+	return FMath::Clamp(RoundedSpawnAmount, 0, MaxSpawnAmount);
+}
+
+void ABeehive::SetColonyBeeCount(int32 NewBeeCount)
+{
+	ColonyBeeCount = FMath::Max(0, NewBeeCount);
+	ApplyBeeSwarmSettings();
+	ApplyAttractionSwarmSettings();
 }
 
 void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const
@@ -200,5 +245,6 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	EnsureDualSwarmChildActorClass();
 	ApplyBeeSwarmSettings();
+	ApplyAttractionSwarmSettings();
 }
 #endif

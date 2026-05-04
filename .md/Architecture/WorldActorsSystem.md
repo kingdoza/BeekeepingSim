@@ -117,3 +117,19 @@
 - `ABeehive` registers itself to `UGameTimeBucketSubsystem` in `BeginPlay`.
 - `ABeehive` unregisters itself from `UGameTimeBucketSubsystem` in `EndPlay`.
 - Runtime-spawned beehives therefore receive bucket events without external manual registration.
+## Beehive Attraction Swarm
+
+- `ABeehive` now directly owns `UNiagaraComponent* AttractionSwarmNiagara` (no child actor).
+- Attraction center is the `AttractionSwarmNiagara` component transform itself.
+- Settings are exposed by `FBeehiveAttractionSwarmSettings` on `ABeehive`.
+- Applied Niagara user parameters:
+  - `User.AttractionPower` (Float)
+  - `User.NoisePower` (Float)
+  - `User.SpawnSphereRadius` (Float)
+  - `User.SpawnAmount` (Int32, via `SetVariableInt`)
+- `SpawnAmount` formula:
+  - `RoundToInt(ColonyBeeCount * SpawnAmountScale)`
+  - clamp to `0..MaxSpawnAmount`
+- Apply points: `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, explicit apply call, and bee-count setter.
+- No time/bucket-based auto update is used for attraction spawn amount.
+- Existing outgoing/ingoing spline swarms remain active and unchanged.
