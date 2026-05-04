@@ -5,6 +5,7 @@
 #include "DetailLayoutBuilder.h"
 #include "NiagaraComponent.h"
 #include "WorldActors/Beehive.h"
+#include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
 
 TSharedRef<IDetailCustomization> FBeehiveDualSwarmActorCustomization::MakeInstance()
@@ -47,6 +48,16 @@ void FBeehiveDualSwarmNiagaraComponentCustomization::CustomizeDetails(IDetailLay
 		if (OwnerActor && OwnerActor->IsA<ABeehive>())
 		{
 			if (NiagaraComponent->GetFName() == FName(TEXT("AttractionSwarmNiagara")))
+			{
+				bIsBeehiveDualSwarmNiagara = true;
+				break;
+			}
+		}
+
+		if (OwnerActor && OwnerActor->IsA<ABeehiveCombActor>())
+		{
+			const FName ComponentName = NiagaraComponent->GetFName();
+			if (ComponentName == FName(TEXT("FrontFaceBeeNiagara")) || ComponentName == FName(TEXT("BackFaceBeeNiagara")))
 			{
 				bIsBeehiveDualSwarmNiagara = true;
 				break;

@@ -9,6 +9,8 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
 - `Source/BeekeepingSim/Private/WorldActors/WorldItemPickup.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/StorageBox.h`
@@ -24,6 +26,7 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
+- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
@@ -38,6 +41,7 @@
 - `UFocusTargetComponent`
 - `UAnchoredFocusCursorActionComponent`
 - `UChildActorComponent` 1개 (`BeehiveSwarmChildActor`)
+- `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
 - `USplineComponent` 1개 (`SwarmSpline`)를 직접 소유하며 레벨 인스턴스별 편집 대상
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
@@ -45,6 +49,12 @@
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
 - `ApplyBeeSwarmSettings()`에서 child actor 재생성 없이 기존 instance에 계산된 DTO를 재주입
 - 시간 갱신(`ApplyBeeSwarmHour24`) 경로에서도 class 변경 없이 parameter만 갱신
+- `CombSlotSpacing` 기준 local `-Y` 배치: slot `i`는 `FVector(0, -i * CombSlotSpacing, 0)`
+- `CurrentCombCount` 정책: `MaxCombCount` 변경 시 강제 초기화 없이 `0..MaxCombCount` clamp만 수행
+- `CurrentCombCount <= 0`이면 활성 comb actor가 없고 comb spawn amount는 0
+- comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / CurrentCombCount)`
+- `SetColonyBeeCount` 포함 spawn amount 갱신 경로에서 active comb의 target bee count를 spawn amount로 리셋
+- 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
 
 ### `ABeehiveDualSwarmActor`
 
@@ -67,6 +77,24 @@
 - Niagara Spline Data Interface는 `User.SwarmSpline` Object parameter를 통해 Beehive가 전달한 `SwarmSpline`을 참조한다.
 - `ABeeSplineSwarmActor`는 기존 단일 actor 워크플로우를 유지한다.
 - Spline point 자동 생성/삭제/재배치 기능은 제공하지 않음
+
+### `ABeehiveCombActor`
+
+- `USceneComponent` root
+- `UStaticMeshComponent` comb mesh
+- `UNiagaraComponent` 2개 (`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)
+- 상태:
+  - `SpawnAmount`는 `0` 이상 clamp
+  - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
+- 감소 API:
+  - `ReduceTargetBeeCountByRatio(float)` (`Ratio`는 `0..1` clamp, 감소량은 `RoundToInt(CurrentTargetBeeCount * Ratio)`)
+  - `ReduceTargetBeeCountByAmount(int32)`
+- 파라미터 적용 시점:
+  - `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, 명시 API 호출 시
+- Niagara user parameter 적용:
+  - `User.PlaneSize` (Vector2D)
+  - `User.SpawnAmount` (Int32)
+  - `User.TargetBeeCount` (Int32)
 
 ### `AWorldItemPickup`
 
@@ -103,6 +131,7 @@
   - `RawSpawnAmount = Activity * ColonyBeeCount * SpawnAmountScale`
   - `FinalSpawnAmount = Clamp(RawSpawnAmount, 0, MaxSpawnAmount)`
 - `OutgoingNiagara.User.bIsReverse=false`, `IngoingNiagara.User.bIsReverse=true`를 C++에서 항상 명시 적용한다.
+- `ABeehiveCombActor` 소유 `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`도 component details에서 `OverrideParameters`를 숨기고 C++ 적용값이 source of truth다.
 - `ABeehive`는 `AEnvironmentTimeOfDayActor`를 직접 참조하지 않으며, bucket listener 이벤트의 `Hour24`를 받아서만 갱신한다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.

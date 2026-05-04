@@ -95,3 +95,17 @@
    - `User.NoisePower` Float
    - `User.SpawnSphereRadius` Float
    - `User.SpawnAmount` Int32
+
+## Beehive Comb Actor Setup (Manual)
+
+1. Create `BP_BeehiveCombActor` and set parent class to `ABeehiveCombActor`.
+2. Assign comb mesh to `CombMesh`.
+3. Assign Niagara system assets to `FrontFaceBeeNiagara`, `BackFaceBeeNiagara`.
+4. Verify Niagara user parameter names/types:
+   - `User.PlaneSize` Vector2D
+   - `User.SpawnAmount` Int32
+   - `User.TargetBeeCount` Int32
+5. Open `BP_Beehive` and set `CombActorClass` to `BP_BeehiveCombActor`.
+6. Adjust `CombRackRoot` transform to place the comb rack, and tune `CombSlotSpacing`.
+7. Set `MaxCombCount`, `CombSpawnAmountRatio`, `CombPlaneSize` and verify active comb count with test APIs.
+8. Confirm `FrontFaceBeeNiagara` / `BackFaceBeeNiagara` details hide `OverrideParameters` editing UI.

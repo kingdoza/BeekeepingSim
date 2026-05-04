@@ -18,6 +18,7 @@ class USplineComponent;
 class UStaticMeshComponent;
 class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
+class ABeehiveCombActor;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
@@ -50,6 +51,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
 	void SetColonyBeeCount(int32 NewBeeCount);
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 GetCurrentCombCount() const { return CurrentCombCount; }
+
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
+	void IncreaseCurrentCombCountForTest();
+
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
+	void DecreaseCurrentCombCountForTest();
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void SetCurrentCombCountForTest(int32 NewCount);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 CalculateCombSpawnAmount() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ReduceAllCombTargetBeeCountsByConfiguredRatio();
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ReduceCombTargetBeeCountByConfiguredRatio(int32 CombIndex);
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -78,6 +100,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
 	TObjectPtr<UNiagaraComponent> AttractionSwarmNiagara;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	TObjectPtr<USceneComponent> CombRackRoot;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
 
@@ -105,12 +130,44 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
 	FBeehiveAttractionSwarmSettings AttractionSwarmSettings;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	TSubclassOf<ABeehiveCombActor> CombActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
+	int32 MaxCombCount = 6;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	float CombSlotSpacing = 30.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CombTargetBeeCountReduceRatio = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CombSpawnAmountRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	FVector2D CombPlaneSize = FVector2D(100.0f, 100.0f);
+
+	UPROPERTY(Transient)
+	int32 CurrentCombCount = 0;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UChildActorComponent>> CombSlotComponents;
+
+	UPROPERTY(Transient)
+	bool bCombCountInitialized = false;
+
 private:
 	static float NormalizeHour24(float Hour24);
 	static float EvaluateActivity(const FBeehiveDirectionalSwarmSettings& Settings, float Hour24);
 	FBeehiveDualSwarmNiagaraParameters BuildDualSwarmParameters() const;
 	void ApplySettingsToDualSwarmChildActor();
 	void EnsureDualSwarmChildActorClass();
+	void RefreshCombLayoutAndParameters();
+	void RefreshCombSlotComponents();
+	void RefreshCombSlotTransforms();
+	void RefreshCombSpawnAmounts();
+	void ClampCurrentCombCount();
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive")

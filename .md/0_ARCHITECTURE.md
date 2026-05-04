@@ -68,6 +68,8 @@ Source/BeekeepingSim/
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
+- `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, 활성 슬롯(`CurrentCombCount`)에만 `ABeehiveCombActor`를 생성한다.
+- `ABeehiveCombActor`는 `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`에 `User.PlaneSize`, `User.SpawnAmount`, `User.TargetBeeCount`를 동일 값으로 적용한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
