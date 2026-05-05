@@ -10,9 +10,13 @@
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/FocusTargetComponent.h"
+#include "Focus/CursorPartFocusScopeComponent.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
 #include "WorldActors/BeehiveCombActor.h"
+#include "WorldActors/BeehiveCombLiftComponent.h"
 #include "Curves/CurveFloat.h"
 
 namespace BeehiveAttractionSwarmNames
@@ -86,7 +90,22 @@ ABeehive::ABeehive()
 	CombRackRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CombRackRoot"));
 	CombRackRoot->SetupAttachment(Root);
 
+	CombLiftTargetRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CombLiftTargetRoot"));
+	CombLiftTargetRoot->SetupAttachment(Root);
+
+	CombLiftComponent = CreateDefaultSubobject<UBeehiveCombLiftComponent>(TEXT("CombLiftComponent"));
+
 	CombActorClass = ABeehiveCombActor::StaticClass();
+
+	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
+	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
+	if (LidPartFocusAction)
+	{
+		LidPartFocusAction->SetEngageMode(ECursorPartFocusEngageMode::PersistentAction);
+		FGameplayTagContainer ProvidedTags;
+		ProvidedTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
+		LidPartFocusAction->SetProvidedStateTags(ProvidedTags);
+	}
 }
 
 void ABeehive::OnConstruction(const FTransform& Transform)
@@ -96,6 +115,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	RebuildCursorPartFocusDescriptors();
 }
 
 void ABeehive::BeginPlay()
@@ -105,6 +125,7 @@ void ABeehive::BeginPlay()
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	RebuildCursorPartFocusDescriptors();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -170,6 +191,159 @@ void ABeehive::SetColonyBeeCount(int32 NewBeeCount)
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombSpawnAmounts();
+}
+
+void ABeehive::RebuildCursorPartFocusDescriptors()
+{
+	if (!CursorPartFocusScope)
+	{
+		return;
+	}
+
+	CursorPartFocusScope->ClearRegisteredParts();
+
+	UPrimitiveComponent* LidComponent = FindPrimitiveComponentByTag(LidPartComponentTag);
+	if (!LidComponent)
+	{
+		LidComponent = BeehiveMesh;
+	}
+
+	if (LidComponent)
+	{
+		FCursorPartFocusPartDescriptor LidDescriptor;
+		LidDescriptor.PartId = FName(TEXT("Beehive.Lid"));
+		LidDescriptor.OwnerActor = this;
+		LidDescriptor.HitComponent = LidComponent;
+		LidDescriptor.OutlineComponents.AddUnique(LidComponent);
+		if (!LidOutlineComponentTag.IsNone())
+		{
+			LidDescriptor.OutlineComponentTags.Add(LidOutlineComponentTag);
+		}
+		LidDescriptor.ActionHandler = LidPartFocusAction;
+		LidDescriptor.EngageMode = LidPartFocusAction ? LidPartFocusAction->GetEngageMode() : ECursorPartFocusEngageMode::PersistentAction;
+		LidDescriptor.PromptData.bIsValid = true;
+		LidDescriptor.PromptData.DisplayName = LidPartDisplayName.IsEmpty() ? FText::FromString(TEXT("Lid")) : LidPartDisplayName;
+		LidDescriptor.PromptData.InteractionKeyText = LidPartInteractionKeyText.IsEmpty() ? FText::FromString(TEXT("Click")) : LidPartInteractionKeyText;
+		CursorPartFocusScope->RegisterPartDescriptor(LidDescriptor);
+	}
+
+	RegisterCombPartsToScope();
+
+	if (PreviewOnlyPartComponentTags.Num() > 0)
+	{
+		TArray<UPrimitiveComponent*> PrimitiveComponents;
+		GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+		for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+		{
+			if (!PrimitiveComponent)
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& Tag : PreviewOnlyPartComponentTags)
+			{
+				if (!Tag.IsNone() && PrimitiveComponent->ComponentHasTag(Tag))
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (!bMatches)
+			{
+				continue;
+			}
+
+			FCursorPartFocusPartDescriptor PreviewOnlyDescriptor;
+			PreviewOnlyDescriptor.PartId = FName(*FString::Printf(TEXT("PreviewOnly.%s"), *PrimitiveComponent->GetName()));
+			PreviewOnlyDescriptor.OwnerActor = this;
+			PreviewOnlyDescriptor.HitComponent = PrimitiveComponent;
+			PreviewOnlyDescriptor.OutlineComponents.Add(PrimitiveComponent);
+			PreviewOnlyDescriptor.EngageMode = ECursorPartFocusEngageMode::PreviewOnly;
+			PreviewOnlyDescriptor.PromptData.bIsValid = false;
+			CursorPartFocusScope->RegisterPartDescriptor(PreviewOnlyDescriptor);
+		}
+	}
+}
+
+void ABeehive::SetLidOpenForPartFocus(bool bOpen)
+{
+	if (bIsLidOpen == bOpen)
+	{
+		return;
+	}
+
+	bIsLidOpen = bOpen;
+	ReceiveLidPartFocusStateChanged(bIsLidOpen);
+}
+
+int32 ABeehive::FindManagedCombSlotIndex(const ABeehiveCombActor* CombActor) const
+{
+	if (!CombActor)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	{
+		if (!CombSlotComponents.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		const UChildActorComponent* Slot = CombSlotComponents[Index];
+		if (Slot && Slot->GetChildActor() == CombActor)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+UChildActorComponent* ABeehive::GetCombSlotComponentByIndex(int32 Index) const
+{
+	if (!CombSlotComponents.IsValidIndex(Index))
+	{
+		return nullptr;
+	}
+
+	return CombSlotComponents[Index];
+}
+
+bool ABeehive::GetCombSlotWorldTransformByIndex(int32 Index, FTransform& OutTransform) const
+{
+	const UChildActorComponent* Slot = GetCombSlotComponentByIndex(Index);
+	if (!Slot)
+	{
+		OutTransform = FTransform::Identity;
+		return false;
+	}
+
+	OutTransform = Slot->GetComponentTransform();
+	return true;
+}
+
+bool ABeehive::BuildCombSlotRestRelativeTransform(int32 Index, FTransform& OutTransform) const
+{
+	if (Index < 0)
+	{
+		OutTransform = FTransform::Identity;
+		return false;
+	}
+
+	const int32 SafeMaxCombCount = FMath::Max(0, MaxCombCount);
+	if (SafeMaxCombCount <= 0)
+	{
+		OutTransform = FTransform::Identity;
+		return false;
+	}
+
+	const float HalfSpan = static_cast<float>(SafeMaxCombCount - 1) * 0.5f * CombSlotSpacing;
+	const float SlotY = -HalfSpan + (static_cast<float>(Index) * CombSlotSpacing);
+	OutTransform = FTransform(FRotator::ZeroRotator, FVector(0.0f, SlotY, 0.0f), FVector::OneVector);
+	return true;
 }
 
 void ABeehive::IncreaseCurrentCombCountForTest()
@@ -343,6 +517,7 @@ void ABeehive::RefreshCombLayoutAndParameters()
 	RefreshCombSlotComponents();
 	RefreshCombSlotTransforms();
 	RefreshCombSpawnAmounts();
+	RebuildCursorPartFocusDescriptors();
 }
 
 void ABeehive::RefreshCombSlotComponents()
@@ -481,23 +656,21 @@ void ABeehive::RefreshCombSlotComponents()
 
 void ABeehive::RefreshCombSlotTransforms()
 {
-	const int32 SafeMaxCombCount = FMath::Max(0, MaxCombCount);
-	if (SafeMaxCombCount <= 0)
-	{
-		return;
-	}
-
-	const float HalfSpan = static_cast<float>(SafeMaxCombCount - 1) * 0.5f * CombSlotSpacing;
 	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
 		if (UChildActorComponent* Slot = CombSlotComponents[Index])
 		{
-			const float SlotY = -HalfSpan + (static_cast<float>(Index) * CombSlotSpacing);
-			const FVector RelativeLocation(0.0f, SlotY, 0.0f);
-			Slot->SetRelativeLocation(RelativeLocation);
-			Slot->SetRelativeRotation(FRotator::ZeroRotator);
-			Slot->SetRelativeScale3D(FVector::OneVector);
+			FTransform RestRelativeTransform;
+			if (BuildCombSlotRestRelativeTransform(Index, RestRelativeTransform))
+			{
+				Slot->SetRelativeTransform(RestRelativeTransform);
+			}
 		}
+	}
+
+	if (CombLiftComponent)
+	{
+		CombLiftComponent->ReapplyLiftedCombTransformAfterLayoutRefresh();
 	}
 }
 
@@ -532,6 +705,143 @@ void ABeehive::ClampCurrentCombCount()
 	CurrentCombCount = FMath::Clamp(CurrentCombCount, 0, MaxCombCount);
 }
 
+void ABeehive::RegisterCombPartsToScope()
+{
+	if (!CursorPartFocusScope)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	{
+		if (!CombSlotComponents.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		UChildActorComponent* Slot = CombSlotComponents[Index];
+		if (!Slot)
+		{
+			continue;
+		}
+
+		ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Slot->GetChildActor());
+		if (!CombActor)
+		{
+			continue;
+		}
+
+		FCursorPartFocusPartDescriptor CombDescriptor;
+		CombDescriptor.PartId = FName(*FString::Printf(TEXT("Beehive.Comb.%d"), Index));
+		CombDescriptor.OwnerActor = CombActor;
+		CombDescriptor.HitComponent = CombActor->GetCombMeshComponent();
+		if (UPrimitiveComponent* Mesh = CombActor->GetCombMeshComponent())
+		{
+			CombDescriptor.OutlineComponents.Add(Mesh);
+		}
+		CombDescriptor.ActionHandler = CombActor->GetPartFocusActionComponent();
+		BindCombPartFocusActionDelegates(CombActor, CombDescriptor.ActionHandler);
+		CombDescriptor.EngageMode = CombDescriptor.ActionHandler ? CombDescriptor.ActionHandler->GetEngageMode() : ECursorPartFocusEngageMode::PersistentAction;
+		if (CombDescriptor.ActionHandler)
+		{
+			CombDescriptor.RequiredStateTags = CombDescriptor.ActionHandler->GetRequiredStateTags();
+		}
+		CombDescriptor.PromptData.bIsValid = true;
+		CombDescriptor.PromptData.DisplayName = FText::FromString(TEXT("Comb"));
+		CombDescriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("Click"));
+		CursorPartFocusScope->RegisterPartDescriptor(CombDescriptor);
+	}
+}
+
+void ABeehive::BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent)
+{
+	if (!CombActor || !ActionComponent)
+	{
+		return;
+	}
+
+	ActionComponent->OnPartFocusBegin.RemoveDynamic(this, &ABeehive::HandleCombPartFocusBegin);
+	ActionComponent->OnPartFocusCancel.RemoveDynamic(this, &ABeehive::HandleCombPartFocusCancel);
+	ActionComponent->OnPartFocusAbort.RemoveDynamic(this, &ABeehive::HandleCombPartFocusAbort);
+
+	ActionComponent->OnPartFocusBegin.AddDynamic(this, &ABeehive::HandleCombPartFocusBegin);
+	ActionComponent->OnPartFocusCancel.AddDynamic(this, &ABeehive::HandleCombPartFocusCancel);
+	ActionComponent->OnPartFocusAbort.AddDynamic(this, &ABeehive::HandleCombPartFocusAbort);
+}
+
+bool ABeehive::IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const
+{
+	return FindManagedCombSlotIndex(CombActor) != INDEX_NONE;
+}
+
+void ABeehive::HandleCombPartFocusBegin(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	ABeehiveCombActor* CombActor = ActionComponent ? Cast<ABeehiveCombActor>(ActionComponent->GetOwner()) : nullptr;
+	if (!CombActor || !IsManagedActiveCombActor(CombActor))
+	{
+		return;
+	}
+
+	if (CombLiftComponent)
+	{
+		CombLiftComponent->LiftComb(CombActor, InteractingCharacter);
+	}
+
+	ReceiveCombPartFocusBegin(CombActor, InteractingCharacter);
+}
+
+void ABeehive::HandleCombPartFocusCancel(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	ABeehiveCombActor* CombActor = ActionComponent ? Cast<ABeehiveCombActor>(ActionComponent->GetOwner()) : nullptr;
+	if (!CombActor || !IsManagedActiveCombActor(CombActor))
+	{
+		return;
+	}
+
+	if (CombLiftComponent)
+	{
+		CombLiftComponent->ReturnComb(CombActor);
+	}
+
+	ReceiveCombPartFocusCancel(CombActor, InteractingCharacter);
+}
+
+void ABeehive::HandleCombPartFocusAbort(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	ABeehiveCombActor* CombActor = ActionComponent ? Cast<ABeehiveCombActor>(ActionComponent->GetOwner()) : nullptr;
+	if (!CombActor || !IsManagedActiveCombActor(CombActor))
+	{
+		return;
+	}
+
+	if (CombLiftComponent)
+	{
+		CombLiftComponent->AbortCombLift(CombActor);
+	}
+
+	ReceiveCombPartFocusAbort(CombActor, InteractingCharacter);
+}
+
+UPrimitiveComponent* ABeehive::FindPrimitiveComponentByTag(FName ComponentTag) const
+{
+	if (ComponentTag.IsNone())
+	{
+		return nullptr;
+	}
+
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (PrimitiveComponent && PrimitiveComponent->ComponentHasTag(ComponentTag))
+		{
+			return PrimitiveComponent;
+		}
+	}
+
+	return nullptr;
+}
+
 void ABeehive::OnFocusEnter_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
 	ReceiveFocusEntered(InteractingCharacter);
@@ -544,13 +854,11 @@ void ABeehive::OnFocusExit_Implementation(ABeekeeperCharacter* InteractingCharac
 
 void ABeehive::OnFocusConfirm_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
-	bIsLidOpen = true;
 	ReceiveFocusConfirmed(InteractingCharacter);
 }
 
 void ABeehive::OnFocusCancel_Implementation(ABeekeeperCharacter* InteractingCharacter)
 {
-	bIsLidOpen = false;
 	ReceiveFocusCanceled(InteractingCharacter);
 }
 
@@ -562,5 +870,6 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	RebuildCursorPartFocusDescriptors();
 }
 #endif

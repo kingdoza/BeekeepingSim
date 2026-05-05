@@ -69,6 +69,18 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> HotbarWheelAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> PartFocusClickAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> PartFocusRAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> PartFocusFAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> PartFocusCAction;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MoveSpeedScale = 1;
@@ -99,6 +111,14 @@ protected:
 	void HotbarSlotInput(const FInputActionValue& Value);
 
 	void HotbarWheelInput(const FInputActionValue& Value);
+
+	void PartFocusClickInput();
+
+	void PartFocusRInput();
+
+	void PartFocusFInput();
+
+	void PartFocusCInput();
 	
 	UFUNCTION(Blueprintable, Category = "Input")
 	void DoMove(float Right, float Forward);

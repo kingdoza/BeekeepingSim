@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Focus/CursorPartFocusTypes.h"
 #include "GameplayTagContainer.h"
 #include "Focus/FocusTargetComponent.h"
 #include "BeekeeperFocusComponent.generated.h"
@@ -31,6 +32,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Focus")
 	void CancelFocus();
 
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandlePartFocusClickInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
+
 	UFUNCTION(BlueprintPure, Category = "Focus")
 	UFocusTargetComponent* GetCurrentFocusTarget() const { return CurrentFocusTarget; }
 
@@ -57,6 +64,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Focus")
 	bool EvaluateItemAllowed(const FGameplayTagContainer& ItemTags, FGameplayTag AllItemsTag) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	void SetEngagedFocusPromptOverride(const FFocusPromptData& PromptData);
 
 	UPROPERTY(BlueprintAssignable, Category = "Focus")
 	FBeekeeperFocusPromptChangedSignature OnFocusPromptChanged;
@@ -117,6 +127,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFocusActionComponent> EngagedFocusAction;
+
+	UPROPERTY(Transient)
+	FFocusPromptData EngagedPromptOverride;
+
+	UPROPERTY(Transient)
+	bool bHasEngagedPromptOverride = false;
 
 	bool bIsFocusEngaged = false;
 

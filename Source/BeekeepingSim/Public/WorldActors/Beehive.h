@@ -16,9 +16,13 @@ class UNiagaraComponent;
 class USceneComponent;
 class USplineComponent;
 class UStaticMeshComponent;
+class UPrimitiveComponent;
 class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
 class ABeehiveCombActor;
+class UCursorPartFocusScopeComponent;
+class UCursorPartFocusActionComponent;
+class UBeehiveCombLiftComponent;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
@@ -51,8 +55,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
 	void SetColonyBeeCount(int32 NewBeeCount);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
+	void RebuildCursorPartFocusDescriptors();
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
+	void SetLidOpenForPartFocus(bool bOpen);
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 GetCurrentCombCount() const { return CurrentCombCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 FindManagedCombSlotIndex(const ABeehiveCombActor* CombActor) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	UChildActorComponent* GetCombSlotComponentByIndex(int32 Index) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	bool GetCombSlotWorldTransformByIndex(int32 Index, FTransform& OutTransform) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	bool BuildCombSlotRestRelativeTransform(int32 Index, FTransform& OutTransform) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	USceneComponent* GetCombLiftTargetRoot() const { return CombLiftTargetRoot; }
 
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
 	void IncreaseCurrentCombCountForTest();
@@ -103,6 +128,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	TObjectPtr<USceneComponent> CombRackRoot;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	TObjectPtr<USceneComponent> CombLiftTargetRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	TObjectPtr<UBeehiveCombLiftComponent> CombLiftComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	TObjectPtr<UCursorPartFocusScopeComponent> CursorPartFocusScope;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	TObjectPtr<UCursorPartFocusActionComponent> LidPartFocusAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
 
@@ -148,6 +185,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	FVector2D CombPlaneSize = FVector2D(100.0f, 100.0f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	FName LidPartComponentTag = TEXT("LidMesh");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	FName LidOutlineComponentTag = TEXT("LidMesh");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	TArray<FName> PreviewOnlyPartComponentTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	FText LidPartDisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	FText LidPartInteractionKeyText;
+
 	UPROPERTY(Transient)
 	int32 CurrentCombCount = 0;
 
@@ -168,6 +220,19 @@ private:
 	void RefreshCombSlotTransforms();
 	void RefreshCombSpawnAmounts();
 	void ClampCurrentCombCount();
+	void RegisterCombPartsToScope();
+	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);
+	bool IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const;
+	UPrimitiveComponent* FindPrimitiveComponentByTag(FName ComponentTag) const;
+
+	UFUNCTION()
+	void HandleCombPartFocusBegin(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION()
+	void HandleCombPartFocusCancel(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION()
+	void HandleCombPartFocusAbort(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive")
@@ -181,6 +246,18 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive")
 	void ReceiveFocusCanceled(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive")
+	void ReceiveLidPartFocusStateChanged(bool bIsOpen);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Part Focus")
+	void ReceiveCombPartFocusBegin(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Part Focus")
+	void ReceiveCombPartFocusCancel(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Part Focus")
+	void ReceiveCombPartFocusAbort(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
 
 public:
 	virtual void OnFocusEnter_Implementation(ABeekeeperCharacter* InteractingCharacter) override;

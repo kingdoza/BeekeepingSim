@@ -74,6 +74,11 @@ void UBeekeeperFocusComponent::ConfirmFocus()
 {
 	if (bIsFocusEngaged)
 	{
+		if (EngagedFocusAction && OwnerCharacter && EngagedFocusAction->HandleConfirmInputWhileEngaged(OwnerCharacter))
+		{
+			return;
+		}
+
 		CancelFocus();
 		return;
 	}
@@ -126,6 +131,11 @@ void UBeekeeperFocusComponent::CancelFocus()
 		return;
 	}
 
+	if (EngagedFocusAction && OwnerCharacter && EngagedFocusAction->HandleCancelInputWhileEngaged(OwnerCharacter))
+	{
+		return;
+	}
+
 	if (!IsValid(EngagedFocusTarget) || !EngagedFocusAction || !OwnerCharacter)
 	{
 		ClearEngagedFocus();
@@ -146,14 +156,46 @@ void UBeekeeperFocusComponent::CancelFocus()
 	RefreshCrosshairVisibilityFromCurrentAction();
 }
 
+bool UBeekeeperFocusComponent::HandlePartFocusClickInput()
+{
+	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
+	{
+		return false;
+	}
+
+	return EngagedFocusAction->HandlePartFocusClickInputWhileEngaged(OwnerCharacter);
+}
+
+bool UBeekeeperFocusComponent::HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key)
+{
+	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
+	{
+		return false;
+	}
+
+	return EngagedFocusAction->HandlePartFocusPreviewKeyInputWhileEngaged(OwnerCharacter, Key);
+}
+
 FFocusPromptData UBeekeeperFocusComponent::GetCurrentPromptData() const
 {
-	if (bIsFocusEngaged || !IsValid(CurrentFocusTarget))
+	if (bIsFocusEngaged)
+	{
+		return bHasEngagedPromptOverride ? EngagedPromptOverride : FFocusPromptData();
+	}
+
+	if (!IsValid(CurrentFocusTarget))
 	{
 		return FFocusPromptData();
 	}
 
 	return CurrentFocusTarget->GetPromptData();
+}
+
+void UBeekeeperFocusComponent::SetEngagedFocusPromptOverride(const FFocusPromptData& PromptData)
+{
+	bHasEngagedPromptOverride = PromptData.bIsValid;
+	EngagedPromptOverride = PromptData;
+	BroadcastPreviewPromptState();
 }
 
 bool UBeekeeperFocusComponent::EvaluateItemAllowed(const FGameplayTagContainer& ItemTags, FGameplayTag AllItemsTag) const
@@ -279,8 +321,11 @@ void UBeekeeperFocusComponent::ClearEngagedFocus()
 
 	EngagedFocusTarget = nullptr;
 	EngagedFocusAction = nullptr;
+	bHasEngagedPromptOverride = false;
+	EngagedPromptOverride = FFocusPromptData();
 	bIsFocusEngaged = false;
 	BroadcastEngagedFocusRule();
+	BroadcastPreviewPromptState();
 	UpdateCrosshairVisibility(false);
 }
 

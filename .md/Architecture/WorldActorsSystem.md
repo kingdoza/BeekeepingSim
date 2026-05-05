@@ -42,6 +42,8 @@
 - `UAnchoredFocusCursorActionComponent`
 - `UChildActorComponent` 1개 (`BeehiveSwarmChildActor`)
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
+- `UCursorPartFocusScopeComponent` 1개 (`CursorPartFocusScope`)
+- `UCursorPartFocusActionComponent` 1개 (`LidPartFocusAction`)
 - `USplineComponent` 1개 (`SwarmSpline`)를 직접 소유하며 레벨 인스턴스별 편집 대상
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
@@ -49,12 +51,21 @@
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
 - `ApplyBeeSwarmSettings()`에서 child actor 재생성 없이 기존 instance에 계산된 DTO를 재주입
 - 시간 갱신(`ApplyBeeSwarmHour24`) 경로에서도 class 변경 없이 parameter만 갱신
-- `CombSlotSpacing` 기준 local `-Y` 배치: slot `i`는 `FVector(0, -i * CombSlotSpacing, 0)`
+- `CombSlotSpacing` 기준 local `Y` 중앙 정렬 배치:
+  - `HalfSpan = (MaxCombCount - 1) * 0.5 * CombSlotSpacing`
+  - `SlotY = -HalfSpan + (i * CombSlotSpacing)`
+  - 전체 slot 배열 중심은 `CombRackRoot` origin
 - `CurrentCombCount` 정책: `MaxCombCount` 변경 시 강제 초기화 없이 `0..MaxCombCount` clamp만 수행
 - `CurrentCombCount <= 0`이면 활성 comb actor가 없고 comb spawn amount는 0
 - comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / CurrentCombCount)`
 - `SetColonyBeeCount` 포함 spawn amount 갱신 경로에서 active comb의 target bee count를 spawn amount로 리셋
 - 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
+- cursor part focus 등록:
+  - lid component part (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
+  - active comb actor parts (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`)
+  - preview-only component parts (prompt 없음, LMB click no-op)
+  - preview key 입력(`R/F/C`)은 hover preview 대상의 action handler에서 선택적으로 처리
+- Beehive/Comb의 실제 lid open-close, comb lift-restore는 action component의 owner-actor delegate(`OnPartFocusBegin/Cancel/Abort`) 또는 component 이벤트 구현 경로에서 처리한다.
 
 ### `ABeehiveDualSwarmActor`
 
@@ -83,6 +94,7 @@
 - `USceneComponent` root
 - `UStaticMeshComponent` comb mesh
 - `UNiagaraComponent` 2개 (`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)
+- `UCursorPartFocusActionComponent` 1개 (`PartFocusAction`)
 - 상태:
   - `SpawnAmount`는 `0` 이상 clamp
   - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
@@ -137,6 +149,28 @@
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
 
 ## Manual Review Points
+
+## Beehive Comb Delegate Ownership
+
+- `ABeehive`는 자신이 현재 active slot으로 관리 중인 `ABeehiveCombActor`의 `PartFocusAction` delegate에만 바인딩한다.
+- 바인딩은 comb part descriptor 등록 시점에 수행하며, 동일 handler 중복 등록을 막기 위해 `RemoveDynamic` 후 `AddDynamic`으로 재바인딩한다.
+- handler는 `ActionComponent->GetOwner()`를 `ABeehiveCombActor`로 해석한 뒤, 현재 active comb membership을 다시 검증한다.
+- membership 검증 실패 시 이벤트를 무시하므로 독립 배치된 comb actor는 `ABeehive` 이벤트 위임 경로에 들어오지 않는다.
+- `ABeehive`는 검증 통과 시 `ReceiveCombPartFocusBegin/Cancel/Abort` Blueprint 이벤트로 위임한다.
+
+## Beehive Comb Lift Component
+
+- 소비장 들기/내리기 이동은 `UBeehiveCombLiftComponent`가 담당한다.
+- 소비장 actor를 detach하지 않고, 소비장을 담는 slot `UChildActorComponent`의 relative transform을 이동/회전 보간한다.
+- `ABeehive`는 `CombLiftTargetRoot`를 공통 목표 기준점으로 소유하며, `UBeehiveCombLiftComponent`는 이를 사용해 lifted target transform(위치/회전)을 계산한다.
+- lifted target transform은 `CombLiftTargetRoot` world transform을 `CombRackRoot` 기준 relative transform으로 변환해 사용한다.
+- scale은 `CombLiftTargetRoot` 값 대신 slot rest relative transform의 scale을 유지한다.
+- 카메라 방향 기반 회전 계산, yaw 보정, rotation delta는 사용하지 않는다.
+- layout refresh 후 재적용 시에도 최신 `CombLiftTargetRoot` transform을 다시 relative 변환해 즉시 적용한다.
+- `CombLiftMoveDuration`은 들기/내리기 공통 보간 시간이다.
+- layout refresh 정책:
+  1. `RefreshCombSlotTransforms()`가 모든 slot rest transform을 먼저 갱신
+  2. 직후 `ReapplyLiftedCombTransformAfterLayoutRefresh()`가 lifted 상태를 즉시 재적용
 
 - Blueprint child에서 component 이름 변경 시 기존 serialized component override가 유지되는지 확인
 - `AWorldItemPickup::OnConstruction()` 후 prompt/mesh가 item definition과 동기화되는지 확인

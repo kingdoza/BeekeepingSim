@@ -21,6 +21,14 @@ public:
 
 	virtual EHotbarPresentationMode GetHotbarPresentationModeWhileEngaged() const override;
 
+	virtual bool HandleConfirmInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
+	virtual bool HandleCancelInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
+	virtual bool HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
+	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key) override;
+
 protected:
 	virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
 

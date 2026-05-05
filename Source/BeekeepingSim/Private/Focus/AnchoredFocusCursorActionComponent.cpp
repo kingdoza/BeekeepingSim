@@ -3,6 +3,7 @@
 
 #include "Focus/AnchoredFocusCursorActionComponent.h"
 
+#include "Focus/CursorPartFocusScopeComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Character/BeekeeperCharacter.h"
 
@@ -21,6 +22,58 @@ EHotbarPresentationMode UAnchoredFocusCursorActionComponent::GetHotbarPresentati
 	return EHotbarPresentationMode::OnCursor;
 }
 
+bool UAnchoredFocusCursorActionComponent::HandleConfirmInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	// Part-focus click is handled by dedicated LMB input path.
+	// Consume engaged confirm to avoid accidental host-cancel fallback.
+	return true;
+}
+
+bool UAnchoredFocusCursorActionComponent::HandleCancelInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	if (!GetOwner())
+	{
+		return false;
+	}
+
+	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+	{
+		return ScopeComponent->HandleCancelInput();
+	}
+
+	return false;
+}
+
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	if (!GetOwner())
+	{
+		return false;
+	}
+
+	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+	{
+		return ScopeComponent->HandlePartFocusClickInput();
+	}
+
+	return false;
+}
+
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key)
+{
+	if (!GetOwner())
+	{
+		return false;
+	}
+
+	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+	{
+		return ScopeComponent->HandlePreviewKeyInput(Key);
+	}
+
+	return false;
+}
+
 void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter)
 {
 	Super::OnFocusEngagedStarted(InteractingCharacter);
@@ -33,6 +86,14 @@ void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharac
 
 	PlayerController->bShowMouseCursor = true;
 	ApplyEngagedInputMode(PlayerController);
+
+	if (GetOwner())
+	{
+		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+		{
+			ScopeComponent->ActivatePartFocusScope(InteractingCharacter);
+		}
+	}
 }
 
 void UAnchoredFocusCursorActionComponent::OnFocusCancelStarted(ABeekeeperCharacter* InteractingCharacter)
@@ -43,6 +104,14 @@ void UAnchoredFocusCursorActionComponent::OnFocusCancelStarted(ABeekeeperCharact
 void UAnchoredFocusCursorActionComponent::OnFocusReturnCompleted(ABeekeeperCharacter* InteractingCharacter)
 {
 	Super::OnFocusReturnCompleted(InteractingCharacter);
+
+	if (GetOwner())
+	{
+		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+		{
+			ScopeComponent->DeactivatePartFocusScope(true);
+		}
+	}
 
 	APlayerController* PlayerController = ResolveLocalPlayerController(InteractingCharacter);
 	if (!PlayerController)
@@ -57,6 +126,14 @@ void UAnchoredFocusCursorActionComponent::OnFocusReturnCompleted(ABeekeeperChara
 void UAnchoredFocusCursorActionComponent::OnFocusActionAborted(ABeekeeperCharacter* InteractingCharacter)
 {
 	Super::OnFocusActionAborted(InteractingCharacter);
+
+	if (GetOwner())
+	{
+		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+		{
+			ScopeComponent->DeactivatePartFocusScope(true);
+		}
+	}
 
 	APlayerController* PlayerController = ResolveLocalPlayerController(InteractingCharacter);
 	if (!PlayerController)

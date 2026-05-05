@@ -15,20 +15,32 @@
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/USER_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/USER_UNREAL.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Hives/HiveFrame/hive_frame.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Hives/HiveFrame/hive_frame.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Niagaras/NS_Dir2.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Niagaras/NS_Dir2.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Niagaras/NS_Frame2.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Niagaras/NS_Frame2.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_BeehiveComb.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_BeehiveComb.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Environment/DayLightParameters/Curve_SunIntensity.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Environment/DayLightParameters/Curve_SunIntensity.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeeperFocusComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeeperFocusComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusActionComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,6 +75,7 @@
     <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/VerseCompiler/.editorconfig" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveLidPartFocusActionComponent.cpp" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="McpProjectServerCommands">
     <commands />
@@ -247,7 +260,7 @@
       <workItem from="1777700797399" duration="2746000" />
       <workItem from="1777706933379" duration="13406000" />
       <workItem from="1777745453685" duration="3457000" />
-      <workItem from="1777925305926" duration="2108000" />
+      <workItem from="1777925305926" duration="14287000" />
     </task>
     <servers />
   </component>

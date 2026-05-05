@@ -5,6 +5,7 @@
 #include "Camera/BeekeeperCameraShakeComponent.h"
 #include "Character/BeekeeperController.h"
 #include "Focus/BeekeeperFocusComponent.h"
+#include "Focus/CursorPartFocusTypes.h"
 #include "Character/BeekeeperHeldItemVisualizerComponent.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Character/BeekeeperMovementComponent.h"
@@ -144,6 +145,26 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		{
 			EnhancedInputComponent->BindAction(HotbarWheelAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::HotbarWheelInput);
 		}
+
+		if (PartFocusClickAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusClickInput);
+		}
+
+		if (PartFocusRAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusRAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusRInput);
+		}
+
+		if (PartFocusFAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusFAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusFInput);
+		}
+
+		if (PartFocusCAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusCAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusCInput);
+		}
 	}
 }
 
@@ -192,6 +213,46 @@ void ABeekeeperCharacter::FocusCancelInput()
 	}
 
 	BeekeeperFocus->CancelFocus();
+}
+
+void ABeekeeperCharacter::PartFocusClickInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusClickInput();
+}
+
+void ABeekeeperCharacter::PartFocusRInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::R);
+}
+
+void ABeekeeperCharacter::PartFocusFInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::F);
+}
+
+void ABeekeeperCharacter::PartFocusCInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::C);
 }
 
 void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)

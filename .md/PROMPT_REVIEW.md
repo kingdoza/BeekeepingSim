@@ -1,80 +1,79 @@
-# 코드 리뷰 요청 프롬프트 (Beehive Comb Actor 구현)
+# 구현 리뷰 프롬프트: Beehive Comb Lift FacingAxis
 
-이번 변경의 리뷰 대상은 `ABeehiveCombActor` 신규 추가와 `ABeehive`의 comb slot 관리/배치/파라미터 전달 확장, 그리고 Niagara details customization 조건 확장이다.
+## 우선순위
 
-## 리뷰 목표
+1. High: `CombLiftRotationOffset` 제거 및 `CombLiftFacingAxis` 기반 회전 계산 전환 검증
+2. High: 기존 Lift 정책(슬롯 이동, 보간, refresh 재적용) 회귀 여부 검증
+3. Medium: FacingAxis 변경 시 실제 카메라를 향하는 면이 바뀌는지 검증
 
-1. `ABeehive`가 `MaxCombCount` 슬롯을 유지하고 `CurrentCombCount`와 활성 comb actor 수를 일치시키는지
-2. `CombRackRoot` local space 기준 배치(`slot i -> FVector(0, -i * CombSlotSpacing, 0)`)가 올바른지
-3. SpawnAmount/TargetBeeCount 계산 및 clamp 규칙이 QnA 정본과 일치하는지
-4. SpawnAmount 변경 경로에서 active comb의 TargetBeeCount 리셋이 누락 없이 적용되는지
-5. `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`의 `OverrideParameters` 숨김 정책이 정확히 적용되는지
-6. 기존 outgoing/ingoing spline swarm 및 attraction swarm 동작 회귀가 없는지
+---
 
-## 필수 검증 포인트
+## 리뷰 대상
 
-### A. 신규 클래스/구성
-- `ABeehiveCombActor` 파일:
-  - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
-  - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-- 컴포넌트:
-  - `Root`
-  - `CombMesh`
-  - `FrontFaceBeeNiagara`
-  - `BackFaceBeeNiagara`
-- 제공 API:
-  - `ApplyCombBeeParameters`
-  - `SetSpawnAmountAndResetTargetBeeCount`
-  - `SetTargetBeeCount`
-  - `ResetTargetBeeCountToSpawnAmount`
-  - `ReduceTargetBeeCountByRatio`
-  - `ReduceTargetBeeCountByAmount`
-  - `GetSpawnAmount`, `GetTargetBeeCount`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombLiftComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombLiftComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- `.md/Architecture/WorldActorsSystem.md`
+- `.md/USER_UNREAL.md`
 
-### B. 상태/계산 규칙
-- `SpawnAmount >= 0` clamp
-- `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
-- ratio 감소는 `0..1` clamp + `RoundToInt(CurrentTargetBeeCount * Ratio)`
-- `ABeehive::CalculateCombSpawnAmount()`:
-  - `CurrentCombCount <= 0`이면 0
-  - 아니면 `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / CurrentCombCount)`
+---
 
-### C. ABeehive slot 관리
-- `MaxCombCount`만큼 `UChildActorComponent` 슬롯 유지
-- `i < CurrentCombCount` 슬롯만 `CombActorClass` child actor 활성
-- `i >= CurrentCombCount` 슬롯은 child actor class 비움(활성 actor 없음)
-- `MaxCombCount` 감소 시 초과 슬롯/child actor 정리 시 stale actor 미잔존
-- `MaxCombCount` 변경 시 `CurrentCombCount = Clamp(CurrentCombCount, 0, MaxCombCount)` 정책 준수
+## 핵심 검증 항목
 
-### D. 갱신 경로
-- `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`에서 comb layout/parameter 갱신
-- `SetColonyBeeCount`에서 comb spawn amount 갱신 + target reset 적용
-- `CombSlotSpacing`, `CombActorClass`, `MaxCombCount`, `CombPlaneSize`, `CombSpawnAmountRatio` 변경 시 즉시 반영
-- 테스트 API:
-  - `IncreaseCurrentCombCountForTest`
-  - `DecreaseCurrentCombCountForTest`
-  - `SetCurrentCombCountForTest`
+### High 1: RotationOffset 제거 검증
 
-### E. Niagara customization
-- `BeehiveDualSwarmActorCustomization`에서 아래 조건에 `OverrideParameters` 숨김 적용:
-  - owner: `ABeehiveCombActor`
-  - component: `FrontFaceBeeNiagara` 또는 `BackFaceBeeNiagara`
-- 기존 숨김 조건(`ABeehiveDualSwarmActor`, `ABeehive::AttractionSwarmNiagara`) 유지
+- `CombLiftRotationOffset` UPROPERTY가 완전히 제거되었는지 확인
+- C++/Config/Content 기준으로 `CombLiftRotationOffset` 참조가 남아있지 않은지 확인
+- 문서는 제거 지시/리뷰 문맥에서의 참조만 허용하고, 구현 기준과 충돌하는 잔존 문구는 없는지 확인
 
-### F. 금지사항 회귀 체크
-- C++에서 Niagara system asset path 직접 로드 없음
-- Environment 시스템/`GameTimeBucketSubsystem`과 comb 로직 신규 연결 없음
-- 기존 `ABeehiveDualSwarmActor`, `ABeeSplineSwarmActor`, `AttractionSwarmNiagara` 비활성화/대체 없음
+### High 2: FacingAxis enum/설정 노출 검증
 
-## 권장 검증 명령
+- `ECombLiftFacingAxis`가 `+X/-X/+Y/-Y/+Z/-Z`를 제공하는지 확인
+- `CombLiftFacingAxis`가 `EditAnywhere`로 Details에 노출되는지 확인
+- 기본값이 명시되어 있는지 확인
 
-- `rg "ABeehiveCombActor|CombRackRoot|CombSlotSpacing|CombPlaneSize|CurrentCombCount|TargetBeeCount" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
-- `rg "OverrideParameters|FrontFaceBeeNiagara|BackFaceBeeNiagara|AttractionSwarmNiagara" Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/BeekeepingSim.cpp`
-- `rg "EnvironmentTimeOfDayActor|GameTimeBucketSubsystem" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors`
+### High 3: 목표 회전 계산 정확성 검증
+
+- Lift Begin 시점에만 목표 회전을 계산하고 고정하는지 확인
+- 선택된 local facing axis가 `DirectionToCamera`를 향하도록 계산되는지 확인
+- 최종 회전이 slot parent(`CombRackRoot`) 기준 relative rotation으로 변환되는지 확인
+- 보간 중 카메라 이동이 목표 회전에 영향을 주지 않는지 확인
+
+### High 4: 기존 Lift 정책 회귀 검증
+
+- 소비장 actor detach 없이 slot `UChildActorComponent`만 이동하는지
+- `CombLiftTargetRoot` 위치를 목표 위치로 계속 사용하는지
+- `CombLiftMoveDuration` 기반 보간/0초 즉시이동 동작 유지 여부
+- `RefreshCombSlotTransforms()` 이후 lifted transform 즉시 재적용 유지 여부
+- Abort/EndPlay 즉시 원복 정책 유지 여부
+
+### Medium 1: FacingAxis 동작 수동 검증
+
+- `CombLiftFacingAxis=+Y`: local +Y 면이 카메라를 향하는지
+- `CombLiftFacingAxis=-Y`: local -Y 면이 카메라를 향하는지
+- `+X/-X/+Z/-Z` 변경 시 기대한 면 전환이 일어나는지
+
+### Medium 2: 문서 정합성 검증
+
+- `.md/USER_UNREAL.md`에서 RotationOffset 안내가 제거되고 FacingAxis 선택 안내로 교체됐는지
+- `.md/Architecture/WorldActorsSystem.md`가 FacingAxis 기반 회전 정책으로 업데이트됐는지
+
+---
+
+## 빌드/검색 검증
+
+- UBT:
+  - `BeekeepingSimEditor Win64 Development`
+- 검색:
+  - `rg -a "CombLiftRotationOffset" Source Config Content -n`
+  - `rg "CombLiftRotationOffset|CombLiftFacingAxis|ECombLiftFacingAxis" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md -n`
+
+---
 
 ## 리뷰 결과 출력 형식
 
-1. Findings (High -> Medium -> Low)
+1. Findings (High → Medium → Low)
 2. Open Questions / Assumptions
-3. Regression Risk Checklist
-4. 최종 판정: Pass / Conditional Pass / Fail
+3. Regression Risks
+4. 최종 판단: Pass / Conditional Pass / Fail

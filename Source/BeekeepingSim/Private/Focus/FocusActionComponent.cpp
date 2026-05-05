@@ -35,6 +35,26 @@ bool UFocusActionComponent::CancelFocusAction(ABeekeeperCharacter* InteractingCh
 	return true;
 }
 
+bool UFocusActionComponent::HandleConfirmInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
+bool UFocusActionComponent::HandleCancelInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
+bool UFocusActionComponent::HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
+bool UFocusActionComponent::HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key)
+{
+	return false;
+}
+
 void UFocusActionComponent::AbortFocusAction(ABeekeeperCharacter* InteractingCharacter)
 {
 	bIsActionEngaged = false;

@@ -2,6 +2,7 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Focus/CursorPartFocusActionComponent.h"
 #include "NiagaraComponent.h"
 
 namespace BeehiveCombActorNames
@@ -26,6 +27,16 @@ ABeehiveCombActor::ABeehiveCombActor()
 
 	BackFaceBeeNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("BackFaceBeeNiagara"));
 	BackFaceBeeNiagara->SetupAttachment(Root);
+
+	PartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("PartFocusAction"));
+	if (PartFocusAction)
+	{
+		PartFocusAction->SetEngageMode(ECursorPartFocusEngageMode::PersistentAction);
+		FGameplayTagContainer RequiredTags;
+		RequiredTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
+		PartFocusAction->SetRequiredStateTags(RequiredTags);
+		PartFocusAction->SetExclusiveGroup(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.CombLift")), false));
+	}
 }
 
 void ABeehiveCombActor::OnConstruction(const FTransform& Transform)

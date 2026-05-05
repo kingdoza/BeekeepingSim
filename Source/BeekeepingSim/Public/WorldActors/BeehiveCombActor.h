@@ -7,6 +7,7 @@
 class UNiagaraComponent;
 class USceneComponent;
 class UStaticMeshComponent;
+class UCursorPartFocusActionComponent;
 
 UCLASS(Blueprintable)
 class BEEKEEPINGSIM_API ABeehiveCombActor : public AActor
@@ -47,6 +48,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 GetTargetBeeCount() const { return TargetBeeCount; }
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	UStaticMeshComponent* GetCombMeshComponent() const { return CombMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const { return PartFocusAction; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
@@ -59,6 +66,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNiagaraComponent> BackFaceBeeNiagara;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UCursorPartFocusActionComponent> PartFocusAction;
 
 private:
 	void ApplyNiagaraUserParameters();
