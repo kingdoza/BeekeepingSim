@@ -104,6 +104,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	AQueenBeeActor* GetQueenBeeActor() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Population")
+	void ApplyColonyPopulationUpdate();
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
+	float CalculateBeeIncreaseAmount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
+	float CalculateBeeDecreaseAmount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
+	float GetItemEggLayingBonus() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
+	float GetItemLifespanBonus() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
+	float GetTemperatureScore() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Production")
+	void ApplyHoneyProductionUpdate();
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
+	float CalculateTotalHoneyIncreaseAmount() const;
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -192,6 +216,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee", meta = (ClampMin = "1.0"))
 	float QueenBeeCenterWeightMultiplier = 4.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population Time", meta = (ClampMin = "1", ClampMax = "1440"))
+	int32 ColonyPopulationBucketMinutes = 60;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population Time")
+	bool bApplyColonyPopulationOnBeginPlayBucket = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population", meta = (ClampMin = "0.0"))
+	float BeeIncreaseCoefficient = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population", meta = (ClampMin = "0.0"))
+	float BeeDecreaseCoefficient = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time", meta = (ClampMin = "1", ClampMax = "1440"))
+	int32 HoneyProductionBucketMinutes = 60;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time")
+	bool bApplyHoneyProductionOnBeginPlayBucket = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0"))
+	float HoneyProductionCoefficient = 0.01f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HoneyDistributionDeviationRatio = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 MaxCombCount = 6;
 
@@ -231,6 +279,9 @@ protected:
 	UPROPERTY(Transient)
 	bool bCombCountInitialized = false;
 
+	UPROPERTY(Transient)
+	int32 LastAppliedAttractionSwarmSpawnAmount = INDEX_NONE;
+
 private:
 	static float NormalizeHour24(float Hour24);
 	static float EvaluateActivity(const FBeehiveDirectionalSwarmSettings& Settings, float Hour24);
@@ -241,10 +292,11 @@ private:
 	bool ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const;
 	float CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const;
 	USceneComponent* ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const;
+	void DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease);
 	void RefreshCombLayoutAndParameters();
 	void RefreshCombSlotComponents();
 	void RefreshCombSlotTransforms();
-	void RefreshCombSpawnAmounts();
+	void RefreshCombSpawnAmounts(bool bSkipLiftedComb = false);
 	void ClampCurrentCombCount();
 	void RegisterCombPartsToScope();
 	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);

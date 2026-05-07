@@ -179,7 +179,14 @@ void ABeehive::ApplyAttractionSwarmSettings()
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::AttractionPower, FMath::Max(0.0f, AttractionSwarmSettings.AttractionPower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::NoisePower, FMath::Max(0.0f, AttractionSwarmSettings.NoisePower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::SpawnSphereRadius, FMath::Max(0.0f, AttractionSwarmSettings.SpawnSphereRadius));
-	AttractionSwarmNiagara->SetVariableInt(BeehiveAttractionSwarmNames::SpawnAmount, CalculateAttractionSwarmSpawnAmount());
+
+	const int32 SpawnAmount = CalculateAttractionSwarmSpawnAmount();
+	AttractionSwarmNiagara->SetVariableInt(BeehiveAttractionSwarmNames::SpawnAmount, SpawnAmount);
+	if (LastAppliedAttractionSwarmSpawnAmount != INDEX_NONE && LastAppliedAttractionSwarmSpawnAmount != SpawnAmount)
+	{
+		AttractionSwarmNiagara->ReinitializeSystem();
+	}
+	LastAppliedAttractionSwarmSpawnAmount = SpawnAmount;
 }
 
 int32 ABeehive::CalculateAttractionSwarmSpawnAmount() const
@@ -197,7 +204,67 @@ void ABeehive::SetColonyBeeCount(int32 NewBeeCount)
 	ColonyBeeCount = FMath::Max(0, NewBeeCount);
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
-	RefreshCombSpawnAmounts();
+	RefreshCombSpawnAmounts(false);
+}
+
+void ABeehive::ApplyColonyPopulationUpdate()
+{
+	const float IncreaseAmount = CalculateBeeIncreaseAmount();
+	const float DecreaseAmount = CalculateBeeDecreaseAmount();
+	const float RawNewBeeCount = static_cast<float>(FMath::Max(0, ColonyBeeCount)) + IncreaseAmount - DecreaseAmount;
+	const int32 NewBeeCount = FMath::Max(0, FMath::RoundToInt(RawNewBeeCount));
+
+	ColonyBeeCount = NewBeeCount;
+	ApplyBeeSwarmSettings();
+	ApplyAttractionSwarmSettings();
+	RefreshCombSpawnAmounts(true);
+}
+
+float ABeehive::CalculateBeeIncreaseAmount() const
+{
+	const AQueenBeeActor* QueenBee = GetQueenBeeActor();
+	const float BaseEggLayingPower = QueenBee ? FMath::Max(0.0f, QueenBee->GetBaseEggLayingPower()) : 0.0f;
+	const float ItemEggLayingBonus = FMath::Max(0.0f, GetItemEggLayingBonus());
+	const float TemperatureScore = FMath::Max(0.0f, GetTemperatureScore());
+	const float IncreaseCoefficient = FMath::Max(0.0f, BeeIncreaseCoefficient);
+	return BaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * IncreaseCoefficient;
+}
+
+float ABeehive::CalculateBeeDecreaseAmount() const
+{
+	const float CurrentBeeCount = static_cast<float>(FMath::Max(0, ColonyBeeCount));
+	const float DecreaseCoefficient = FMath::Max(0.0f, BeeDecreaseCoefficient);
+	const float ItemLifespanBonus = FMath::Max(KINDA_SMALL_NUMBER, GetItemLifespanBonus());
+	const float TemperatureScore = FMath::Max(KINDA_SMALL_NUMBER, GetTemperatureScore());
+	return CurrentBeeCount * DecreaseCoefficient / ItemLifespanBonus / TemperatureScore;
+}
+
+float ABeehive::GetItemEggLayingBonus() const
+{
+	return 1.0f;
+}
+
+float ABeehive::GetItemLifespanBonus() const
+{
+	return 1.0f;
+}
+
+float ABeehive::GetTemperatureScore() const
+{
+	return 1.0f;
+}
+
+void ABeehive::ApplyHoneyProductionUpdate()
+{
+	const float TotalHoneyIncrease = CalculateTotalHoneyIncreaseAmount();
+	DistributeHoneyIncreaseToCombs(TotalHoneyIncrease);
+}
+
+float ABeehive::CalculateTotalHoneyIncreaseAmount() const
+{
+	const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
+	const float SafeCoefficient = FMath::Max(0.0f, HoneyProductionCoefficient);
+	return static_cast<float>(SafeBeeCount) * SafeCoefficient;
 }
 
 void ABeehive::RebuildCursorPartFocusDescriptors()
@@ -430,6 +497,20 @@ void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBuc
 	QueenSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
 	QueenSubscription.SubscriptionTag = FName(TEXT("QueenBeeLocation"));
 	OutSubscriptions.Add(QueenSubscription);
+
+	FGameTimeBucketSubscription HoneySubscription;
+	HoneySubscription.BucketMinutes = FMath::Clamp(HoneyProductionBucketMinutes, 1, 1440);
+	HoneySubscription.bApplyImmediatelyOnBeginPlay = bApplyHoneyProductionOnBeginPlayBucket;
+	HoneySubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+	HoneySubscription.SubscriptionTag = FName(TEXT("HoneyProduction"));
+	OutSubscriptions.Add(HoneySubscription);
+
+	FGameTimeBucketSubscription PopulationSubscription;
+	PopulationSubscription.BucketMinutes = FMath::Clamp(ColonyPopulationBucketMinutes, 1, 1440);
+	PopulationSubscription.bApplyImmediatelyOnBeginPlay = bApplyColonyPopulationOnBeginPlayBucket;
+	PopulationSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+	PopulationSubscription.SubscriptionTag = FName(TEXT("ColonyPopulation"));
+	OutSubscriptions.Add(PopulationSubscription);
 }
 
 void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event)
@@ -441,6 +522,14 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	else if (Event.SubscriptionTag == FName(TEXT("QueenBeeLocation")))
 	{
 		UpdateQueenBeeLocation();
+	}
+	else if (Event.SubscriptionTag == FName(TEXT("HoneyProduction")))
+	{
+		ApplyHoneyProductionUpdate();
+	}
+	else if (Event.SubscriptionTag == FName(TEXT("ColonyPopulation")))
+	{
+		ApplyColonyPopulationUpdate();
 	}
 }
 
@@ -534,7 +623,7 @@ void ABeehive::RefreshCombLayoutAndParameters()
 	ClampCurrentCombCount();
 	RefreshCombSlotComponents();
 	RefreshCombSlotTransforms();
-	RefreshCombSpawnAmounts();
+	RefreshCombSpawnAmounts(false);
 	RebuildCursorPartFocusDescriptors();
 }
 
@@ -810,6 +899,61 @@ USceneComponent* ABeehive::ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFro
 	return CombActor ? CombActor->GetQueenAttachPoint(bFrontFace) : nullptr;
 }
 
+void ABeehive::DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease)
+{
+	if (TotalHoneyIncrease <= 0.0f || CurrentCombCount <= 0)
+	{
+		return;
+	}
+
+	TArray<ABeehiveCombActor*> ActiveCombs;
+	ActiveCombs.Reserve(CurrentCombCount);
+	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	{
+		if (!CombSlotComponents.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		UChildActorComponent* Slot = CombSlotComponents[Index];
+		ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+		if (CombActor)
+		{
+			ActiveCombs.Add(CombActor);
+		}
+	}
+
+	if (ActiveCombs.Num() <= 0)
+	{
+		return;
+	}
+
+	const float ClampedDeviation = FMath::Clamp(HoneyDistributionDeviationRatio, 0.0f, 1.0f);
+	const float MinWeight = 1.0f - ClampedDeviation;
+	const float MaxWeight = 1.0f + ClampedDeviation;
+
+	TArray<float> Weights;
+	Weights.Reserve(ActiveCombs.Num());
+	float WeightSum = 0.0f;
+	for (int32 Index = 0; Index < ActiveCombs.Num(); ++Index)
+	{
+		const float Weight = FMath::FRandRange(MinWeight, MaxWeight);
+		Weights.Add(Weight);
+		WeightSum += Weight;
+	}
+
+	if (WeightSum <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < ActiveCombs.Num(); ++Index)
+	{
+		const float HoneyIncrease = TotalHoneyIncrease * Weights[Index] / WeightSum;
+		ActiveCombs[Index]->AddHoneyAmount(HoneyIncrease);
+	}
+}
+
 void ABeehive::RefreshCombSlotTransforms()
 {
 	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
@@ -830,11 +974,17 @@ void ABeehive::RefreshCombSlotTransforms()
 	}
 }
 
-void ABeehive::RefreshCombSpawnAmounts()
+void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb)
 {
 	const int32 SpawnAmount = CalculateCombSpawnAmount();
+	const int32 LiftedSlotIndex = (bSkipLiftedComb && CombLiftComponent) ? CombLiftComponent->GetLiftedCombSlotIndex() : INDEX_NONE;
 	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
 	{
+		if (Index == LiftedSlotIndex)
+		{
+			continue;
+		}
+
 		if (!CombSlotComponents.IsValidIndex(Index))
 		{
 			continue;

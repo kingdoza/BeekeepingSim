@@ -3,6 +3,8 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
 
 namespace BeehiveCombActorNames
@@ -46,38 +48,58 @@ ABeehiveCombActor::ABeehiveCombActor()
 	QueenBackAttachPoint->SetupAttachment(CombMesh);
 	QueenBackAttachPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	QueenBackAttachPoint->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+
+	FrontHoneyPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FrontHoneyPlane"));
+	FrontHoneyPlane->SetupAttachment(CombMesh);
+
+	BackHoneyPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BackHoneyPlane"));
+	BackHoneyPlane->SetupAttachment(CombMesh);
 }
 
 void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	SanitizeState();
+	SanitizeHoneyState();
 	ApplyNiagaraUserParameters();
+	ApplyHoneyVisualState();
 }
 
 void ABeehiveCombActor::BeginPlay()
 {
 	Super::BeginPlay();
 	SanitizeState();
+	SanitizeHoneyState();
 	ApplyNiagaraUserParameters();
+	ApplyHoneyVisualState();
 }
 
 void ABeehiveCombActor::ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InSpawnAmount, int32 InTargetBeeCount)
 {
+	const int32 PreviousSpawnAmount = SpawnAmount;
 	PlaneSize = InPlaneSize;
 	SpawnAmount = InSpawnAmount;
 	TargetBeeCount = InTargetBeeCount;
 	SanitizeState();
 	ApplyNiagaraUserParameters();
+	if (SpawnAmount != PreviousSpawnAmount)
+	{
+		RestartBeeNiagaraSystems();
+	}
 }
 
 void ABeehiveCombActor::SetSpawnAmountAndResetTargetBeeCount(const FVector2D& InPlaneSize, int32 InSpawnAmount)
 {
+	const int32 PreviousSpawnAmount = SpawnAmount;
 	PlaneSize = InPlaneSize;
 	SpawnAmount = InSpawnAmount;
 	TargetBeeCount = SpawnAmount;
 	SanitizeState();
 	ApplyNiagaraUserParameters();
+	if (SpawnAmount != PreviousSpawnAmount)
+	{
+		RestartBeeNiagaraSystems();
+	}
 }
 
 void ABeehiveCombActor::SetTargetBeeCount(int32 NewTargetBeeCount)
@@ -126,6 +148,19 @@ void ABeehiveCombActor::ApplyNiagaraUserParameters()
 	}
 }
 
+void ABeehiveCombActor::RestartBeeNiagaraSystems()
+{
+	if (FrontFaceBeeNiagara)
+	{
+		FrontFaceBeeNiagara->ReinitializeSystem();
+	}
+
+	if (BackFaceBeeNiagara)
+	{
+		BackFaceBeeNiagara->ReinitializeSystem();
+	}
+}
+
 void ABeehiveCombActor::SanitizeState()
 {
 	SpawnAmount = FMath::Max(0, SpawnAmount);
@@ -137,11 +172,94 @@ USceneComponent* ABeehiveCombActor::GetQueenAttachPoint(bool bFrontFace) const
 	return bFrontFace ? QueenFrontAttachPoint.Get() : QueenBackAttachPoint.Get();
 }
 
+void ABeehiveCombActor::AddHoneyAmount(float DeltaHoney)
+{
+	CurrentHoney += FMath::Max(0.0f, DeltaHoney);
+	SanitizeHoneyState();
+	ApplyHoneyVisualState();
+}
+
+void ABeehiveCombActor::SetCurrentHoney(float NewHoneyAmount)
+{
+	CurrentHoney = NewHoneyAmount;
+	SanitizeHoneyState();
+	ApplyHoneyVisualState();
+}
+
+float ABeehiveCombActor::GetHoneyFillRatio() const
+{
+	const float SafeMaxHoney = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyPerComb);
+	return FMath::Clamp(CurrentHoney / SafeMaxHoney, 0.0f, 1.0f);
+}
+
+void ABeehiveCombActor::SanitizeHoneyState()
+{
+	MaxHoneyPerComb = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyPerComb);
+	CurrentHoney = FMath::Clamp(CurrentHoney, 0.0f, MaxHoneyPerComb);
+}
+
+void ABeehiveCombActor::EnsureHoneyMaterialInstances()
+{
+	if (FrontHoneyPlane)
+	{
+		UMaterialInterface* CurrentMaterial = FrontHoneyPlane->GetMaterial(0);
+		if (!FrontHoneyMaterialInstance || CurrentMaterial != FrontHoneyMaterialInstance)
+		{
+			FrontHoneyMaterialInstance = FrontHoneyPlane->CreateDynamicMaterialInstance(0, CurrentMaterial);
+		}
+	}
+	else
+	{
+		FrontHoneyMaterialInstance = nullptr;
+	}
+
+	if (BackHoneyPlane)
+	{
+		UMaterialInterface* CurrentMaterial = BackHoneyPlane->GetMaterial(0);
+		if (!BackHoneyMaterialInstance || CurrentMaterial != BackHoneyMaterialInstance)
+		{
+			BackHoneyMaterialInstance = BackHoneyPlane->CreateDynamicMaterialInstance(0, CurrentMaterial);
+		}
+	}
+	else
+	{
+		BackHoneyMaterialInstance = nullptr;
+	}
+}
+
+void ABeehiveCombActor::ApplyHoneyVisualState()
+{
+	EnsureHoneyMaterialInstances();
+	const float FillRatio = GetHoneyFillRatio();
+
+	if (FrontHoneyPlane)
+	{
+		FrontHoneyPlane->SetRelativeLocation(FMath::Lerp(FrontHoneyEmptyRelativeLocation, FrontHoneyFullRelativeLocation, FillRatio));
+	}
+
+	if (BackHoneyPlane)
+	{
+		BackHoneyPlane->SetRelativeLocation(FMath::Lerp(BackHoneyEmptyRelativeLocation, BackHoneyFullRelativeLocation, FillRatio));
+	}
+
+	if (FrontHoneyMaterialInstance)
+	{
+		FrontHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
+	}
+
+	if (BackHoneyMaterialInstance)
+	{
+		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
+	}
+}
+
 #if WITH_EDITOR
 void ABeehiveCombActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	SanitizeState();
+	SanitizeHoneyState();
 	ApplyNiagaraUserParameters();
+	ApplyHoneyVisualState();
 }
 #endif

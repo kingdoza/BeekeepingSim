@@ -1,18 +1,16 @@
-# 구현 리뷰 프롬프트: Queen Bee Actor / Queen Location Update
+# 구현 리뷰 프롬프트: Beehive Honey System (60분 생산)
 
 ## 우선순위
 
-1. High: 여왕벌 위치 업데이트 규칙(60분 bucket, lifted comb 제외, 중앙 가중치, Front/Back 50:50, `0~360` yaw) 정확성
-2. High: `AQueenBeeActor` Tick yaw jitter 누적 구현 정확성
-3. High: 기존 Beehive/CombLift 동작 회귀 여부
-4. Medium: 문서 정합성 및 Blueprint 수동 검증 필요 지점 확인
+1. High: HoneyProduction 60분 bucket 구독/처리 순서 정확성
+2. High: 꿀 생산량 계산/분배/클램프 정책 정확성
+3. High: `ABeehiveCombActor` 꿀 상태(절대값)와 시각값(정규화 ratio) 분리 정확성
+4. Medium: 기존 BeeSwarm/Queen/ColonyPopulation 회귀 여부
 
 ---
 
 ## 리뷰 대상
 
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
@@ -24,59 +22,57 @@
 
 ## 핵심 검증 항목
 
-### High 1: Queen bucket 구독/처리 검증
+### High 1: bucket 구독 및 처리 순서
 
-- `ABeehive::GetGameTimeBucketSubscriptions_Implementation`에 `QueenBeeLocation` subscription이 추가되었는지
-- `BucketMinutes`가 `QueenBeeLocationBucketMinutes`를 `1..1440` clamp해서 사용하는지
-- `bApplyImmediatelyOnBeginPlay`가 `bUpdateQueenBeeLocationOnBeginPlayBucket`와 연결되는지
-- `CatchUpPolicy`가 `LatestOnly`인지
-- `OnGameTimeBucketEvent_Implementation`에서 `BeeSwarm` 기존 처리와 충돌 없이 `QueenBeeLocation -> UpdateQueenBeeLocation()` 분기가 동작하는지
+- `GetGameTimeBucketSubscriptions_Implementation()`에서 순서가 아래와 같은지:
+  1. `BeeSwarm`
+  2. `QueenBeeLocation`
+  3. `HoneyProduction`
+  4. `ColonyPopulation`
+- `OnGameTimeBucketEvent_Implementation()`에 `HoneyProduction -> ApplyHoneyProductionUpdate()` 분기가 있는지
+- 같은 60분 경계에서 꿀 생산이 colony population보다 먼저 처리되는지
 
-### High 2: 여왕벌 위치 업데이트 규칙 검증
+### High 2: 꿀 생산량 계산 및 분배
 
-- 후보가 `0 <= Index < CurrentCombCount` + 유효 slot + `ABeehiveCombActor` child를 만족하는지
-- 현재 lifted comb slot(`CombLiftComponent->GetLiftedCombSlotIndex()`)이 후보에서 제외되는지
-- 후보 comb의 front/back attach point 유효성 체크가 있는지
-- 후보 없을 때 no-op(기존 위치 유지, destroy/hide 없음, 로그 스팸 없음)인지
+- `CalculateTotalHoneyIncreaseAmount()` 공식이 `ColonyBeeCount * HoneyProductionCoefficient`인지
+- 음수 방어 (`ColonyBeeCount>=0`, `HoneyProductionCoefficient>=0`)가 있는지
+- active comb 수 0 또는 `TotalHoneyIncrease<=0`이면 no-op인지
+- 분배 방식이 랜덤 가중치 정규화인지:
+  - `Weight = Rand[1-d, 1+d]`, `d=Clamp(HoneyDistributionDeviationRatio,0,1)`
+  - `Increase_i = Total * Weight_i / WeightSum`
+- 소비장이 포화되지 않은 경우 분배 총합이 총생산량과 일치하는지
+- 포화로 인한 초과분 재분배/저장고 누적 없이 폐기되는지
+- 꿀 업데이트가 lifted comb 포함 모든 active comb에 적용되는지
 
-### High 3: 중앙 가중 랜덤 정확성 검증
+### High 3: Comb honey 상태/시각 분리
 
-- 중심 계산이 `Center=(CurrentCombCount-1)*0.5` 형태인지
-- 거리 정규화 후 center factor를 통해 중앙일수록 높은 weight를 부여하는지
-- `QueenBeeCenterWeightMultiplier`가 `>=1`로 안전 처리되는지
-- weighted random pick이 total weight 기반으로 동작하고 fallback이 있는지
-- 짝수 comb 개수에서 중앙 두 슬롯이 동등 최고 가중치를 갖는지
+- `ABeehiveCombActor`에 다음이 존재하는지:
+  - `FrontHoneyPlane`, `BackHoneyPlane`
+  - `MaxHoneyPerComb`, `CurrentHoney`
+  - empty/full relative location들
+  - `HoneyMaterialParameterName`
+  - MID 캐시(`FrontHoneyMaterialInstance`, `BackHoneyMaterialInstance`)
+- API:
+  - `AddHoneyAmount`, `SetCurrentHoney`, `GetCurrentHoney`, `GetHoneyFillRatio`
+- Honey clamp:
+  - `MaxHoneyPerComb >= KINDA_SMALL_NUMBER`
+  - `CurrentHoney`는 `0..MaxHoneyPerComb`
+- 시각 업데이트:
+  - ratio=`Clamp(CurrentHoney/MaxHoneyPerComb,0,1)`
+  - plane 위치를 empty/full 사이 보간
+  - material index 0 scalar(`HoneyAmount`)에 ratio 적용
+  - Front/Back 중 하나가 null이어도 나머지 적용 가능
 
-### High 4: Front/Back 부착 + 랜덤 yaw 적용 검증
+### Medium 1: 기존 기능 회귀
 
-- `FMath::RandBool()`로 Front/Back을 50:50 선택하는지
-- 선택 attach point에 `SnapToTargetNotIncludingScale`로 부착하는지
-- 상대 위치를 0으로 맞추는지
-- 상대 회전에 `0~360` 랜덤 yaw를 적용하는지
-- 랜덤 yaw가 attach point 회전 기준으로 추가되는 형태인지
+- `SetColonyBeeCount` / `ApplyColonyPopulationUpdate` / `UpdateQueenBeeLocation` 동작 회귀 없는지
+- 기존 comb bee Niagara 적용/재초기화 경로가 유지되는지
+- lifted comb skip 정책(`RefreshCombSpawnAmounts(true)`)이 꿀 업데이트와 섞이지 않았는지
 
-### High 5: Tick yaw jitter 구현 검증
+### Medium 2: 문서 정합성
 
-- `AQueenBeeActor`가 Tick 활성화(`PrimaryActorTick.bCanEverTick=true`)인지
-- `YawJitterDegreesPerTick`가 Details 노출(`EditAnywhere`) 및 clamp(min 0)인지
-- 매 Tick `FRandRange(-n1, n1)` + `AddActorLocalRotation` 누적 방식인지
-- DeltaTime 보정이 없는지(요구사항 부합)
-
-### High 6: CombLift 연동 정책 회귀 검증
-
-- queen 위치 갱신 외 경로에서 comb lift 시 queen 강제 detach/reposition 코드가 추가되지 않았는지
-- queen이 comb attach 상태일 때 comb lift를 따라 이동하는 기존 attach 기반 동작을 깨지 않았는지
-
-### Medium 1: Blueprint/API 계약 영향 검증
-
-- 기존 UCLASS/USTRUCT/UENUM rename/delete가 없는지
-- 기존 Blueprint callable/pure API rename/delete가 없는지
-- `ABeehiveCombActor` 신규 attach point 컴포넌트가 BP child에서 조정 가능 상태인지
-
-### Medium 2: 문서 정합성 검증
-
-- `.md/0_ARCHITECTURE.md`에 queen actor + 60분 bucket 갱신 + Environment direct reference 금지 경로가 반영됐는지
-- `.md/Architecture/WorldActorsSystem.md`에 scope/key classes/composition/design notes가 반영됐는지
+- `.md/0_ARCHITECTURE.md`에 HoneyProduction, 순서, 공식, 절대값/ratio 분리가 반영됐는지
+- `.md/Architecture/WorldActorsSystem.md`에 Honey 설정/버킷/분배/시각 정책이 반영됐는지
 
 ---
 
@@ -85,9 +81,9 @@
 - UBT:
   - `BeekeepingSimEditor Win64 Development`
 - 검색:
-  - `rg "QueenBeeLocation|UpdateQueenBeeLocation|QueenBeeChildActor|QueenBeeActorClass" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
-  - `rg "QueenFrontAttachPoint|QueenBackAttachPoint|GetQueenAttachPoint" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
-  - `rg "YawJitterDegreesPerTick|AddActorLocalRotation|FRandRange" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
+  - `rg "HoneyProduction|ApplyHoneyProductionUpdate|CalculateTotalHoneyIncreaseAmount" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
+  - `rg "FrontHoneyPlane|BackHoneyPlane|CurrentHoney|MaxHoneyPerComb|HoneyAmount|GetHoneyFillRatio" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
+  - `rg "ColonyPopulation|QueenBeeLocation|BeeSwarm" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp -n`
 
 ---
 

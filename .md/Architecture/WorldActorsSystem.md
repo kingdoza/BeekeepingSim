@@ -29,7 +29,7 @@
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
-- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 담당
+- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
@@ -54,6 +54,10 @@
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
 - queen 위치 bucket 설정: `QueenBeeLocationBucketMinutes=60`, BeginPlay 즉시 적용 옵션 지원
+- colony population bucket 설정: `ColonyPopulationBucketMinutes=60`, `bApplyColonyPopulationOnBeginPlayBucket=false` 기본
+- colony population 계수 설정: `BeeIncreaseCoefficient`, `BeeDecreaseCoefficient`
+- honey production bucket 설정: `HoneyProductionBucketMinutes=60`, `bApplyHoneyProductionOnBeginPlayBucket=false` 기본
+- honey production 계수/분배 설정: `HoneyProductionCoefficient`, `HoneyDistributionDeviationRatio`
 - queen 위치 갱신 규칙:
   - active comb 후보에서 현재 lifted comb slot 제외
   - 중앙 slot일수록 높은 가중치로 weighted random 선택
@@ -69,6 +73,8 @@
 - `CurrentCombCount <= 0`이면 활성 comb actor가 없고 comb spawn amount는 0
 - comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / CurrentCombCount)`
 - `SetColonyBeeCount` 포함 spawn amount 갱신 경로에서 active comb의 target bee count를 spawn amount로 리셋
+- `ApplyColonyPopulationUpdate()` 경로에서는 lifted comb slot을 제외한 active comb에만 spawn/target 갱신을 적용
+- `ApplyHoneyProductionUpdate()` 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량을 적용
 - 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
 - cursor part focus 등록:
   - lid component part (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -106,9 +112,11 @@
 - `UNiagaraComponent` 2개 (`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)
 - `UCursorPartFocusActionComponent` 1개 (`PartFocusAction`)
 - `USceneComponent` 2개 (`QueenFrontAttachPoint`, `QueenBackAttachPoint`)
+- `UStaticMeshComponent` 2개 (`FrontHoneyPlane`, `BackHoneyPlane`)
 - 상태:
   - `SpawnAmount`는 `0` 이상 clamp
   - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
+  - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
 - 감소 API:
   - `ReduceTargetBeeCountByRatio(float)` (`Ratio`는 `0..1` clamp, 감소량은 `RoundToInt(CurrentTargetBeeCount * Ratio)`)
   - `ReduceTargetBeeCountByAmount(int32)`
@@ -118,6 +126,10 @@
   - `User.PlaneSize` (Vector2D)
   - `User.SpawnAmount` (Int32)
   - `User.TargetBeeCount` (Int32)
+- honey visual 적용:
+  - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
+  - front/back plane relative location을 empty/full 위치 사이에서 보간
+  - material index 0 scalar parameter(`HoneyAmount`)에 fill ratio 적용
 
 ### `AWorldItemPickup`
 
@@ -157,7 +169,16 @@
 - `ABeehiveCombActor` 소유 `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`도 component details에서 `OverrideParameters`를 숨기고 C++ 적용값이 source of truth다.
 - `ABeehive`는 `AEnvironmentTimeOfDayActor`를 직접 참조하지 않으며, bucket listener 이벤트의 `Hour24`를 받아서만 갱신한다.
 - `ABeehive`의 queen 위치 갱신도 Environment actor 직접 참조 없이 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트로만 수행한다.
+- `ABeehive`의 colony population 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`ColonyPopulation`)로만 수행한다.
+- `ABeehive`의 honey production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
+- 같은 60분 경계에서는 subscription 순서를 `HoneyProduction` 먼저, `ColonyPopulation` 다음으로 두어 꿀 생산이 기존 벌 수 기준으로 선행 처리된다.
+- colony population 계산식:
+  - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
+  - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
+  - 최종 적용은 `RoundToInt`를 마지막 단계에서만 수행하고 최소 0으로 clamp한다.
+  - 1차 구현에서는 item/temperature bonus를 각각 `1.0f`로 고정한다.
 - queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
+- honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
 

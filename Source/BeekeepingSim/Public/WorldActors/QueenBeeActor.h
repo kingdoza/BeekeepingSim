@@ -17,6 +17,9 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
+	UFUNCTION(BlueprintPure, Category = "Queen Bee|Colony")
+	float GetBaseEggLayingPower() const { return BaseEggLayingPower; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
@@ -26,4 +29,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Queen Bee|Motion", meta = (ClampMin = "0.0"))
 	float YawJitterDegreesPerTick = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Queen Bee|Colony", meta = (ClampMin = "0.0"))
+	float BaseEggLayingPower = 10.0f;
 };

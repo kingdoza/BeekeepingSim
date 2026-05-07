@@ -1,362 +1,373 @@
-# Queen Bee Actor / Queen Location Update 구현 프롬프트
+﻿# Beehive Honey System 구현 프롬프트
 
 ## 목표
 
-벌통 내부 여왕벌 actor와 여왕벌 위치 자동 업데이트 기능을 구현한다.
+벌통에 60분 주기 꿀 생산 시스템을 추가한다.
 
 핵심 요구사항:
 
-```text
-여왕벌 actor는 Tick마다 Details 노출값 n1 기준 `-n1~n1` 범위의 랜덤 yaw를 `AddActorLocalRotation`으로 더해 떨림을 만든다.
-여왕벌 위치는 게임시간 기준 60분마다 자동 업데이트된다.
-위치 업데이트 후보에서는 현재 들어올려진 소비장을 제외한다.
-선택 가능한 소비장 중 중앙 쪽 소비장이 더 높은 확률로 선택된다.
-소비장이 결정되면 Front/Back 면 중 하나를 50:50으로 선택한다.
-여왕벌은 선택된 면의 중앙에 부착된다.
-위치 업데이트 시 여왕벌 actor yaw는 `0~360도` 완전 랜덤으로 추가 적용한다.
-```
+- 게임 시간 기준 60분마다 꿀 생산 업데이트를 수행한다.
+- 벌통의 총 꿀 증가량은 현재 벌 수 기준으로 계산한다.
+- 총 꿀 증가량 공식:
+  - `TotalHoneyIncrease = ColonyBeeCount * HoneyProductionCoefficient`
+- 같은 bucket에서 꿀 생산과 벌 수 업데이트가 동시에 발생하면 꿀 생산을 먼저 처리하고, 그 다음 벌 수 업데이트를 처리한다.
+- 소비장별 꿀 증가량에는 편차가 있어야 한다.
+- 단, 소비장이 가득 차지 않은 상태에서는 소비장별 증가량 총합이 벌통의 총 꿀 증가량과 같아야 한다.
+- 소비장이 최대 꿀 용량에 도달해 초과분이 생기면 초과분은 버린다.
+- 꿀 업데이트는 소비장 들림 여부와 무관하게 모든 active 소비장에 적용한다.
+- 소비장은 내부 절대 꿀 양을 저장하고, 시각 표현에는 정규화된 `0.0~1.0` fill ratio를 사용한다.
 
-## 확정 QnA
+## 참조 문서
 
-`.md/QNA_ARCHITECTURE.md`의 `Queen Bee Actor QnA` 답변을 기준으로 구현한다.
+- `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/WorldActorsSystem.md`
+- `.md/Architecture/EnvironmentSystem.md`
+- `.md/QNA_ARCHITECTURE.md`
 
-- 위치 업데이트 yaw 랜덤 범위: 옵션 A, `0~360도` 완전 랜덤 yaw
-- 위치 업데이트 yaw 기준: 옵션 A, 선택된 Front/Back attach point 회전 기준
-- Tick yaw 떨림: 옵션 A, 매 Tick `AddActorLocalRotation`으로 랜덤 yaw 누적
-- 여왕벌이 붙은 소비장이 들어올려질 때: 옵션 A, 소비장에 attach된 상태로 같이 이동
+## 주요 파일
 
-추가 QnA는 필요 없다.
-
-## 수정 대상
-
-우선 다음 파일을 확인하고 수정한다.
+수정 대상:
 
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-- `Source/BeekeepingSim/Public/Environment/GameTimeBucketTypes.h`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombLiftComponent.h`
+
+문서 반영 대상:
+
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/WorldActorsSystem.md`
 
-새 파일 추가:
+## 설계 결정사항
 
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
+### 초과 생산량
 
-필요 시 `BeekeepingSim.Build.cs`를 확인하되, 일반 Actor/StaticMeshComponent만 사용하면 새 모듈 의존성은 필요 없어야 한다.
+- 소비장별 꿀 적용 시 `MaxHoneyPerComb`을 초과하는 양은 버린다.
+- 초과분 재분배나 벌통 저장고 누적은 하지 않는다.
 
-## 현재 구조
+### 내부 단위와 표시 단위
 
-`ABeehive`:
+- 소비장 내부 꿀 양은 절대값으로 저장한다.
+- 표시 비율은 다음 공식으로 계산한다.
+  - `HoneyFillRatio = Clamp(CurrentHoney / MaxHoneyPerComb, 0.0, 1.0)`
+- 머티리얼 scalar parameter `HoneyAmount`에는 절대값이 아니라 `HoneyFillRatio`를 넣는다.
 
-- `IGameTimeBucketListener`를 이미 구현한다.
-- `BeginPlay()`에서 `UGameTimeBucketSubsystem`에 자신을 등록한다.
-- `EndPlay()`에서 등록 해제한다.
-- `GetGameTimeBucketSubscriptions_Implementation()`에서 `BeeSwarm` bucket subscription을 반환한다.
-- `OnGameTimeBucketEvent_Implementation()`에서 `BeeSwarm` tag를 처리한다.
-- `CombRackRoot`와 `CombSlotComponents`로 소비장 슬롯을 관리한다.
-- `CurrentCombCount` 이하 slot만 active comb actor를 가진다.
-- `CombLiftComponent->GetLiftedCombSlotIndex()`로 현재 들어올려진 소비장 슬롯을 알 수 있다.
+### 기본값
 
-`ABeehiveCombActor`:
+- `MaxHoneyPerComb = 100.0f`
+- `HoneyProductionCoefficient = 0.01f`
+- `HoneyDistributionDeviationRatio = 0.5f`
+- `HoneyProductionBucketMinutes = 60`
+- `bApplyHoneyProductionOnBeginPlayBucket = false`
 
-- 소비장 actor다.
-- `CombMesh`, `FrontFaceBeeNiagara`, `BackFaceBeeNiagara`, `PartFocusAction`을 가진다.
-- 현재 여왕벌 부착 전용 attach point는 없다.
+### 분배 방식
 
-## 설계 원칙
-
-- 여왕벌 기능은 `WorldActors` 시스템에 둔다.
-- `Environment` 시스템은 수정하지 않는다. 시간 갱신은 기존 `UGameTimeBucketSubsystem` + `IGameTimeBucketListener` 경로만 사용한다.
-- `AEnvironmentTimeOfDayActor`를 `ABeehive`나 여왕벌 actor에서 직접 찾거나 참조하지 않는다.
-- `AQueenBeeActor`는 자기 시각/떨림만 담당한다.
-- 소비장 후보 선택, Front/Back 선택, 60분 위치 업데이트는 `ABeehive`가 담당한다.
-- 기존 UCLASS/USTRUCT/UENUM rename은 하지 않는다. Core Redirect는 필요 없다.
-
-## AQueenBeeActor 추가
-
-`AQueenBeeActor`를 `WorldActors` 폴더에 추가한다.
-
-권장 구성:
-
-```cpp
-UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API AQueenBeeActor : public AActor
-```
-
-컴포넌트:
-
-- `USceneComponent* Root`
-- `UStaticMeshComponent* QueenBeeMesh`
-
-Tick:
-
-- `PrimaryActorTick.bCanEverTick = true`
-- `Tick(float DeltaTime)`에서 다음 로직을 수행한다.
-
-```cpp
-const float YawDelta = FMath::FRandRange(-YawJitterDegreesPerTick, YawJitterDegreesPerTick);
-AddActorLocalRotation(FRotator(0.0f, YawDelta, 0.0f));
-```
-
-Details 노출값:
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Queen Bee|Motion", meta=(ClampMin="0.0"))
-float YawJitterDegreesPerTick = 1.0f;
-```
-
-요구사항상 DeltaTime 보정은 하지 않는다. Tick당 랜덤 누적 yaw가 목표 동작이다.
-
-## 소비장 attach point 추가
-
-`ABeehiveCombActor`에 여왕벌 부착 기준점을 추가한다.
-
-권장 컴포넌트:
-
-```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-TObjectPtr<USceneComponent> QueenFrontAttachPoint;
-
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-TObjectPtr<USceneComponent> QueenBackAttachPoint;
-```
-
-권장 API:
-
-```cpp
-UFUNCTION(BlueprintPure, Category="Beehive|Queen Bee")
-USceneComponent* GetQueenFrontAttachPoint() const;
-
-UFUNCTION(BlueprintPure, Category="Beehive|Queen Bee")
-USceneComponent* GetQueenBackAttachPoint() const;
-
-UFUNCTION(BlueprintPure, Category="Beehive|Queen Bee")
-USceneComponent* GetQueenAttachPoint(bool bFrontFace) const;
-```
-
-구성:
-
-- 두 attach point는 `CombMesh` 또는 `Root` 아래에 붙인다.
-- 기본 relative location은 소비장 면 중앙을 의미하도록 둔다.
-- 정확한 offset은 Blueprint child 또는 Details에서 조정할 수 있게 `VisibleAnywhere` component transform으로 제공한다.
-- Niagara component를 attach 기준으로 쓰지 않는다. VFX와 gameplay placement 기준을 분리한다.
-
-## ABeehive 여왕벌 소유
-
-`ABeehive`에 여왕벌 child actor를 추가한다.
-
-권장 필드:
-
-```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Beehive|Queen Bee")
-TObjectPtr<UChildActorComponent> QueenBeeChildActor;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Beehive|Queen Bee")
-TSubclassOf<AQueenBeeActor> QueenBeeActorClass;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Beehive|Queen Bee Time", meta=(ClampMin="1", ClampMax="1440"))
-int32 QueenBeeLocationBucketMinutes = 60;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Beehive|Queen Bee Time")
-bool bUpdateQueenBeeLocationOnBeginPlayBucket = true;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Beehive|Queen Bee", meta=(ClampMin="1.0"))
-float QueenBeeCenterWeightMultiplier = 4.0f;
-```
-
-권장 API:
-
-```cpp
-UFUNCTION(BlueprintCallable, Category="Beehive|Queen Bee")
-void UpdateQueenBeeLocation();
-
-UFUNCTION(BlueprintPure, Category="Beehive|Queen Bee")
-AQueenBeeActor* GetQueenBeeActor() const;
-```
-
-private helper 예시:
-
-```cpp
-void EnsureQueenBeeChildActorClass();
-bool ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const;
-float CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const;
-USceneComponent* ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const;
-```
-
-## 여왕벌 child actor 초기화
-
-`ABeehive` 생성자:
-
-- `QueenBeeChildActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("QueenBeeChildActor"));`
-- 기본 attach parent는 `Root` 또는 `CombRackRoot`로 둔다.
-- `QueenBeeActorClass = AQueenBeeActor::StaticClass();`
-
-`OnConstruction()` / `BeginPlay()`:
-
-- `EnsureQueenBeeChildActorClass()` 호출
-- `bUpdateQueenBeeLocationOnBeginPlayBucket`이 true인 경우 BeginPlay 또는 bucket initial apply에서 위치 배치가 수행되도록 한다.
-- child actor class 변경은 기존 `BeehiveSwarmChildActor` 패턴처럼 class만 보정하고 불필요한 재생성을 피한다.
-
-## 위치 업데이트 후보 선택
-
-`UpdateQueenBeeLocation()`은 다음 순서로 동작한다.
-
-1. 여왕벌 child actor/class가 유효한지 보정한다.
-2. active comb 후보를 만든다.
-3. 현재 들어올려진 소비장 index는 후보에서 제외한다.
-4. 중앙 가중 랜덤으로 소비장 슬롯을 선택한다.
-5. `FMath::RandBool()`로 Front/Back을 선택한다.
-6. 선택된 attach point에 여왕벌 child actor component를 attach한다.
-7. attach point 기준 회전에 `0~360도` 랜덤 yaw를 relative rotation으로 적용한다.
-
-후보 조건:
+소비장별 증가량은 랜덤 가중치 정규화 방식으로 계산한다.
 
 ```text
-0 <= Index < CurrentCombCount
-CombSlotComponents.IsValidIndex(Index)
-CombSlotComponents[Index] 유효
-ChildActor가 ABeehiveCombActor
-Index != CombLiftComponent->GetLiftedCombSlotIndex()
-선택된 face attach point 유효
+Weight = RandomRange(1.0 - HoneyDistributionDeviationRatio, 1.0 + HoneyDistributionDeviationRatio)
+CombHoneyIncrease = TotalHoneyIncrease * Weight / WeightSum
 ```
 
-후보가 없으면 no-op:
+- `HoneyDistributionDeviationRatio`는 `0.0~1.0`으로 clamp한다.
+- active 소비장 수가 0이면 아무것도 하지 않는다.
+- `TotalHoneyIncrease <= 0`이면 아무것도 하지 않는다.
+- 소비장이 가득 차서 일부 증가량이 버려지는 경우를 제외하면 적용 증가량 총합은 `TotalHoneyIncrease`와 같아야 한다.
 
-```text
-여왕벌 actor를 destroy/hide하지 않는다.
-기존 위치를 유지한다.
-로그 스팸은 남기지 않는다.
-```
+### bucket 처리 순서
 
-중앙 가중치 계산 권장:
+`ABeehive::GetGameTimeBucketSubscriptions_Implementation`에서 `HoneyProduction` subscription을 `ColonyPopulation` subscription보다 먼저 추가한다.
+
+권장 순서:
+
+1. `BeeSwarm`
+2. `QueenBeeLocation`
+3. `HoneyProduction`
+4. `ColonyPopulation`
+
+결과:
+
+- 같은 60분 경계에서 꿀 생산은 업데이트 직전 `ColonyBeeCount`를 기준으로 계산된다.
+- 이후 `ApplyColonyPopulationUpdate()`가 다음 주기용 벌 수를 갱신한다.
+
+## `ABeehive` 구현 요구사항
+
+### 추가 UPROPERTY
+
+`Beehive.h`에 아래 설정을 추가한다.
 
 ```cpp
-const float Center = static_cast<float>(CurrentCombCount - 1) * 0.5f;
-const float MaxDistance = FMath::Max(Center, static_cast<float>(CurrentCombCount - 1) - Center);
-const float Distance = FMath::Abs(static_cast<float>(SlotIndex) - Center);
-const float Distance01 = MaxDistance > KINDA_SMALL_NUMBER ? Distance / MaxDistance : 0.0f;
-const float CenterFactor = 1.0f - FMath::Clamp(Distance01, 0.0f, 1.0f);
-const float Weight = FMath::Lerp(1.0f, FMath::Max(1.0f, QueenBeeCenterWeightMultiplier), CenterFactor);
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time", meta = (ClampMin = "1", ClampMax = "1440"))
+int32 HoneyProductionBucketMinutes = 60;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time")
+bool bApplyHoneyProductionOnBeginPlayBucket = false;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0"))
+float HoneyProductionCoefficient = 0.01f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+float HoneyDistributionDeviationRatio = 0.5f;
 ```
 
-선택 알고리즘:
+### 추가 함수
 
-- 후보별 weight 합산
-- `FRandRange(0, TotalWeight)`로 weighted random pick
-- fallback으로 마지막 후보 선택
-
-짝수 소비장 수:
-
-- 가운데 두 슬롯이 같은 최고 가중치를 가져야 한다.
-
-## Front/Back 부착
-
-Front/Back 선택:
+`Beehive.h`에 BlueprintCallable/Pure API를 추가한다.
 
 ```cpp
-const bool bFrontFace = FMath::RandBool();
+UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Production")
+void ApplyHoneyProductionUpdate();
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
+float CalculateTotalHoneyIncreaseAmount() const;
 ```
 
-부착:
+private helper는 필요에 따라 추가한다.
 
 ```cpp
-QueenBeeChildActor->AttachToComponent(AttachPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-QueenBeeChildActor->SetRelativeLocation(FVector::ZeroVector);
-QueenBeeChildActor->SetRelativeRotation(FRotator(0.0f, RandomYaw, 0.0f));
+void DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease);
+```
+
+### 꿀 생산 계산
+
+```cpp
+float ABeehive::CalculateTotalHoneyIncreaseAmount() const
+{
+    const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
+    const float SafeCoefficient = FMath::Max(0.0f, HoneyProductionCoefficient);
+    return static_cast<float>(SafeBeeCount) * SafeCoefficient;
+}
+```
+
+### 꿀 생산 적용
+
+`ApplyHoneyProductionUpdate()`는 다음 순서로 동작한다.
+
+1. `CalculateTotalHoneyIncreaseAmount()` 호출
+2. `DistributeHoneyIncreaseToCombs(TotalHoneyIncrease)` 호출
+
+주의:
+
+- 벌 수는 여기서 변경하지 않는다.
+- 벌떼 Niagara 설정은 여기서 변경하지 않는다.
+- 소비장 들림 여부는 무시하고 모든 active comb에 적용한다.
+
+### bucket 구독 추가
+
+`GetGameTimeBucketSubscriptions_Implementation`에 `HoneyProduction` subscription을 추가한다.
+
+중요:
+
+- 반드시 `ColonyPopulation` subscription보다 먼저 `OutSubscriptions.Add(HoneySubscription)` 해야 한다.
+
+```cpp
+FGameTimeBucketSubscription HoneySubscription;
+HoneySubscription.BucketMinutes = FMath::Clamp(HoneyProductionBucketMinutes, 1, 1440);
+HoneySubscription.bApplyImmediatelyOnBeginPlay = bApplyHoneyProductionOnBeginPlayBucket;
+HoneySubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+HoneySubscription.SubscriptionTag = FName(TEXT("HoneyProduction"));
+OutSubscriptions.Add(HoneySubscription);
+```
+
+`OnGameTimeBucketEvent_Implementation`에 처리 분기를 추가한다.
+
+```cpp
+else if (Event.SubscriptionTag == FName(TEXT("HoneyProduction")))
+{
+    ApplyHoneyProductionUpdate();
+}
+```
+
+## `ABeehiveCombActor` 구현 요구사항
+
+### 추가 컴포넌트
+
+`BeehiveCombActor.h`에 Front/Back 꿀 plane mesh component를 추가한다.
+
+```cpp
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+TObjectPtr<UStaticMeshComponent> FrontHoneyPlane;
+
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
+```
+
+생성자에서 생성하고 `Root` 또는 `CombMesh`에 attach한다.
+
+권장:
+
+- `CombMesh`에 attach하면 소비장 mesh 기준으로 위치 조정하기 쉽다.
+- 기존 Blueprint serialized component 구조를 고려해 이름은 안정적으로 유지한다.
+
+### 꿀 상태와 설정
+
+```cpp
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
+float MaxHoneyPerComb = 100.0f;
+
+UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
+float CurrentHoney = 0.0f;
+
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+FVector FrontHoneyEmptyRelativeLocation = FVector::ZeroVector;
+
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+FVector FrontHoneyFullRelativeLocation = FVector::ZeroVector;
+
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+FVector BackHoneyEmptyRelativeLocation = FVector::ZeroVector;
+
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+FVector BackHoneyFullRelativeLocation = FVector::ZeroVector;
+
+UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+FName HoneyMaterialParameterName = TEXT("HoneyAmount");
+```
+
+Dynamic material instance 캐시는 private transient로 둔다.
+
+```cpp
+UPROPERTY(Transient)
+TObjectPtr<UMaterialInstanceDynamic> FrontHoneyMaterialInstance;
+
+UPROPERTY(Transient)
+TObjectPtr<UMaterialInstanceDynamic> BackHoneyMaterialInstance;
+```
+
+### 추가 API
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
+void AddHoneyAmount(float DeltaHoney);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
+void SetCurrentHoney(float NewHoneyAmount);
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
+float GetCurrentHoney() const { return CurrentHoney; }
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
+float GetHoneyFillRatio() const;
+```
+
+private helper:
+
+```cpp
+void SanitizeHoneyState();
+void ApplyHoneyVisualState();
+void EnsureHoneyMaterialInstances();
+```
+
+### Honey clamp 정책
+
+```cpp
+void ABeehiveCombActor::SanitizeHoneyState()
+{
+    MaxHoneyPerComb = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyPerComb);
+    CurrentHoney = FMath::Clamp(CurrentHoney, 0.0f, MaxHoneyPerComb);
+}
+```
+
+초과분은 버리므로 `AddHoneyAmount`는 clamp만 수행한다.
+
+```cpp
+void ABeehiveCombActor::AddHoneyAmount(float DeltaHoney)
+{
+    CurrentHoney += FMath::Max(0.0f, DeltaHoney);
+    SanitizeHoneyState();
+    ApplyHoneyVisualState();
+}
+```
+
+### 시각 업데이트
+
+`ApplyHoneyVisualState()`는 다음을 수행한다.
+
+1. `HoneyFillRatio` 계산
+2. Front/Back 꿀 plane relative location 보간
+3. material index 0 dynamic material instance에 scalar parameter 적용
+
+```cpp
+const float FillRatio = GetHoneyFillRatio();
+FrontHoneyPlane->SetRelativeLocation(FMath::Lerp(FrontHoneyEmptyRelativeLocation, FrontHoneyFullRelativeLocation, FillRatio));
+BackHoneyPlane->SetRelativeLocation(FMath::Lerp(BackHoneyEmptyRelativeLocation, BackHoneyFullRelativeLocation, FillRatio));
+FrontHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
+BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
 ```
 
 주의:
 
-- random yaw는 `0.0f~360.0f` 범위다.
-- attach point 회전을 기준으로 yaw가 더해져야 한다.
-- scale은 attach point scale을 강제로 상속하지 않도록 `SnapToTargetNotIncludingScale`을 사용한다.
-- Tick yaw 떨림은 actor 내부에서 계속 `AddActorLocalRotation`으로 누적된다.
+- material parameter에는 `CurrentHoney` 절대값이 아니라 `FillRatio`를 넣는다.
+- material index 0만 대상으로 한다.
+- Front/Back plane 중 하나가 null이어도 다른 쪽은 정상 적용되어야 한다.
 
-## 60분 게임시간 업데이트
+### 적용 시점
 
-기존 `ABeehive::GetGameTimeBucketSubscriptions_Implementation()`에 subscription을 추가한다.
+`ABeehiveCombActor`의 다음 경로에서 꿀 상태도 sanitize/apply 한다.
 
-```cpp
-FGameTimeBucketSubscription QueenSubscription;
-QueenSubscription.BucketMinutes = FMath::Clamp(QueenBeeLocationBucketMinutes, 1, 1440);
-QueenSubscription.bApplyImmediatelyOnBeginPlay = bUpdateQueenBeeLocationOnBeginPlayBucket;
-QueenSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
-QueenSubscription.SubscriptionTag = FName(TEXT("QueenBeeLocation"));
-OutSubscriptions.Add(QueenSubscription);
-```
+- `OnConstruction`
+- `BeginPlay`
+- `PostEditChangeProperty`
+- `SetCurrentHoney`
+- `AddHoneyAmount`
 
-`OnGameTimeBucketEvent_Implementation()`에 tag 분기 추가:
+기존 벌 Niagara parameter 적용과 함수 책임을 섞지 말고, 꿀 시각 적용은 별도 helper로 유지한다.
 
-```cpp
-if (Event.SubscriptionTag == FName(TEXT("QueenBeeLocation")))
-{
-    UpdateQueenBeeLocation();
-}
-```
+## 문서 업데이트 요구사항
 
-기존 `BeeSwarm` 처리와 충돌하지 않게 한다.
+`.md/0_ARCHITECTURE.md`에 요약 추가:
 
-## 소비장 들어올림과 여왕벌
+- `ABeehive`는 `HoneyProduction` bucket을 통해 60분마다 꿀 생산을 처리한다.
+- 같은 bucket에서는 꿀 생산이 colony population보다 먼저 처리된다.
+- 꿀 생산량은 업데이트 직전 `ColonyBeeCount * HoneyProductionCoefficient`다.
+- `ABeehiveCombActor`는 절대 꿀 양과 정규화 fill ratio 기반 Front/Back honey plane 표현을 소유한다.
 
-확정 정책:
+`.md/Architecture/WorldActorsSystem.md`에 상세 추가:
 
-```text
-이미 여왕벌이 붙어 있는 소비장이 들어올려지면 여왕벌은 소비장에 attach된 상태로 같이 이동한다.
-```
+- `ABeehive` Honey Production 설정과 bucket 흐름
+- `ABeehiveCombActor` Honey 상태, Front/Back plane, material parameter 적용
+- 들림 상태와 무관하게 꿀 업데이트가 모든 active comb에 적용된다는 정책
 
-따라서 `UBeehiveCombLiftComponent`의 lift 동작에서 여왕벌을 강제로 detach/reposition하지 않는다.
+## Blueprint / Editor 작업
 
-단, 다음 60분 위치 업데이트 후보에서는 현재 들어올려진 소비장을 제외한다.
+구현 후 에디터에서 수행할 작업:
 
-## 문서 갱신
-
-구현 후 다음 문서를 갱신한다.
-
-`.md/0_ARCHITECTURE.md`:
-
-- WorldActors 요약에 여왕벌 actor와 60분 bucket 위치 업데이트 흐름 추가.
-- Environment는 직접 참조하지 않고 bucket listener 경로만 사용한다고 기록.
-
-`.md/Architecture/WorldActorsSystem.md`:
-
-- Scope에 `QueenBeeActor.h/.cpp` 추가.
-- Key Classes에 `AQueenBeeActor` 추가.
-- `ABeehive` composition에 `QueenBeeChildActor`, `QueenBeeActorClass`, queen bucket 설정 추가.
-- `ABeehiveCombActor` composition에 `QueenFrontAttachPoint`, `QueenBackAttachPoint` 추가.
-- Design Notes에 중앙 가중 랜덤, lifted comb 제외, Front/Back 50:50, 위치 업데이트 yaw `0~360`, Tick yaw 누적 정책 기록.
-
-## Blueprint/API/Core Redirect 영향
-
-- 새 UCLASS `AQueenBeeActor` 추가는 Core Redirect가 필요 없다.
-- 기존 UCLASS/USTRUCT/UENUM rename 금지.
-- 기존 Blueprint API 삭제/rename 금지.
-- `ABeehiveCombActor`에 component를 추가하므로 기존 BP child에서 component transform이 의도대로 보이는지 수동 확인 대상이다.
-- `AQueenBeeActor`가 Blueprint native parent로 사용되면 이후 rename 시 Core Redirect 대상이 된다.
+1. `BP_BeehiveCombActor` 또는 소비장 Blueprint에서 `FrontHoneyPlane`, `BackHoneyPlane` static mesh를 설정한다.
+2. Front/Back honey plane material index 0에 `HoneyAmount` scalar parameter를 가진 material을 지정한다.
+3. 각 소비장에서 아래 위치 값을 조정한다.
+   - `FrontHoneyEmptyRelativeLocation`
+   - `FrontHoneyFullRelativeLocation`
+   - `BackHoneyEmptyRelativeLocation`
+   - `BackHoneyFullRelativeLocation`
+4. `BP_Beehive` 또는 배치된 벌통에서 꿀 생산 기본값을 확인한다.
+   - `HoneyProductionBucketMinutes = 60`
+   - `bApplyHoneyProductionOnBeginPlayBucket = false`
+   - `HoneyProductionCoefficient = 0.01`
+   - `HoneyDistributionDeviationRatio = 0.5`
+5. Blueprint compile/save를 수행한다.
 
 ## 검증 기준
 
-- C++ 빌드 성공.
-- `AQueenBeeActor`가 Details에서 `YawJitterDegreesPerTick` 값을 노출한다.
-- 여왕벌 actor가 Tick마다 `-n1~n1` 범위 yaw를 `AddActorLocalRotation`으로 누적한다.
-- `ABeehive`가 기존 `BeeSwarm` bucket과 별개로 `QueenBeeLocation` 60분 bucket을 구독한다.
-- 게임시간 기준 60분마다 `UpdateQueenBeeLocation()`이 호출된다.
-- 현재 들어올려진 소비장은 위치 업데이트 후보에서 제외된다.
-- 중앙 쪽 소비장의 선택 확률이 가장자리보다 높다.
-- Front/Back face 선택은 50:50이다.
-- 여왕벌은 선택된 face attach point 중앙에 부착된다.
-- 위치 업데이트 시 attach point 기준으로 `0~360도` 랜덤 yaw가 적용된다.
-- 여왕벌이 붙은 소비장을 들어올리면 여왕벌도 같이 이동한다.
-- 후보 소비장이 없으면 기존 여왕벌 위치를 유지하고 crash가 없어야 한다.
+### C++ 빌드
 
-## QnA 필요 여부
+- `BeekeepingSimEditor Win64 Development` 빌드 성공
 
-추가 QnA는 필요 없다.
+### 기능 검증
 
-확정 기준:
+1. 벌통에 active 소비장이 없으면 꿀 생산 업데이트가 crash 없이 no-op이어야 한다.
+2. 벌 수 100, `HoneyProductionCoefficient=0.01`이면 60분마다 총 꿀 생산량은 1.0이어야 한다.
+3. 소비장들이 가득 차지 않은 상태라면 소비장별 증가량 합은 1.0이어야 한다.
+4. 소비장별 증가량은 `HoneyDistributionDeviationRatio=0.5` 기준으로 편차가 있어야 한다.
+5. 꿀 업데이트는 들려진 소비장에도 적용되어야 한다.
+6. 소비장이 최대치에 도달하면 초과분은 버려야 한다.
+7. material parameter `HoneyAmount`에는 `CurrentHoney / MaxHoneyPerComb` 정규화 값이 들어가야 한다.
+8. 같은 60분 bucket에서 꿀 생산이 벌 수 업데이트보다 먼저 실행되어야 한다.
+9. 기존 벌떼 Niagara SpawnAmount/TargetBeeCount 동작을 변경하지 않아야 한다.
 
-```text
-QNA_ARCHITECTURE.md의 Queen Bee Actor QnA 4개 답변을 모두 반영한다.
-```
+## 주의사항
+
+- 명시 요청 없이 Content asset을 직접 수정하지 않는다.
+- `ABeehiveCombActor`나 `ABeehive` class rename은 하지 않는다.
+- Blueprint 노출 API를 삭제하지 않는다.
+- 기존 queen bee, colony population, AttractionSwarm Niagara 재초기화 동작을 회귀시키지 않는다.
+- 기존 `RefreshCombSpawnAmounts(true)`의 lifted comb skip 정책은 꿀 업데이트 경로와 분리한다.

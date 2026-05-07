@@ -5,6 +5,7 @@
 #include "BeehiveCombActor.generated.h"
 
 class UNiagaraComponent;
+class UMaterialInstanceDynamic;
 class USceneComponent;
 class UStaticMeshComponent;
 class UCursorPartFocusActionComponent;
@@ -63,6 +64,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	USceneComponent* GetQueenAttachPoint(bool bFrontFace) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
+	void AddHoneyAmount(float DeltaHoney);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
+	void SetCurrentHoney(float NewHoneyAmount);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
+	float GetCurrentHoney() const { return CurrentHoney; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
+	float GetHoneyFillRatio() const;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
@@ -85,9 +98,19 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> QueenBackAttachPoint;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> FrontHoneyPlane;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
+
 private:
 	void ApplyNiagaraUserParameters();
+	void RestartBeeNiagaraSystems();
 	void SanitizeState();
+	void SanitizeHoneyState();
+	void ApplyHoneyVisualState();
+	void EnsureHoneyMaterialInstances();
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
 	FVector2D PlaneSize = FVector2D(100.0f, 100.0f);
@@ -97,4 +120,31 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 TargetBeeCount = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
+	float MaxHoneyPerComb = 100.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
+	float CurrentHoney = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+	FVector FrontHoneyEmptyRelativeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+	FVector FrontHoneyFullRelativeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+	FVector BackHoneyEmptyRelativeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+	FVector BackHoneyFullRelativeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
+	FName HoneyMaterialParameterName = TEXT("HoneyAmount");
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FrontHoneyMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BackHoneyMaterialInstance;
 };
