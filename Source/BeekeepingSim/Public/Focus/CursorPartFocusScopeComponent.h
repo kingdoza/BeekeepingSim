@@ -105,9 +105,6 @@ public:
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus")
-	float ScreenEdgeCancelRegionThickness = 64.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus")
 	float CursorTraceDistance = 5000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus")

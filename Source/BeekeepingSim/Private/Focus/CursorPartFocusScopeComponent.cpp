@@ -3,6 +3,7 @@
 #include "Character/BeekeeperCharacter.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
+#include "Focus/BeekeepingSimFocusSettings.h"
 #include "Focus/BeekeeperFocusComponent.h"
 #include "Focus/FocusTargetComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -75,6 +76,35 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusClickInput()
 		return false;
 	}
 
+	UpdateHoveredPartFromCursor();
+	if (RegisteredParts.IsValidIndex(HoveredPartIndex))
+	{
+		const FCursorPartFocusPartDescriptor& Descriptor = RegisteredParts[HoveredPartIndex];
+		if (IsDescriptorPreviewAllowed(Descriptor))
+		{
+			if (Descriptor.EngageMode == ECursorPartFocusEngageMode::PreviewOnly)
+			{
+				return true;
+			}
+
+			UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
+			if (!Action || !OwnerCharacter)
+			{
+				return true;
+			}
+
+			if (Action->IsPartActionEngaged())
+			{
+				TSet<TObjectPtr<UCursorPartFocusActionComponent>> Visited;
+				CancelActionCascade(Action, false, Visited);
+				RemoveInactiveActions();
+				return true;
+			}
+
+			return BeginPartActionForDescriptor(Descriptor);
+		}
+	}
+
 	if (HandleEdgeCancelClick())
 	{
 		if (!HandleCancelInput())
@@ -84,38 +114,7 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusClickInput()
 		return true;
 	}
 
-	UpdateHoveredPartFromCursor();
-	if (!RegisteredParts.IsValidIndex(HoveredPartIndex))
-	{
-		return true;
-	}
-
-	const FCursorPartFocusPartDescriptor& Descriptor = RegisteredParts[HoveredPartIndex];
-	if (!IsDescriptorPreviewAllowed(Descriptor))
-	{
-		return true;
-	}
-
-	if (Descriptor.EngageMode == ECursorPartFocusEngageMode::PreviewOnly)
-	{
-		return true;
-	}
-
-	UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
-	if (!Action || !OwnerCharacter)
-	{
-		return true;
-	}
-
-	if (Action->IsPartActionEngaged())
-	{
-		TSet<TObjectPtr<UCursorPartFocusActionComponent>> Visited;
-		CancelActionCascade(Action, false, Visited);
-		RemoveInactiveActions();
-		return true;
-	}
-
-	return BeginPartActionForDescriptor(Descriptor);
+	return true;
 }
 
 bool UCursorPartFocusScopeComponent::HandleCancelInput()
@@ -548,7 +547,9 @@ bool UCursorPartFocusScopeComponent::HandleEdgeCancelClick() const
 		return false;
 	}
 
-	const float T = FMath::Max(0.0f, ScreenEdgeCancelRegionThickness);
+	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+	const float RawThickness = FocusSettings ? FocusSettings->ScreenEdgeCancelRegionThickness : 64.0f;
+	const float T = FMath::Max(0.0f, RawThickness);
 	return ScreenX <= T || ScreenY <= T || ScreenX >= (static_cast<float>(SizeX) - T) || ScreenY >= (static_cast<float>(SizeY) - T);
 }
 

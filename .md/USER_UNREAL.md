@@ -36,7 +36,8 @@ Cursor Part Focus 관계 정책에 사용할 태그를 프로젝트 Gameplay Tag
 
 - `CursorPartFocusScopeComponent`
   - Host 내부 파츠 Focus Scope
-  - 화면 외곽 취소 영역 두께 기본값: `64px`
+  - 화면 외곽 취소 영역 두께는 컴포넌트별 값이 아니라 공통 설정값을 사용한다.
+  - `Project Settings > Beekeeping Sim Focus > Cursor Part Focus > ScreenEdgeCancelRegionThickness`에서 조정한다.
 
 - 뚜껑 PartFocusAction (`UCursorPartFocusActionComponent`)
   - `EngageMode`: `PersistentAction`
@@ -138,7 +139,8 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
   - 그 다음 뚜껑이 닫힌다.
 
 - 화면 외곽 취소 영역 click
-  - `Esc`와 동일한 cancel 우선순위로 동작한다.
+  - 기본적으로 `Esc`와 동일한 cancel 우선순위로 동작한다.
+  - 단, 유효한 PartFocus hover target 위에서 클릭한 경우에는 edge cancel보다 target click 처리가 우선한다.
 
 - 배치 아이템 hover
   - outline만 표시된다.

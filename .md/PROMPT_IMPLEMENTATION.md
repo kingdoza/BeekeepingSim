@@ -1,189 +1,159 @@
-# Beehive Comb Lift TargetRoot Transform 기준 구현 수정 프롬프트
+# Cursor Part Focus 공통 Edge Cancel Thickness 구현 프롬프트
 
 ## 목표
 
-`UBeehiveCombLiftComponent`의 소비장 들어올림 목표 transform 계산을 단순화한다.
+`ScreenEdgeCancelRegionThickness`를 `UCursorPartFocusScopeComponent` 인스턴스별 값이 아니라 프로젝트 공통 설정값으로 변경한다.
 
-기존에 논의했던 아래 기능은 전부 제거한다.
-
-```text
-카메라 방향을 향하는 회전 계산
-CameraFacingLocalYawDegrees
-AutoCameraYawQuat
-CombLiftLocalRotationDelta
-FacingAxis / UpAxis
-FindLookAtRotation 기반 회전 보정
-BaseTargetWorldRotation
-```
-
-앞으로 소비장 들어올림 목표 위치와 목표 회전은 모두 `CombLiftTargetRoot` 컴포넌트의 transform을 기준으로 한다.
+현재 문제:
 
 ```text
-Lift Target Location = CombLiftTargetRoot world location
-Lift Target Rotation = CombLiftTargetRoot world rotation
+ScreenEdgeCancelRegionThickness가 CursorPartFocusScopeComponent마다 개별 EditAnywhere 값으로 노출됨
+각 액터/BP에 붙은 Scope마다 값이 달라질 수 있음
+모든 Part Focus Scope에 동일한 외곽 취소 영역 정책을 적용하기 불편함
 ```
 
-즉 디자이너/개발자가 에디터에서 `CombLiftTargetRoot`를 이동/회전시키면, 들어올려진 소비장은 그 위치와 회전을 목표로 보간된다.
+수정 후:
+
+```text
+ScreenEdgeCancelRegionThickness는 프로젝트/게임 전역 Focus 설정에 속한다.
+모든 UCursorPartFocusScopeComponent는 동일한 공통값을 읽어서 사용한다.
+Scope 컴포넌트 Details에서 개별 조절하지 않는다.
+```
 
 ## 수정 대상
 
-구현 전 다음 파일을 확인한다.
+우선 다음 파일을 확인한다.
 
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombLiftComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombLiftComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `.md/Architecture/WorldActorsSystem.md`
-- `.md/USER_UNREAL.md`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
+- 필요 시 `Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h`
+- 필요 시 `Source/BeekeepingSim/Private/Focus/BeekeepingSimFocusSettings.cpp`
+- 필요 시 `.md/Architecture/WorldActorsSystem.md`
+- 필요 시 `.md/USER_UNREAL.md`
 
-## 제거할 변수/설계
+## 현재 구조
 
-다음 변수나 설계가 있다면 제거한다.
-
-```text
-CombLiftLocalRotationDelta
-CombLiftFacingAxis
-CombLiftUpAxis
-CameraFacingLocalYawDegrees
-저장된 CameraWorldLocation 기반 회전 재계산
-BaseTargetWorldRotation
-```
-
-헤더, cpp, 블루프린트 노출값, 문서에서 모두 정리한다.
-
-## 최종 목표 transform 계산
-
-들어올림 Begin 시점 또는 target 갱신 시 다음 방식으로 목표 transform을 계산한다.
+`UCursorPartFocusScopeComponent`에 다음과 같은 인스턴스별 값이 있다.
 
 ```cpp
-const FTransform TargetWorldTransform = CombLiftTargetRoot->GetComponentTransform();
-const FTransform CombRackWorldTransform = CombRackRoot->GetComponentTransform();
-const FTransform TargetRelativeTransform =
-    TargetWorldTransform.GetRelativeTransform(CombRackWorldTransform);
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus")
+float ScreenEdgeCancelRegionThickness = 64.0f;
 ```
 
-slot 보간 목표 transform:
+`HandleEdgeCancelClick()`은 이 멤버 값을 사용해 화면 외곽 취소 영역을 판정한다.
+
+## 변경 정책
+
+`ScreenEdgeCancelRegionThickness`의 소유권을 다음으로 이동한다.
 
 ```text
-Location = TargetRelativeTransform.GetLocation()
-Rotation = TargetRelativeTransform.GetRotation()
-Scale = RestRelativeTransform.GetScale3D()
+소유: UBeekeepingSimFocusSettings
+사용: UCursorPartFocusScopeComponent::HandleEdgeCancelClick()
+저장: Config=Game / DefaultGame.ini
+노출: Project Settings
 ```
 
-주의:
+`UCursorPartFocusScopeComponent`는 값을 소유하지 않고 읽기만 한다.
+
+## 설정 클래스 추가
+
+프로젝트에 이미 공통 Focus 설정용 `UDeveloperSettings` 클래스가 있다면 그 클래스를 사용한다.
+
+없다면 다음 성격의 클래스를 추가한다.
+
+예시:
+
+```cpp
+UCLASS(Config=Game, DefaultConfig, meta=(DisplayName="Beekeeping Sim Focus"))
+class BEEKEEPINGSIM_API UBeekeepingSimFocusSettings : public UDeveloperSettings
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Cursor Part Focus", meta=(ClampMin="0.0"))
+    float ScreenEdgeCancelRegionThickness = 64.0f;
+};
+```
+
+필요 include:
+
+```cpp
+#include "Engine/DeveloperSettings.h"
+```
+
+Build.cs에 추가 모듈이 필요한지 확인한다.  
+일반적으로 `DeveloperSettings` 사용을 위해 모듈 의존성이 필요하면 `BeekeepingSim.Build.cs`에 반영한다.
+
+## Scope 컴포넌트 수정
+
+`UCursorPartFocusScopeComponent`에서 기존 인스턴스별 속성을 제거한다.
+
+제거 대상:
+
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus")
+float ScreenEdgeCancelRegionThickness = 64.0f;
+```
+
+목표:
 
 ```text
-Scale은 CombLiftTargetRoot의 scale을 따르지 않는다.
-소비장 slot의 기존 rest scale을 유지한다.
+CursorPartFocusScopeComponent Details에서 ScreenEdgeCancelRegionThickness가 개별 값으로 노출되지 않는다.
 ```
 
-## 들어올림 동작
+## HandleEdgeCancelClick 수정
 
-소비장 PartFocus Begin 또는 lift 요청 시:
+`HandleEdgeCancelClick()`은 공통 설정값을 읽어서 사용한다.
+
+개념:
+
+```cpp
+const UBeekeepingSimFocusSettings* Settings = GetDefault<UBeekeepingSimFocusSettings>();
+const float T = Settings
+    ? FMath::Max(0.0f, Settings->ScreenEdgeCancelRegionThickness)
+    : 64.0f;
+```
+
+요구사항:
 
 ```text
-1. 현재 소비장이 관리 중인 slot index를 찾는다.
-2. 해당 slot의 rest relative transform을 확보한다.
-3. CombLiftTargetRoot의 world location과 world rotation을 가져온다.
-4. 이를 CombRackRoot 기준 relative transform으로 변환한다.
-5. slot ChildActorComponent를 rest transform에서 target relative transform으로 보간한다.
+Settings가 없어도 안전하게 기본값 64.0f를 사용한다.
+음수 값은 0으로 clamp한다.
+기존 화면 좌표 판정 로직은 유지한다.
+thickness 공급원만 공통 설정으로 변경한다.
 ```
 
-보간 시간은 기존 `CombLiftMoveDuration`을 유지한다.
+## 문서 갱신
 
-## 내리기 동작
-
-소비장 PartFocus Cancel 또는 lower 요청 시:
+`.md/USER_UNREAL.md`에 다음 내용을 반영한다.
 
 ```text
-1. lifted slot의 저장된 rest relative transform을 목표로 사용한다.
-2. 현재 lifted transform에서 rest relative transform으로 보간한다.
-3. 완료 후 lifted 상태를 해제한다.
+ScreenEdgeCancelRegionThickness는 개별 CursorPartFocusScopeComponent에서 수정하지 않는다.
+Project Settings > Beekeeping Sim Focus > Cursor Part Focus에서 공통값으로 조절한다.
 ```
 
-내리기는 `CombLiftTargetRoot` 회전을 사용하지 않는다.  
-원래 slot 위치와 회전으로 돌아가는 것이 기준이다.
+만약 프로젝트 설정 UI 등록 대신 `DefaultGame.ini` 설정만 사용한다면, 해당 ini 경로와 설정 예시를 문서화한다.
 
-## 다른 소비장 클릭 시
-
-기존 정책을 유지한다.
+필요하면 `.md/Architecture/WorldActorsSystem.md`에도 다음 책임 분리를 기록한다.
 
 ```text
-소비장 A가 lifted 상태에서 소비장 B를 PartFocus Begin하면:
-1. 소비장 A는 rest transform으로 내려간다.
-2. 소비장 B는 CombLiftTargetRoot transform으로 올라간다.
+UBeekeepingSimFocusSettings
+- Cursor Part Focus 공통 설정 소유
+- ScreenEdgeCancelRegionThickness 제공
+
+UCursorPartFocusScopeComponent
+- 공통 설정값을 읽어 외곽 취소 영역 판정에 사용
+- Scope별 thickness 값을 소유하지 않음
 ```
-
-동시 보간 처리 방식은 기존 구현 정책을 따른다.
-
-## layout refresh 후 재적용
-
-layout refresh 후 lifted transform을 재적용할 때:
-
-```text
-1. 새 rest layout을 적용한다.
-2. lifted slot이 있으면 rest relative transform을 새 slot rest transform으로 갱신한다.
-3. CombLiftTargetRoot world transform을 다시 읽는다.
-4. CombRackRoot 기준 relative transform으로 변환한다.
-5. lifted slot에 target relative transform을 즉시 재적용한다.
-```
-
-카메라 방향, rotation delta, 저장된 camera yaw는 더 이상 사용하지 않는다.
-
-## 기존 동작 유지
-
-이번 수정은 들어올림 목표 회전 정책을 `CombLiftTargetRoot` 기준으로 바꾸는 것이다.
-
-아래 정책은 유지한다.
-
-- 소비장 actor detach 금지
-- `UChildActorComponent` slot 자체 이동/회전
-- `CombLiftTargetRoot` 위치를 목표 위치로 사용
-- `CombLiftTargetRoot` 회전을 목표 회전으로 사용
-- `CombLiftMoveDuration`으로 올리기/내리기 공통 보간
-- 내리기 목표는 slot rest relative transform
-- layout refresh 후 lifted transform 즉시 재적용
-
-## Unreal Editor 문서 갱신
-
-`.md/USER_UNREAL.md`를 갱신한다.
-
-문서에서 제거:
-
-```text
-CombLiftLocalRotationDelta
-CombLiftFacingAxis
-CombLiftUpAxis
-카메라 방향 회전 보정 설정법
-로컬 Z yaw 보정 설명
-```
-
-문서에 추가:
-
-```text
-CombLiftTargetRoot
-- 소비장 들어올림 목표 위치와 목표 회전을 모두 결정한다.
-- 에디터에서 CombLiftTargetRoot를 원하는 위치로 이동하고 원하는 회전으로 돌린다.
-- 소비장을 들어올리면 해당 transform으로 보간된다.
-```
-
-에디터 설정 기준:
-
-```text
-CombLiftTargetRoot의 위치 = 들어올려진 소비장이 놓일 위치
-CombLiftTargetRoot의 회전 = 들어올려진 소비장이 가져야 할 회전
-```
-
-소비장 정면이 카메라를 향해야 한다면, 코드에서 계산하지 말고 `CombLiftTargetRoot`를 에디터에서 직접 원하는 회전으로 배치한다.
 
 ## 검증 기준
 
 - 빌드 성공
-- `CombLiftLocalRotationDelta`가 더 이상 Details에 노출되지 않는다.
-- `FacingAxis/UpAxis` 관련 코드와 문서가 제거된다.
-- 카메라 위치나 방향을 바꿔도 lifted 소비장의 목표 회전이 달라지지 않는다.
-- `CombLiftTargetRoot`를 에디터에서 회전시키면 lifted 소비장의 목표 회전도 동일하게 바뀐다.
-- 소비장 위치 보간, 내리기, layout refresh 후 lifted transform 재적용 정책은 기존과 동일하게 동작한다.
+- `ScreenEdgeCancelRegionThickness`가 `UCursorPartFocusScopeComponent` Details에서 개별 조절값으로 노출되지 않는다.
+- Project Settings 또는 Config에서 `ScreenEdgeCancelRegionThickness`를 한 번만 설정할 수 있다.
+- 모든 `UCursorPartFocusScopeComponent`가 동일한 edge cancel thickness 값을 사용한다.
+- thickness 값을 변경하면 모든 Part Focus Scope의 외곽 취소 영역 판정에 동일하게 반영된다.
+- 기존 edge cancel 클릭 판정 동작은 유지된다.
 
 ## QnA 필요 여부
 
@@ -192,6 +162,5 @@ CombLiftTargetRoot의 회전 = 들어올려진 소비장이 가져야 할 회전
 확정 기준:
 
 ```text
-소비장 들어올림 목표 위치와 목표 회전은 CombLiftTargetRoot가 전부 결정한다.
-카메라 방향 회전 계산과 rotation delta 기능은 삭제한다.
+ScreenEdgeCancelRegionThickness는 Scope별 개별값이 아니라 프로젝트 공통 Focus 설정값이다.
 ```

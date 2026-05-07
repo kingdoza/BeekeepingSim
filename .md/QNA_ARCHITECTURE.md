@@ -34,6 +34,7 @@
 
 4. 화면 외곽 취소 영역 두께의 기본값은 어떻게 할 것인가?
 - 질문 내용: 화면 외곽 클릭을 `FocusCancel`과 동일하게 처리하기로 했으므로, 외곽 취소 영역의 기본 두께를 정해야 한다.
+- 예외 규칙: 현재 커서가 유효한 Part Focus hover target(`RegisteredParts` 유효 + `IsDescriptorPreviewAllowed`) 위에 있으면 edge cancel보다 target click 처리를 우선한다.
 - 필요한 이유: 값이 너무 작으면 클릭하기 어렵고, 너무 크면 파츠 클릭과 충돌한다. Details 노출값으로 조정 가능하더라도 기본값은 필요하다.
 - 선택지
   - 옵션 A: 48px
