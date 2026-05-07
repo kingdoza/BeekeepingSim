@@ -20,6 +20,7 @@ class UPrimitiveComponent;
 class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
 class ABeehiveCombActor;
+class AQueenBeeActor;
 class UCursorPartFocusScopeComponent;
 class UCursorPartFocusActionComponent;
 class UBeehiveCombLiftComponent;
@@ -97,6 +98,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
 	void ReduceCombTargetBeeCountByConfiguredRatio(int32 CombIndex);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Queen Bee")
+	void UpdateQueenBeeLocation();
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	AQueenBeeActor* GetQueenBeeActor() const;
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -124,6 +131,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
 	TObjectPtr<UNiagaraComponent> AttractionSwarmNiagara;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
+	TObjectPtr<UChildActorComponent> QueenBeeChildActor;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	TObjectPtr<USceneComponent> CombRackRoot;
@@ -170,6 +180,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	TSubclassOf<ABeehiveCombActor> CombActorClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
+	TSubclassOf<AQueenBeeActor> QueenBeeActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee Time", meta = (ClampMin = "1", ClampMax = "1440"))
+	int32 QueenBeeLocationBucketMinutes = 60;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee Time")
+	bool bUpdateQueenBeeLocationOnBeginPlayBucket = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee", meta = (ClampMin = "1.0"))
+	float QueenBeeCenterWeightMultiplier = 4.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 MaxCombCount = 6;
 
@@ -215,6 +237,10 @@ private:
 	FBeehiveDualSwarmNiagaraParameters BuildDualSwarmParameters() const;
 	void ApplySettingsToDualSwarmChildActor();
 	void EnsureDualSwarmChildActorClass();
+	void EnsureQueenBeeChildActorClass();
+	bool ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const;
+	float CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const;
+	USceneComponent* ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const;
 	void RefreshCombLayoutAndParameters();
 	void RefreshCombSlotComponents();
 	void RefreshCombSlotTransforms();

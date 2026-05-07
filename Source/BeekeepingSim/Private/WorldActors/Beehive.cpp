@@ -17,6 +17,7 @@
 #include "WorldActors/BeehiveDualSwarmActor.h"
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
+#include "WorldActors/QueenBeeActor.h"
 #include "Curves/CurveFloat.h"
 
 namespace BeehiveAttractionSwarmNames
@@ -87,6 +88,9 @@ ABeehive::ABeehive()
 	AttractionSwarmNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("AttractionSwarmNiagara"));
 	AttractionSwarmNiagara->SetupAttachment(Root);
 
+	QueenBeeChildActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("QueenBeeChildActor"));
+	QueenBeeChildActor->SetupAttachment(Root);
+
 	CombRackRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CombRackRoot"));
 	CombRackRoot->SetupAttachment(Root);
 
@@ -96,6 +100,7 @@ ABeehive::ABeehive()
 	CombLiftComponent = CreateDefaultSubobject<UBeehiveCombLiftComponent>(TEXT("CombLiftComponent"));
 
 	CombActorClass = ABeehiveCombActor::StaticClass();
+	QueenBeeActorClass = AQueenBeeActor::StaticClass();
 
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
 	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
@@ -112,6 +117,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	EnsureDualSwarmChildActorClass();
+	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
@@ -122,6 +128,7 @@ void ABeehive::BeginPlay()
 {
 	Super::BeginPlay();
 	EnsureDualSwarmChildActorClass();
+	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
@@ -416,6 +423,13 @@ void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBuc
 	Subscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
 	Subscription.SubscriptionTag = FName(TEXT("BeeSwarm"));
 	OutSubscriptions.Add(Subscription);
+
+	FGameTimeBucketSubscription QueenSubscription;
+	QueenSubscription.BucketMinutes = FMath::Clamp(QueenBeeLocationBucketMinutes, 1, 1440);
+	QueenSubscription.bApplyImmediatelyOnBeginPlay = bUpdateQueenBeeLocationOnBeginPlayBucket;
+	QueenSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+	QueenSubscription.SubscriptionTag = FName(TEXT("QueenBeeLocation"));
+	OutSubscriptions.Add(QueenSubscription);
 }
 
 void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event)
@@ -423,6 +437,10 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	if (Event.SubscriptionTag == FName(TEXT("BeeSwarm")))
 	{
 		ApplyBeeSwarmHour24(Event.Hour24);
+	}
+	else if (Event.SubscriptionTag == FName(TEXT("QueenBeeLocation")))
+	{
+		UpdateQueenBeeLocation();
 	}
 }
 
@@ -654,6 +672,144 @@ void ABeehive::RefreshCombSlotComponents()
 	}
 }
 
+void ABeehive::EnsureQueenBeeChildActorClass()
+{
+	if (!QueenBeeChildActor || !QueenBeeActorClass)
+	{
+		return;
+	}
+
+	if (QueenBeeChildActor->GetChildActorClass() != QueenBeeActorClass)
+	{
+		QueenBeeChildActor->SetChildActorClass(QueenBeeActorClass);
+	}
+}
+
+void ABeehive::UpdateQueenBeeLocation()
+{
+	EnsureQueenBeeChildActorClass();
+	if (!QueenBeeChildActor || !QueenBeeChildActor->GetChildActor())
+	{
+		return;
+	}
+
+	int32 SelectedSlotIndex = INDEX_NONE;
+	if (!ChooseQueenBeeCombSlotIndex(SelectedSlotIndex))
+	{
+		return;
+	}
+
+	const bool bFrontFace = FMath::RandBool();
+	USceneComponent* AttachPoint = ResolveQueenBeeAttachPoint(SelectedSlotIndex, bFrontFace);
+	if (!AttachPoint)
+	{
+		return;
+	}
+
+	QueenBeeChildActor->AttachToComponent(AttachPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	QueenBeeChildActor->SetRelativeLocation(FVector::ZeroVector);
+	const float RandomYaw = FMath::FRandRange(0.0f, 360.0f);
+	QueenBeeChildActor->SetRelativeRotation(FRotator(0.0f, RandomYaw, 0.0f));
+}
+
+AQueenBeeActor* ABeehive::GetQueenBeeActor() const
+{
+	return QueenBeeChildActor ? Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()) : nullptr;
+}
+
+bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const
+{
+	OutSlotIndex = INDEX_NONE;
+
+	const int32 LiftedSlotIndex = CombLiftComponent ? CombLiftComponent->GetLiftedCombSlotIndex() : INDEX_NONE;
+
+	struct FWeightedSlot
+	{
+		int32 Index = INDEX_NONE;
+		float Weight = 0.0f;
+	};
+
+	TArray<FWeightedSlot> WeightedSlots;
+	float TotalWeight = 0.0f;
+
+	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	{
+		if (Index == LiftedSlotIndex || !CombSlotComponents.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		const UChildActorComponent* Slot = CombSlotComponents[Index];
+		const ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+		if (!CombActor)
+		{
+			continue;
+		}
+
+		if (!CombActor->GetQueenFrontAttachPoint() || !CombActor->GetQueenBackAttachPoint())
+		{
+			continue;
+		}
+
+		const float Weight = CalculateQueenBeeCombSlotWeight(Index);
+		if (Weight <= 0.0f)
+		{
+			continue;
+		}
+
+		FWeightedSlot& Candidate = WeightedSlots.AddDefaulted_GetRef();
+		Candidate.Index = Index;
+		Candidate.Weight = Weight;
+		TotalWeight += Weight;
+	}
+
+	if (WeightedSlots.Num() == 0 || TotalWeight <= 0.0f)
+	{
+		return false;
+	}
+
+	float Remaining = FMath::FRandRange(0.0f, TotalWeight);
+	for (const FWeightedSlot& Candidate : WeightedSlots)
+	{
+		Remaining -= Candidate.Weight;
+		if (Remaining <= 0.0f)
+		{
+			OutSlotIndex = Candidate.Index;
+			return true;
+		}
+	}
+
+	OutSlotIndex = WeightedSlots.Last().Index;
+	return OutSlotIndex != INDEX_NONE;
+}
+
+float ABeehive::CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const
+{
+	if (CurrentCombCount <= 0)
+	{
+		return 0.0f;
+	}
+
+	const float Center = static_cast<float>(CurrentCombCount - 1) * 0.5f;
+	const float MaxDistance = FMath::Max(Center, static_cast<float>(CurrentCombCount - 1) - Center);
+	const float Distance = FMath::Abs(static_cast<float>(SlotIndex) - Center);
+	const float Distance01 = MaxDistance > KINDA_SMALL_NUMBER ? Distance / MaxDistance : 0.0f;
+	const float CenterFactor = 1.0f - FMath::Clamp(Distance01, 0.0f, 1.0f);
+	return FMath::Lerp(1.0f, FMath::Max(1.0f, QueenBeeCenterWeightMultiplier), CenterFactor);
+}
+
+USceneComponent* ABeehive::ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const
+{
+	if (!CombSlotComponents.IsValidIndex(SlotIndex))
+	{
+		return nullptr;
+	}
+
+	const UChildActorComponent* Slot = CombSlotComponents[SlotIndex];
+	const ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+	return CombActor ? CombActor->GetQueenAttachPoint(bFrontFace) : nullptr;
+}
+
 void ABeehive::RefreshCombSlotTransforms()
 {
 	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
@@ -867,6 +1023,7 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	EnsureDualSwarmChildActorClass();
+	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();

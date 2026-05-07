@@ -54,6 +54,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const { return PartFocusAction; }
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	USceneComponent* GetQueenFrontAttachPoint() const { return QueenFrontAttachPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	USceneComponent* GetQueenBackAttachPoint() const { return QueenBackAttachPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	USceneComponent* GetQueenAttachPoint(bool bFrontFace) const;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
@@ -69,6 +78,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UCursorPartFocusActionComponent> PartFocusAction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> QueenFrontAttachPoint;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> QueenBackAttachPoint;
 
 private:
 	void ApplyNiagaraUserParameters();

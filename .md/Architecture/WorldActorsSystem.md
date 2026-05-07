@@ -11,6 +11,8 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
 - `Source/BeekeepingSim/Private/WorldActors/WorldItemPickup.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/StorageBox.h`
@@ -27,6 +29,7 @@
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
+- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 담당
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
@@ -41,6 +44,7 @@
 - `UFocusTargetComponent`
 - `UAnchoredFocusCursorActionComponent`
 - `UChildActorComponent` 1개 (`BeehiveSwarmChildActor`)
+- `UChildActorComponent` 1개 (`QueenBeeChildActor`)
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
 - `UCursorPartFocusScopeComponent` 1개 (`CursorPartFocusScope`)
 - `UCursorPartFocusActionComponent` 1개 (`LidPartFocusAction`)
@@ -49,6 +53,12 @@
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
+- queen 위치 bucket 설정: `QueenBeeLocationBucketMinutes=60`, BeginPlay 즉시 적용 옵션 지원
+- queen 위치 갱신 규칙:
+  - active comb 후보에서 현재 lifted comb slot 제외
+  - 중앙 slot일수록 높은 가중치로 weighted random 선택
+  - 선택된 comb의 front/back attach point를 50:50로 선택
+  - attach point 기준 회전에 `0..360` 랜덤 yaw를 relative rotation으로 추가
 - `ApplyBeeSwarmSettings()`에서 child actor 재생성 없이 기존 instance에 계산된 DTO를 재주입
 - 시간 갱신(`ApplyBeeSwarmHour24`) 경로에서도 class 변경 없이 parameter만 갱신
 - `CombSlotSpacing` 기준 local `Y` 중앙 정렬 배치:
@@ -95,6 +105,7 @@
 - `UStaticMeshComponent` comb mesh
 - `UNiagaraComponent` 2개 (`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)
 - `UCursorPartFocusActionComponent` 1개 (`PartFocusAction`)
+- `USceneComponent` 2개 (`QueenFrontAttachPoint`, `QueenBackAttachPoint`)
 - 상태:
   - `SpawnAmount`는 `0` 이상 clamp
   - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
@@ -145,6 +156,8 @@
 - `OutgoingNiagara.User.bIsReverse=false`, `IngoingNiagara.User.bIsReverse=true`를 C++에서 항상 명시 적용한다.
 - `ABeehiveCombActor` 소유 `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`도 component details에서 `OverrideParameters`를 숨기고 C++ 적용값이 source of truth다.
 - `ABeehive`는 `AEnvironmentTimeOfDayActor`를 직접 참조하지 않으며, bucket listener 이벤트의 `Hour24`를 받아서만 갱신한다.
+- `ABeehive`의 queen 위치 갱신도 Environment actor 직접 참조 없이 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트로만 수행한다.
+- queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
 

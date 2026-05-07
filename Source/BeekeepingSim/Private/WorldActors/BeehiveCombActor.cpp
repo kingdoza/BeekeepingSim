@@ -37,6 +37,15 @@ ABeehiveCombActor::ABeehiveCombActor()
 		PartFocusAction->SetRequiredStateTags(RequiredTags);
 		PartFocusAction->SetExclusiveGroup(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.CombLift")), false));
 	}
+
+	QueenFrontAttachPoint = CreateDefaultSubobject<USceneComponent>(TEXT("QueenFrontAttachPoint"));
+	QueenFrontAttachPoint->SetupAttachment(CombMesh);
+	QueenFrontAttachPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+
+	QueenBackAttachPoint = CreateDefaultSubobject<USceneComponent>(TEXT("QueenBackAttachPoint"));
+	QueenBackAttachPoint->SetupAttachment(CombMesh);
+	QueenBackAttachPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	QueenBackAttachPoint->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
 }
 
 void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
@@ -121,6 +130,11 @@ void ABeehiveCombActor::SanitizeState()
 {
 	SpawnAmount = FMath::Max(0, SpawnAmount);
 	TargetBeeCount = FMath::Clamp(TargetBeeCount, 0, SpawnAmount);
+}
+
+USceneComponent* ABeehiveCombActor::GetQueenAttachPoint(bool bFrontFace) const
+{
+	return bFrontFace ? QueenFrontAttachPoint.Get() : QueenBackAttachPoint.Get();
 }
 
 #if WITH_EDITOR
