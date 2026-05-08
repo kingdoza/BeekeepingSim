@@ -5,10 +5,18 @@
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveLidPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveLidPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombLiftComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombLiftComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
@@ -24,16 +32,22 @@
 - mesh/root/focus target/action/storage 같은 컴포넌트 조립
 - Blueprint native parent로서 디자이너가 asset과 연출을 붙일 수 있는 기반 제공
 - Focus, Interaction, Inventory 시스템의 연결 지점 제공
+- 벌통 내부 파츠 FocusAction policy preset과 소비장 lift movement 제공
+- 벌통/소비장/벌떼 Niagara editor details에서 C++ source-of-truth parameter를 숨기는 editor-only customization 제공
 
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
+- `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
+- `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
+- `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`)
 - `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
 - `AStorageBox`: storage inventory와 storage UI interaction을 가진 actor
+- `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
 
 ## Composition
 
@@ -46,10 +60,13 @@
 - `UChildActorComponent` 1개 (`BeehiveSwarmChildActor`)
 - `UChildActorComponent` 1개 (`QueenBeeChildActor`)
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
+- `USceneComponent` 1개 (`CombLiftTargetRoot`)
+- `UBeehiveCombLiftComponent` 1개 (`CombLiftComponent`)
 - `UCursorPartFocusScopeComponent` 1개 (`CursorPartFocusScope`)
 - `UCursorPartFocusActionComponent` 1개 (`LidPartFocusAction`)
 - `UCursorItemUseAreaScopeComponent` 1개 (`ItemUseAreaScope`)
 - `USplineComponent` 1개 (`SwarmSpline`)를 직접 소유하며 레벨 인스턴스별 편집 대상
+- `UNiagaraComponent` 1개 (`AttractionSwarmNiagara`)
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
@@ -82,6 +99,7 @@
   - active comb actor parts (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`)
   - preview-only component parts (prompt 없음, LMB click no-op)
   - preview key 입력(`R/F/C`)은 hover preview 대상의 action handler에서 선택적으로 처리
+- 현재 native `ABeehive`와 `ABeehiveCombActor` 기본 subobject는 공통 `UCursorPartFocusActionComponent`를 생성한 뒤 위 policy를 C++에서 설정한다. `UBeehiveLidPartFocusActionComponent`와 `UBeehiveCombPartFocusActionComponent`는 같은 policy를 캡슐화한 reusable preset이다.
 - Beehive/Comb의 실제 lid open-close, comb lift-restore는 action component의 owner-actor delegate(`OnPartFocusBegin/Cancel/Abort`) 또는 component 이벤트 구현 경로에서 처리한다.
 - `ABeehive`는 `IItemUseAreaProvider`를 구현해 lid/comb descriptor(`FItemUseAreaDescriptor`)를 제공한다.
 - descriptor 기본 tag:
@@ -165,6 +183,7 @@
 
 - WorldActors는 상태 로직보다 component composition에 집중한다.
 - Actor 이름과 native parent 이름은 Blueprint 참조가 있으므로 rename 시 Core Redirect와 Blueprint migration이 필요하다.
+- Editor details customization은 editor-only 보조 기능이다. Runtime gameplay source of truth는 각 actor/component의 C++ parameter application 경로다.
 - FocusEngaged item-use area는 벌통 전용 기능이 아니라 generic host-provider 구조로 다룬다.
 - FocusEngaged host actor는 직접 하위 component tag scan과 child actor provider/interface 수집을 통해 `FItemUseAreaDescriptor`를 구성할 수 있다.
 - `ABeehive`는 generic item-use-area 구조의 첫 구현 host로 본다.
@@ -191,8 +210,6 @@
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
 
-## Manual Review Points
-
 ## Beehive Comb Delegate Ownership
 
 - `ABeehive`는 자신이 현재 active slot으로 관리 중인 `ABeehiveCombActor`의 `PartFocusAction` delegate에만 바인딩한다.
@@ -215,27 +232,32 @@
   1. `RefreshCombSlotTransforms()`가 모든 slot rest transform을 먼저 갱신
   2. 직후 `ReapplyLiftedCombTransformAfterLayoutRefresh()`가 lifted 상태를 즉시 재적용
 
-- Blueprint child에서 component 이름 변경 시 기존 serialized component override가 유지되는지 확인
-- `AWorldItemPickup::OnConstruction()` 후 prompt/mesh가 item definition과 동기화되는지 확인
-- StorageBox interaction 종료 후 storage component 상태는 유지되고 UI transient state만 정리되는지 확인
 ## Bucket Listener Notes
 
-- `ABeehive` registers itself to `UGameTimeBucketSubsystem` in `BeginPlay`.
-- `ABeehive` unregisters itself from `UGameTimeBucketSubsystem` in `EndPlay`.
-- Runtime-spawned beehives therefore receive bucket events without external manual registration.
+- `ABeehive`는 `BeginPlay`에서 자신을 `UGameTimeBucketSubsystem`에 등록한다.
+- `ABeehive`는 `EndPlay`에서 자신을 `UGameTimeBucketSubsystem`에서 해제한다.
+- Runtime spawn된 beehive도 외부 수동 등록 없이 bucket event를 받는다.
+
 ## Beehive Attraction Swarm
 
-- `ABeehive` now directly owns `UNiagaraComponent* AttractionSwarmNiagara` (no child actor).
-- Attraction center is the `AttractionSwarmNiagara` component transform itself.
-- Settings are exposed by `FBeehiveAttractionSwarmSettings` on `ABeehive`.
-- Applied Niagara user parameters:
+- `ABeehive`는 `AttractionSwarmNiagara`를 child actor 없이 직접 소유한다.
+- Attraction center는 `AttractionSwarmNiagara` component transform 자체다.
+- 설정은 `ABeehive`의 `FBeehiveAttractionSwarmSettings`로 노출된다.
+- 적용되는 Niagara user parameter:
   - `User.AttractionPower` (Float)
   - `User.NoisePower` (Float)
   - `User.SpawnSphereRadius` (Float)
   - `User.SpawnAmount` (Int32, via `SetVariableInt`)
-- `SpawnAmount` formula:
+- `SpawnAmount` 계산식:
   - `RoundToInt(ColonyBeeCount * SpawnAmountScale)`
   - clamp to `0..MaxSpawnAmount`
-- Apply points: `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, explicit apply call, and bee-count setter.
-- No time/bucket-based auto update is used for attraction spawn amount.
-- Existing outgoing/ingoing spline swarms remain active and unchanged.
+- 적용 시점: `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, 명시 apply call, bee-count setter.
+- Attraction spawn amount에는 time/bucket 기반 auto update를 사용하지 않는다.
+- 기존 outgoing/ingoing spline swarm은 유지된다.
+
+## Manual Review Points
+
+- Blueprint child에서 component 이름 변경 시 기존 serialized component override가 유지되는지 확인
+- `AWorldItemPickup::OnConstruction()` 후 prompt/mesh가 item definition과 동기화되는지 확인
+- StorageBox interaction 종료 후 storage component 상태는 유지되고 UI transient state만 정리되는지 확인
+- `BeehiveDualSwarmActorCustomization`이 unrelated NiagaraComponent details를 숨기지 않고 벌통/소비장 관련 Niagara에만 적용되는지 확인

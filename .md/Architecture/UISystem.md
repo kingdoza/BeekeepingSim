@@ -13,6 +13,8 @@
 - `Source/BeekeepingSim/Public/UI/ItemSlotDragDropOperation.h`
 - `Source/BeekeepingSim/Private/UI/ItemSlotDragDropOperation.cpp`
 - `Source/BeekeepingSim/Public/UI/ItemSlotDragDropTypes.h`
+- `Source/BeekeepingSim/Public/UI/TimeOfDayClockWidget.h`
+- `Source/BeekeepingSim/Private/UI/TimeOfDayClockWidget.cpp`
 
 ## Responsibilities
 
@@ -20,6 +22,7 @@
 - full-stack/partial-stack drag payload 생성
 - drop target에 따른 inventory mutation API 라우팅
 - partial drag source preview와 drag visual 수량 갱신
+- runtime `Hour24`를 고정 `HH:MM` 텍스트로 표시하는 clock widget 제공
 - Blueprint Widget이 사용할 최소 C++ API 표면 제공
 
 ## Key Classes
@@ -32,6 +35,7 @@
 - `EItemSlotContainerType`: `None`, `Hotbar`, `Storage` container 구분
 - `EItemSlotDragMode`: full stack / partial stack drag 구분
 - `FItemSlotMoveResult`: partial move 결과
+- `UTimeOfDayClockWidget`: controller가 주입한 `Hour24`를 normalize/floor minute 변환해 `HH:MM` 표시 이벤트를 제공
 
 ## Drag/Drop Flow
 
@@ -43,6 +47,15 @@
 6. 실제 상태 변경은 `UBeekeeperHotbarComponent` 또는 `UStorageBoxComponent`가 수행한다.
 7. Drop/cancel 후 source slot은 drag state와 active controller operation을 정리한다.
 
+## Time Clock Flow
+
+1. `ABeekeeperController`가 local player에서 `UTimeOfDayClockWidget`을 생성하고 viewport에 추가한다.
+2. Controller가 `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 구독한다.
+3. 시간이 바뀌면 controller가 `UTimeOfDayClockWidget::SetHour24()`를 호출한다.
+4. Widget은 `Hour24`를 `[0, 24)`로 normalize하고 `FloorToInt(Hour24 * 60)` 기준 total minute로 변환한다.
+5. 표시 minute가 이전 값과 다를 때만 `OnDisplayedTimeChanged(NewTimeText, Hour, Minute)`를 호출한다.
+6. Widget은 Environment actor를 직접 검색하지 않고, bucket subsystem도 사용하지 않는다.
+
 ## Blueprint/API Contracts
 
 현재 Blueprint 참조가 확인된 API:
@@ -52,6 +65,11 @@
 - `UItemSlotWidget::IsPartialDragPreviewActive`
 - `UItemSlotWidget::GetPartialDragPreviewDisplayStackCount`
 - `UStorageBoxWidget::OnStorageWidgetInitialized`
+- `UTimeOfDayClockWidget::SetHour24`
+- `UTimeOfDayClockWidget::GetCurrentHour24`
+- `UTimeOfDayClockWidget::GetFormattedTimeText`
+- `UTimeOfDayClockWidget::FormatHour24AsHHMM`
+- `UTimeOfDayClockWidget::OnDisplayedTimeChanged`
 
 `ShouldHideItemVisualForCurrentDrag`는 legacy wrapper다. 새 Blueprint 로직은 가능하면 `ShouldHideItemVisualForPartialDragPreview`, `IsPartialDragPreviewActive`, `GetPartialDragPreviewDisplayStackCount` 조합을 우선 사용한다.
 
@@ -77,10 +95,13 @@
 
 - Inventory
 - Character
+- Environment actor를 직접 참조하지 않는다. Runtime clock은 Character/Controller가 Environment 값을 주입한다.
 
 ## Design Notes
 
 - UI는 domain mutation을 직접 구현하지 않는다. Widget은 context를 resolve하고 Inventory API에 의도를 전달한다.
+- Time clock widget은 domain time을 소유하지 않는다. 표시용 `CurrentHour24` cache와 마지막 표시 minute만 가진다.
+- Time clock widget의 minute 변환은 floor 기준이다. `23.999`는 `23:59`, `24.0`은 normalize 후 `00:00`으로 표시된다.
 - `UItemSlotDragDropOperation`의 UFUNCTION Category에 남아 있는 "Storage Drag Drop" 표기는 에디터 표시용 legacy naming이며 시스템 경계를 의미하지 않는다.
 - Quick move target selection은 현재 UI에 남아 있는 예외적 편의 로직이다. 규칙이 복잡해지면 Inventory 쪽으로 이동한다.
 - Drag visual은 별도 `UItemDragVisualWidget` 없이 `UItemVisualWidget` 계층으로 통일한다.
@@ -90,4 +111,6 @@
 - partial drag 수량 조절 중 source slot preview count와 drag visual count 일치 여부
 - full stack drag cancel/drop 후 source visual 복구 여부
 - storage UI 종료 시 active drag operation과 active storage context 정리 여부
+- clock widget이 같은 minute 안에서 불필요하게 Blueprint 이벤트를 반복 호출하지 않는지 확인
+- clock widget이 환경 actor를 직접 검색하거나 gameplay bucket subsystem에 의존하지 않는지 확인
 - Blueprint에서 legacy wrapper를 제거하려면 먼저 `WBP_ItemSlot` 그래프를 새 API로 migration해야 한다.

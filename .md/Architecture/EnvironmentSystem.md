@@ -7,6 +7,10 @@
   - `Source/BeekeepingSim/Private/Environment`
 - 핵심 파일:
   - `TimeOfDayTypes.h`
+  - `GameTimeBucketTypes.h`
+  - `GameTimeBucketListener.h`
+  - `GameTimeBucketSubsystem.h`
+  - `GameTimeBucketSubsystem.cpp`
   - `EnvironmentTimeOfDayActor.h`
   - `EnvironmentTimeOfDayActor.cpp`
 
@@ -18,6 +22,7 @@
 - 태양이 지평선 아래로 내려갔을 때 달빛 활성화, 태양 상승 시 달빛 비활성화
 - 에디터에서 시각 슬라이더로 결과를 미리 보는 preview 경로 제공
 - 레벨 디자이너가 light/fog/sky actor와 curve asset을 연결할 수 있는 최소 Blueprint 계약 제공
+- gameplay actor가 분 단위 bucket 경계 이벤트를 구독할 수 있는 world subsystem 제공
 
 ## Key Classes
 
@@ -45,6 +50,14 @@
   - `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 구독한다.
   - listener subscription별로 00:00 기준 n분 bucket 경계 변경 시점에만 이벤트를 발행한다.
   - `LatestOnly` / `CatchUp` 정책과 BeginPlay 즉시 적용 옵션을 처리한다.
+- `IGameTimeBucketListener`:
+  - Actor가 구현하는 BlueprintNativeEvent interface다.
+  - `GetGameTimeBucketSubscriptions()`로 여러 bucket subscription을 제공할 수 있다.
+  - `OnGameTimeBucketEvent()`로 `FGameTimeBucketEvent`를 받는다.
+- `FGameTimeBucketSubscription`:
+  - `BucketMinutes`, `bApplyImmediatelyOnBeginPlay`, `CatchUpPolicy`, `SubscriptionTag`를 가진다.
+- `FGameTimeBucketEvent`:
+  - `Hour24`, bucket index/start/end minute, wrap 여부, initial/catch-up 여부, subscription tag를 전달한다.
 
 ## Runtime Flow
 
@@ -57,6 +70,7 @@
 7. skylight/ambient 값과 exponential height fog density를 적용한다.
 8. `OnTimeOfDayChanged` Blueprint delegate를 broadcast한다.
 9. `UGameTimeBucketSubsystem`은 매 broadcast를 그대로 전달하지 않고 bucket 경계 변경 시점만 listener에 dispatch한다.
+10. Runtime clock UI는 bucket event를 사용하지 않고, `ABeekeeperController`가 `OnTimeOfDayChanged`를 직접 구독해 widget에 `Hour24`를 주입한다.
 
 ## Time Model
 
@@ -70,6 +84,17 @@
   - `MinuteOfDay = FloorToInt(NormalizeHour24(Hour24) * 60)`
   - `BucketIndex = MinuteOfDay / BucketMinutes`
   - 마지막 bucket은 `Min(BucketStart + BucketMinutes, 1440)`로 짧아질 수 있다.
+- catch-up dispatch에서 `bWrappedDay`는 자정 bucket(`BucketStartMinute == 0`) event에만 true다.
+- bucket minute conversion은 epsilon 없이 floor 변환을 사용한다.
+
+## Game Time Bucket Model
+
+- `UGameTimeBucketSubsystem`은 world begin play에서 listener scan을 수행하고, `AEnvironmentTimeOfDayActor::BeginPlay()`가 `SetTimeOfDayActor(this)`를 호출하면 해당 actor에 bind한다.
+- Listener는 runtime spawn 시 직접 `RegisterListener()`를 호출할 수 있고, `EndPlay`에서 `UnregisterListener()`를 호출해야 한다.
+- 하나의 actor는 `SubscriptionTag`가 다른 여러 subscription을 반환할 수 있다.
+- `LatestOnly`는 경계가 여러 개 지나도 현재 bucket만 dispatch한다.
+- `CatchUp`은 마지막 처리 bucket 이후 경계를 순서대로 dispatch하되 subscription당 최대 512개로 제한한다.
+- Bucket dispatch는 gameplay용이다. 시계 UI처럼 매 minute 표시가 필요한 UI는 `OnTimeOfDayChanged`를 직접 구독하는 owner가 값을 주입한다.
 
 ## Sky And Lighting Curves
 
@@ -173,6 +198,12 @@
 - `ApplyPreviewTime()`
 - `OnTimeOfDayChanged`
 - `EvaluateCurrentVisualState() const`
+- `UGameTimeBucketSubsystem::SetTimeOfDayActor`
+- `UGameTimeBucketSubsystem::RegisterListener`
+- `UGameTimeBucketSubsystem::UnregisterListener`
+- `UGameTimeBucketSubsystem::RefreshListeners`
+- `IGameTimeBucketListener::GetGameTimeBucketSubscriptions`
+- `IGameTimeBucketListener::OnGameTimeBucketEvent`
 
 위 이름이 Blueprint에 노출된 뒤에는 Blueprint 계약으로 취급한다. rename/delete 시 Blueprint 참조 검사와 Core Redirect 필요 여부를 먼저 검토한다.
 
@@ -182,7 +213,8 @@
 - WorldActors는 레벨 composition 관계로만 연결하며 C++ 의존성은 두지 않는다.
 - 벌떼 SpawnAmount 연동은 `AEnvironmentTimeOfDayActor`를 WorldActors가 직접 include/탐색하지 않고, `UGameTimeBucketSubsystem` + listener interface 경로로 연결한다.
 
-Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 의존하지 않는다.
+- Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 의존하지 않는다.
+- Character/Controller는 runtime clock 표시를 위해 Environment actor를 참조하지만, 이 의존은 Character 쪽 단방향 UI binding이다.
 
 ## Design Notes
 
@@ -193,6 +225,7 @@ Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 �
 - 새벽 안개, 아침 주황, 낮 하늘색, 저녁 노을, 밤 남색은 `Sky*ColorCurve`와 `FogDensityCurve`로 표현한다.
 - 태양/달 활성 정책은 light intensity curve만 믿지 않고 지평선 판정으로 한 번 더 강제한다.
 - 이후 농작물 성장, 벌 활동량, 야간 이벤트 같은 gameplay hook은 light actor를 polling하지 말고 `OnTimeOfDayChanged` 또는 별도 time event를 구독한다.
+- Gameplay actor의 분 단위 반응은 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem`을 우선 사용한다. Environment actor를 직접 찾아 polling하지 않는다.
 - Warning 로그는 반복 스팸을 막기 위해 참조별 1회 출력 플래그를 사용한다.
 
 ## Manual Review Points
@@ -205,12 +238,10 @@ Environment system은 Character, Camera, Focus, Interaction, Inventory, UI에 �
 - 태양이 지평선 아래일 때 sun light가 남지 않는지 확인한다.
 - 태양이 올라왔을 때 moon light가 꺼지는지 확인한다.
 - editor preview가 의도치 않게 level asset을 더럽히는지 확인한다.
-## Bucket Payload Note
+- runtime-spawned bucket listener가 register/unregister를 수행하는지 확인한다.
 
-- For catch-up dispatch, `bWrappedDay` is true only on the midnight boundary bucket event (`BucketStartMinute == 0`).
-- Bucket minute conversion uses `FloorToInt(NormalizeHour24(Hour24) * 60.0f)` with no epsilon offset.
 ## Time Clock UI Integration
 
-- Runtime clock UI may subscribe to `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged` directly.
-- Clock UI does not use `UGameTimeBucketSubsystem`; bucket dispatch is for gameplay bucket logic.
-- Recommended flow: UI owner (for example `ABeekeeperController`) resolves the environment actor and injects `Hour24` into widget.
+- Runtime clock UI owner는 `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 직접 구독할 수 있다.
+- Clock UI는 `UGameTimeBucketSubsystem`을 사용하지 않는다. Bucket dispatch는 gameplay bucket logic 전용이다.
+- 현재 흐름은 `ABeekeeperController`가 environment actor를 resolve하고 `UTimeOfDayClockWidget`에 `Hour24`를 주입하는 방식이다.

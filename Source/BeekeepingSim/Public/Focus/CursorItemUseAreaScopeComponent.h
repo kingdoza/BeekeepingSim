@@ -64,6 +64,12 @@ protected:
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;
 
 private:
+	struct FStoredUseAreaCollisionState
+	{
+		ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::NoCollision;
+		ECollisionResponse CursorTraceResponse = ECR_Ignore;
+	};
+
 	UFUNCTION()
 	void HandleHotbarChanged();
 
@@ -78,6 +84,9 @@ private:
 	void ApplyVisualStateForDescriptor(int32 DescriptorIndex, bool bDescriptorActive, bool bIsHovered);
 	void ApplyVisualStateForAllDescriptors();
 	void ClearAllVisualState();
+	void ApplyCollisionStateForAllDescriptors();
+	void RestoreOriginalCollisionStates();
+	void CacheOriginalCollisionState(UPrimitiveComponent* Component);
 	UMaterialInstanceDynamic* ResolveOrCreateMID(UPrimitiveComponent* Component);
 	bool DoesDescriptorMatchActionQuery(const FItemUseAreaDescriptor& Descriptor, const UHoldItemUseAction* HoldAction) const;
 	void EndUseSession(bool bWasCanceled);
@@ -107,6 +116,8 @@ private:
 
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UPrimitiveComponent>, TObjectPtr<UMaterialInstanceDynamic>> DynamicMaterials;
+
+	TMap<TWeakObjectPtr<UPrimitiveComponent>, FStoredUseAreaCollisionState> OriginalCollisionStates;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UItemInstance> CachedSelectedItemInstance;

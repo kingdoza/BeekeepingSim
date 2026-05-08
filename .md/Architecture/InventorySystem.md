@@ -37,18 +37,39 @@
 - `UStorageBoxComponent`: storage 슬롯 상태 오너
 - `UItemDefinition`: 정적 아이템 데이터 asset
 - `UItemInstance`: 런타임 아이템 상태와 action 소유 객체
-- `UItemAction`: 아이템 행동 베이스
-- `UHoldItemUseAction`: use-area query + LMB hold-use lifecycle + 효과 적용 경계 베이스
+- `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
+- `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
+- `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
+- `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
+- `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, 메시지를 담는 결과 DTO
 - `AItemPresentationActor`: first-person held/on-cursor 표시 actor 베이스
 - `ItemStackMoveUtils`: private stack 계산/생성 helper
 
 ## Item Model
 
-- `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag, max stack, durability 설정, action spec을 가진다.
-- `UItemInstance`는 definition, stack count, durability, instance id, action instance를 가진다.
+- `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag container, max stack, durability 설정, action spec 배열을 가진다.
+- `UItemInstance`는 definition, stack count, durability, instance id, action instance 배열을 가진다.
 - `UItemInstance`는 `IHotbarItemInterface`를 구현해 focus item rule 평가에 필요한 tag를 제공한다.
-- `UItemInstance::FindHoldItemUseAction()`은 선택 아이템의 대표 hold-use action 1개를 조회한다.
-- action 객체의 outer는 `UItemInstance`다.
+- `InitializeFromDefinition()`은 definition을 저장하고 stack/durability를 clamp한 뒤 `RebuildActions()`로 action instance를 재생성한다.
+- Action 객체의 outer는 `UItemInstance`다. Definition의 `FItemActionSpec::ActionClass`가 abstract이면 생성하지 않는다.
+- `UItemAction::InitializeAction()`은 owning item instance와 action spec을 받아 action tag를 초기화한다.
+- `UItemInstance::FindActionByTag()` / `HasActionByTag()` / `ExecuteActionByTag()`는 action tag 기반 실행 경로다.
+- `UItemInstance::FindHoldItemUseAction()`은 선택 아이템의 대표 `UHoldItemUseAction` 1개를 조회한다. 현재 구현은 action 배열에서 처음 발견한 hold action을 반환한다.
+
+## Item Action Lifecycle
+
+- 일반 action:
+  - `CanExecute(Context)`로 실행 가능 여부를 판정한다.
+  - `Execute(Context)`는 `FItemActionExecutionResult`를 반환한다.
+  - 기본 구현은 실패/무효 결과를 반환하므로 실제 효과는 subclass가 구현한다.
+- Hold-use action:
+  - `GetUseAreaTagQuery()`가 사용할 수 있는 item-use-area tag query를 제공한다.
+  - `CanBeginUse(Context)`와 `BeginUse(Context)`가 LMB use session 시작 여부를 결정한다.
+  - `TickUse(Context, DeltaTime)`는 use session이 진행 중일 때 매 Tick 호출될 수 있다.
+  - `CanApplyUseEffect(Context)`와 `ApplyUseEffect(Context, DeltaTime)`는 유효 item-use area target이 있을 때의 실질 효과 적용 경계다.
+  - `EndUse(Context, bWasCanceled)`는 release/cancel/deactivate 경로에서 session 종료를 받는다.
+- `UHoldItemUseAction`의 현재 함수들은 C++ virtual + BlueprintCallable/Pure API다. Blueprint override 이벤트 계약은 아직 별도 문서/QnA 없이 확정하지 않는다.
+- `FItemActionExecutionResult::bConsumedItem`과 `StackDelta`는 action 결과 DTO다. 실제 stack 소비/증감 적용 주체는 호출 경로가 명시해야 하며 action base가 자동으로 inventory를 mutation하지 않는다.
 
 ## Slot Mutation Model
 
@@ -100,10 +121,12 @@
 - 현재 quick move 대상 슬롯 선택은 `UItemSlotWidget::TryQuickMove()`에 남아 있다. 규칙이 늘어나면 `Inventory` private helper 또는 service로 이동하는 것이 다음 개선 후보다.
 - `FItemSlotMoveResult`는 partial move 결과를 UI/Blueprint가 해석할 수 있는 공용 구조체다.
 - FocusEngaged item-use-area 설계에서 실질 아이템사용효과의 owner는 item action이다.
-- Hold-use item action은 LMB Press/Hold/Release lifecycle과 매 Tick `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원하는 방향으로 확장한다.
+- Focus의 `UCursorItemUseAreaScopeComponent`는 선택 item의 `FindHoldItemUseAction()` 결과를 cache하고 LMB Press/Hold/Release를 hold-use lifecycle로 라우팅한다.
+- Hold-use item action은 use session 중 `TickUse(Context, DeltaTime)`와, 유효 area target 위에서 `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원한다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
+- Instant click action, item stack 소비 정책, Blueprint override event hook은 아직 Inventory 정본에서 확정된 현재 계약이 아니다. 설계 확정 없이 Public API를 rename/delete하지 않는다.
 
 ## Manual Review Points
 
@@ -111,3 +134,6 @@
 - storage 변경 후 `BroadcastStorageChanged()` 호출 시점
 - full move와 partial move의 stack merge/swap 동작 차이
 - hotbar focus rule 적용 중 선택 슬롯 clear 정책
+- `UItemInstance::RebuildActions()` 후 action outer와 transient lifetime이 item instance 기준으로 유지되는지 확인
+- action result의 item 소비/stack delta를 실제 호출 경로가 해석하는지 확인
+- hold-use action을 Blueprint에서 구현해야 하는 요구가 생기면 현재 BlueprintCallable virtual 계약으로 충분한지 먼저 확인

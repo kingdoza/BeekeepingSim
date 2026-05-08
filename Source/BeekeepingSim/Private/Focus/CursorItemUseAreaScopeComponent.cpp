@@ -94,6 +94,7 @@ void UCursorItemUseAreaScopeComponent::DeactivateItemUseAreaScope(bool bCancelAc
 	}
 
 	ClearAllVisualState();
+	RestoreOriginalCollisionStates();
 	RegisteredDescriptors.Reset();
 	ActiveDescriptorIndices.Reset();
 	DynamicMaterials.Reset();
@@ -110,6 +111,7 @@ void UCursorItemUseAreaScopeComponent::DeactivateItemUseAreaScope(bool bCancelAc
 void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
 {
 	ClearAllVisualState();
+	RestoreOriginalCollisionStates();
 	RegisteredDescriptors.Reset();
 	ActiveDescriptorIndices.Reset();
 	HoveredDescriptorIndex = INDEX_NONE;
@@ -423,6 +425,8 @@ void UCursorItemUseAreaScopeComponent::ApplyVisualStateForAllDescriptors()
 		const bool bIsHovered = (HoveredDescriptorIndex == Index);
 		ApplyVisualStateForDescriptor(Index, bDescriptorActive, bIsHovered);
 	}
+
+	ApplyCollisionStateForAllDescriptors();
 }
 
 void UCursorItemUseAreaScopeComponent::ClearAllVisualState()
@@ -431,6 +435,87 @@ void UCursorItemUseAreaScopeComponent::ClearAllVisualState()
 	{
 		ApplyVisualStateForDescriptor(Index, false, false);
 	}
+}
+
+void UCursorItemUseAreaScopeComponent::ApplyCollisionStateForAllDescriptors()
+{
+	TSet<TWeakObjectPtr<UPrimitiveComponent>> ManagedComponents;
+	TSet<TWeakObjectPtr<UPrimitiveComponent>> ActiveHitComponents;
+
+	for (int32 Index = 0; Index < RegisteredDescriptors.Num(); ++Index)
+	{
+		const FItemUseAreaDescriptor& Descriptor = RegisteredDescriptors[Index];
+		if (Descriptor.HitComponent)
+		{
+			ManagedComponents.Add(Descriptor.HitComponent);
+			if (ActiveDescriptorIndices.Contains(Index))
+			{
+				ActiveHitComponents.Add(Descriptor.HitComponent);
+			}
+		}
+
+		for (UPrimitiveComponent* VisualComponent : Descriptor.VisualComponents)
+		{
+			if (VisualComponent)
+			{
+				ManagedComponents.Add(VisualComponent);
+			}
+		}
+	}
+
+	for (const TWeakObjectPtr<UPrimitiveComponent>& WeakComponent : ManagedComponents)
+	{
+		UPrimitiveComponent* Component = WeakComponent.Get();
+		if (!Component)
+		{
+			continue;
+		}
+
+		CacheOriginalCollisionState(Component);
+
+		if (ActiveHitComponents.Contains(WeakComponent))
+		{
+			if (Component->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+			{
+				Component->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			}
+			Component->SetCollisionResponseToChannel(CursorTraceChannel, ECR_Block);
+		}
+		else
+		{
+			Component->SetCollisionResponseToChannel(CursorTraceChannel, ECR_Ignore);
+		}
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::RestoreOriginalCollisionStates()
+{
+	for (const TPair<TWeakObjectPtr<UPrimitiveComponent>, FStoredUseAreaCollisionState>& Pair : OriginalCollisionStates)
+	{
+		UPrimitiveComponent* Component = Pair.Key.Get();
+		if (!Component)
+		{
+			continue;
+		}
+
+		Component->SetCollisionEnabled(Pair.Value.CollisionEnabled);
+		Component->SetCollisionResponseToChannel(CursorTraceChannel, Pair.Value.CursorTraceResponse);
+	}
+
+	OriginalCollisionStates.Reset();
+}
+
+void UCursorItemUseAreaScopeComponent::CacheOriginalCollisionState(UPrimitiveComponent* Component)
+{
+	if (!Component || OriginalCollisionStates.Contains(Component))
+	{
+		return;
+	}
+
+	FStoredUseAreaCollisionState State;
+	State.CollisionEnabled = Component->GetCollisionEnabled();
+	State.CursorTraceResponse = Component->GetCollisionResponseToChannel(CursorTraceChannel);
+	OriginalCollisionStates.Add(Component, State);
 }
 
 UMaterialInstanceDynamic* UCursorItemUseAreaScopeComponent::ResolveOrCreateMID(UPrimitiveComponent* Component)

@@ -9,10 +9,12 @@
 - `Source/BeekeepingSim/Public/Focus/FocusActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/FocusInteractable.h`
+- `Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h`
 - `Source/BeekeepingSim/Public/Focus/AnchoredFocusActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/AnchoredFocusActionComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusTypes.h`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
@@ -31,16 +33,20 @@
 - focus target outline과 `IFocusInteractable` 이벤트 전달
 - anchored focus camera blend 및 cursor/input mode 정책 제공
 - Host 내부 파츠 hover/click용 cursor part focus scope 제공
+- cursor part focus screen edge cancel 두께의 project settings 제공
+- FocusEngaged host 내부 item-use-area scope/provider 계약 제공
 
 ## Key Classes
 
 - `UBeekeeperFocusComponent`: focus 상태의 단일 오너
+- `UBeekeepingSimFocusSettings`: cursor part focus 등 Focus subsystem tuning 값을 보관하는 `UDeveloperSettings`
 - `UFocusTargetComponent`: prompt, item rule, outline, focus event dispatch 오너
 - `UFocusActionComponent`: confirm/cancel/abort 공통 액션 베이스
 - `UAnchoredFocusActionComponent`: 캐릭터 앵커 이동과 카메라 블렌드 액션
 - `UAnchoredFocusCursorActionComponent`: anchored action에 cursor/input mode 정책 추가
 - `UCursorPartFocusScopeComponent`: FocusEngaged Host 내부 파츠 hover/confirm/cancel/outline/prompt 스코프
 - `UCursorPartFocusActionComponent`: 파츠별 begin/cancel/abort lifecycle + tag/group 정책
+- `ECursorPartFocusPreviewInputKey`: PartFocus hover preview key 입력(`R`, `F`, `C`) 구분 enum
 - `UCursorItemUseAreaScopeComponent`: FocusEngaged host 내부 item-use-area 수집/표시/hover/LMB hold-use scope
 - `IItemUseAreaProvider`: host/child actor가 `FItemUseAreaDescriptor`를 제공하는 인터페이스
 - `IFocusInteractable`: actor-level focus 이벤트 인터페이스
@@ -68,7 +74,8 @@
   - `RequiredStateTags` 만족 파츠만 preview 허용
   - hover outline 적용(기존 `UFocusTargetComponent`와 동일한 CustomDepth 정책)
   - confirm/cancel 시 part action stack 처리
-  - 화면 외곽 취소 영역(기본 64px) 처리
+  - 화면 외곽 취소 영역 처리
+- 화면 외곽 취소 영역 두께는 `UBeekeepingSimFocusSettings::ScreenEdgeCancelRegionThickness`가 source of truth다. 기본값은 64px이며 `DefaultGame.ini` config로 조정된다.
 - 취소 우선순위:
   - active part action stack 역순 cancel cascade
   - stack 비어 있으면 host focus cancel로 폴백
@@ -123,6 +130,12 @@
   - `R/F/C`: 현재 hover preview 대상의 preview key action dispatch
 - `F` 키는 PartFocus engage/cancel 또는 FocusCancel 입력으로 사용하지 않는다.
 
+## Settings Contract
+
+- `UBeekeepingSimFocusSettings`는 `Config=Game, DefaultConfig`인 project setting class다.
+- 현재 설정값은 `ScreenEdgeCancelRegionThickness` 하나이며, `UCursorPartFocusScopeComponent`가 `GetDefault<UBeekeepingSimFocusSettings>()`로 읽는다.
+- Focus tuning 값을 추가할 때는 component hard-code보다 settings class 확장을 우선 검토한다.
+
 ## Crosshair Policy
 
 - 크로스헤어 가시성의 단일 기준점은 `UBeekeeperFocusComponent`다.
@@ -149,8 +162,6 @@
 - `UAnchoredFocusCursorActionComponent`는 cursor/input mode를 담당하지만 crosshair 최종 브로드캐스트는 Focus component가 담당한다.
 - Focus target의 item rule은 Inventory/Hotbar가 구독하는 공통 정책 데이터다.
 
-## Manual Review Points
-
 ## PartFocus Delegate Contract
 
 - `UCursorPartFocusActionComponent`의 `BlueprintAssignable` delegate는 action component 자기 자신을 첫 인자로 전달한다.
@@ -161,6 +172,9 @@
   - `OnPartFocusPreviewR/F/C(ActionComponent, ScopeComponent, InteractingCharacter)`
 - `ReceivePartFocus...` 이벤트 경로(component subclass 구현)와 owner actor delegate 바인딩 경로는 동시에 유지한다.
 
+## Manual Review Points
+
 - confirm 실패 시 preview target 복원 여부
 - cancel/abort 시 crosshair, cursor, input mode, hotbar rule 복구 순서
+- `ScreenEdgeCancelRegionThickness`가 project settings와 runtime scope 판정에서 같은 값으로 적용되는지 확인
 - FocusTargetComponent가 배치된 Blueprint/level 로드 시 missing property 경고 재발 여부
