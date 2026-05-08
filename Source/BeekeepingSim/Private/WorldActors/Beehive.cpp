@@ -11,6 +11,7 @@
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Focus/CursorItemUseAreaScopeComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/FocusTargetComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
@@ -104,6 +105,7 @@ ABeehive::ABeehive()
 
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
 	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
+	ItemUseAreaScope = CreateDefaultSubobject<UCursorItemUseAreaScopeComponent>(TEXT("ItemUseAreaScope"));
 	if (LidPartFocusAction)
 	{
 		LidPartFocusAction->SetEngageMode(ECursorPartFocusEngageMode::PersistentAction);
@@ -350,6 +352,66 @@ void ABeehive::SetLidOpenForPartFocus(bool bOpen)
 
 	bIsLidOpen = bOpen;
 	ReceiveLidPartFocusStateChanged(bIsLidOpen);
+}
+
+void ABeehive::GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const
+{
+	const FGameplayTag LidUseAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.UseArea.Lid")), false);
+	const FGameplayTag CombUseAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.UseArea.Comb")), false);
+
+	UPrimitiveComponent* LidComponent = FindPrimitiveComponentByTag(LidPartComponentTag);
+	if (!LidComponent)
+	{
+		LidComponent = BeehiveMesh;
+	}
+
+	if (LidComponent)
+	{
+		FItemUseAreaDescriptor LidDescriptor;
+		LidDescriptor.AreaId = FName(TEXT("Lid"));
+		LidDescriptor.OwnerActor = const_cast<ABeehive*>(this);
+		LidDescriptor.HitComponent = LidComponent;
+		LidDescriptor.VisualComponents.Add(LidComponent);
+		LidDescriptor.EffectTargetObject = const_cast<ABeehive*>(this);
+		if (LidUseAreaTag.IsValid())
+		{
+			LidDescriptor.AreaTags.AddTag(LidUseAreaTag);
+		}
+		OutDescriptors.Add(MoveTemp(LidDescriptor));
+	}
+
+	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	{
+		if (!CombSlotComponents.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		const UChildActorComponent* Slot = CombSlotComponents[Index];
+		ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+		if (!CombActor)
+		{
+			continue;
+		}
+
+		UPrimitiveComponent* CombHitComponent = CombActor->GetCombMeshComponent();
+		if (!CombHitComponent)
+		{
+			continue;
+		}
+
+		FItemUseAreaDescriptor CombDescriptor;
+		CombDescriptor.AreaId = FName(*FString::Printf(TEXT("Comb_%d"), Index));
+		CombDescriptor.OwnerActor = CombActor;
+		CombDescriptor.HitComponent = CombHitComponent;
+		CombDescriptor.VisualComponents.Add(CombHitComponent);
+		CombDescriptor.EffectTargetObject = CombActor;
+		if (CombUseAreaTag.IsValid())
+		{
+			CombDescriptor.AreaTags.AddTag(CombUseAreaTag);
+		}
+		OutDescriptors.Add(MoveTemp(CombDescriptor));
+	}
 }
 
 int32 ABeehive::FindManagedCombSlotIndex(const ABeehiveCombActor* CombActor) const

@@ -36,6 +36,9 @@ public:
 	bool HandlePartFocusClickInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandlePartFocusClickReleasedInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
 	bool HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintPure, Category = "Focus")

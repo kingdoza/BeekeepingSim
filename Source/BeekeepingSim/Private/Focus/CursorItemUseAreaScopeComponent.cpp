@@ -1,0 +1,510 @@
+#include "Focus/CursorItemUseAreaScopeComponent.h"
+
+#include "Character/BeekeeperCharacter.h"
+#include "Components/ChildActorComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Engine/World.h"
+#include "Focus/BeekeeperFocusComponent.h"
+#include "Focus/CursorPartFocusScopeComponent.h"
+#include "Focus/FocusTargetComponent.h"
+#include "Focus/ItemUseAreaProvider.h"
+#include "GameFramework/PlayerController.h"
+#include "Inventory/BeekeeperHotbarComponent.h"
+#include "Inventory/HoldItemUseAction.h"
+#include "Inventory/ItemActionContext.h"
+#include "Inventory/ItemInstance.h"
+#include "Materials/MaterialInstanceDynamic.h"
+
+UCursorItemUseAreaScopeComponent::UCursorItemUseAreaScopeComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+}
+
+void UCursorItemUseAreaScopeComponent::BeginPlay()
+{
+	Super::BeginPlay();
+}
+
+void UCursorItemUseAreaScopeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DeactivateItemUseAreaScope(true);
+	Super::EndPlay(EndPlayReason);
+}
+
+void UCursorItemUseAreaScopeComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!bIsScopeActive)
+	{
+		return;
+	}
+
+	RefreshSelectedItemAndAction();
+	UpdateHoveredDescriptorFromCursor();
+
+	if (bIsUseInProgress && CachedHoldAction)
+	{
+		const FItemActionContext TickContext = BuildItemActionContext(HoveredDescriptorIndex);
+		CachedHoldAction->TickUse(TickContext, DeltaTime);
+
+		if (ActiveDescriptorIndices.Contains(HoveredDescriptorIndex))
+		{
+			const FItemActionContext EffectContext = BuildItemActionContext(HoveredDescriptorIndex);
+			if (CachedHoldAction->CanApplyUseEffect(EffectContext))
+			{
+				CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
+			}
+		}
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::ActivateItemUseAreaScope(ABeekeeperCharacter* InteractingCharacter)
+{
+	OwnerCharacter = InteractingCharacter ? InteractingCharacter : Cast<ABeekeeperCharacter>(GetOwner());
+	OwnerHotbarComponent = OwnerCharacter ? OwnerCharacter->GetBeekeeperHotbar() : nullptr;
+	OwnerFocusComponent = OwnerCharacter ? OwnerCharacter->GetBeekeeperFocus() : nullptr;
+	SiblingPartFocusScopeComponent = GetOwner() ? GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>() : nullptr;
+	ActiveHostActor = ResolveActiveHostActor();
+
+	if (OwnerHotbarComponent)
+	{
+		OwnerHotbarComponent->OnHotbarChanged.RemoveDynamic(this, &UCursorItemUseAreaScopeComponent::HandleHotbarChanged);
+		OwnerHotbarComponent->OnHotbarChanged.AddDynamic(this, &UCursorItemUseAreaScopeComponent::HandleHotbarChanged);
+	}
+
+	RebuildItemUseAreaDescriptors();
+	RefreshSelectedItemAndAction();
+	bIsScopeActive = (OwnerCharacter != nullptr);
+	SetComponentTickEnabled(bIsScopeActive);
+	UpdatePartFocusOutlineSuppression();
+}
+
+void UCursorItemUseAreaScopeComponent::DeactivateItemUseAreaScope(bool bCancelActiveUse)
+{
+	if (bCancelActiveUse)
+	{
+		EndUseSession(true);
+	}
+
+	if (OwnerHotbarComponent)
+	{
+		OwnerHotbarComponent->OnHotbarChanged.RemoveDynamic(this, &UCursorItemUseAreaScopeComponent::HandleHotbarChanged);
+	}
+
+	ClearAllVisualState();
+	RegisteredDescriptors.Reset();
+	ActiveDescriptorIndices.Reset();
+	DynamicMaterials.Reset();
+	HoveredDescriptorIndex = INDEX_NONE;
+	CachedSelectedItemInstance = nullptr;
+	CachedHoldAction = nullptr;
+	ActiveHostActor = nullptr;
+	UpdatePartFocusOutlineSuppression();
+	SiblingPartFocusScopeComponent = nullptr;
+	bIsScopeActive = false;
+	SetComponentTickEnabled(false);
+}
+
+void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
+{
+	ClearAllVisualState();
+	RegisteredDescriptors.Reset();
+	ActiveDescriptorIndices.Reset();
+	HoveredDescriptorIndex = INDEX_NONE;
+
+	AActor* HostActor = ResolveActiveHostActor();
+	ActiveHostActor = HostActor;
+	if (!HostActor)
+	{
+		return;
+	}
+
+	RebuildDescriptorsFromProviderActor(HostActor);
+
+	TArray<AActor*> AttachedActors;
+	HostActor->GetAttachedActors(AttachedActors, true);
+	for (AActor* ChildActor : AttachedActors)
+	{
+		RebuildDescriptorsFromProviderActor(ChildActor);
+	}
+
+	TArray<UChildActorComponent*> ChildActorComponents;
+	HostActor->GetComponents<UChildActorComponent>(ChildActorComponents);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (!ChildActorComponent)
+		{
+			continue;
+		}
+
+		RebuildDescriptorsFromProviderActor(ChildActorComponent->GetChildActor());
+	}
+
+	RebuildDescriptorsFromDirectComponentTags(HostActor);
+	RefreshActiveUseAreas();
+}
+
+void UCursorItemUseAreaScopeComponent::RegisterItemUseAreaDescriptor(const FItemUseAreaDescriptor& Descriptor)
+{
+	if (Descriptor.AreaId.IsNone())
+	{
+		return;
+	}
+
+	if (!Descriptor.OwnerActor)
+	{
+		return;
+	}
+
+	if (!Descriptor.HitComponent && Descriptor.VisualComponents.Num() <= 0)
+	{
+		return;
+	}
+
+	RegisteredDescriptors.Add(Descriptor);
+}
+
+bool UCursorItemUseAreaScopeComponent::HandleItemUsePressed()
+{
+	if (!bIsScopeActive)
+	{
+		return false;
+	}
+
+	RefreshSelectedItemAndAction();
+	if (!CachedSelectedItemInstance || !CachedHoldAction)
+	{
+		return false;
+	}
+
+	const FItemActionContext Context = BuildItemActionContext(HoveredDescriptorIndex);
+	if (!CachedHoldAction->CanBeginUse(Context))
+	{
+		return true;
+	}
+
+	bIsUseInProgress = CachedHoldAction->BeginUse(Context);
+	return true;
+}
+
+bool UCursorItemUseAreaScopeComponent::HandleItemUseReleased()
+{
+	if (!bIsUseInProgress)
+	{
+		return false;
+	}
+
+	EndUseSession(false);
+	return true;
+}
+
+bool UCursorItemUseAreaScopeComponent::HandleItemUseCanceled()
+{
+	if (!bIsUseInProgress)
+	{
+		return false;
+	}
+
+	EndUseSession(true);
+	return true;
+}
+
+void UCursorItemUseAreaScopeComponent::HandleHotbarChanged()
+{
+	RefreshSelectedItemAndAction();
+}
+
+AActor* UCursorItemUseAreaScopeComponent::ResolveActiveHostActor() const
+{
+	if (OwnerFocusComponent && OwnerFocusComponent->IsFocusEngaged() && OwnerFocusComponent->GetEngagedFocusTarget())
+	{
+		return OwnerFocusComponent->GetEngagedFocusTarget()->GetOwner();
+	}
+
+	return GetOwner();
+}
+
+void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderActor(AActor* ProviderActor)
+{
+	if (!ProviderActor || !ProviderActor->GetClass()->ImplementsInterface(UItemUseAreaProvider::StaticClass()))
+	{
+		return;
+	}
+
+	TArray<FItemUseAreaDescriptor> ProviderDescriptors;
+	IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(ProviderActor, ProviderDescriptors);
+	for (const FItemUseAreaDescriptor& Descriptor : ProviderDescriptors)
+	{
+		RegisterItemUseAreaDescriptor(Descriptor);
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromDirectComponentTags(AActor* HostActor)
+{
+	if (!HostActor)
+	{
+		return;
+	}
+
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	HostActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (!PrimitiveComponent || !PrimitiveComponent->ComponentHasTag(TEXT("ItemUseArea")))
+		{
+			continue;
+		}
+
+		FItemUseAreaDescriptor Descriptor;
+		Descriptor.AreaId = PrimitiveComponent->GetFName();
+		Descriptor.OwnerActor = HostActor;
+		Descriptor.HitComponent = PrimitiveComponent;
+		Descriptor.VisualComponents.Add(PrimitiveComponent);
+		Descriptor.EffectTargetObject = HostActor;
+		RegisterItemUseAreaDescriptor(Descriptor);
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::RefreshSelectedItemAndAction()
+{
+	UItemInstance* NewSelectedItem = OwnerHotbarComponent ? OwnerHotbarComponent->GetSelectedItemInstance() : nullptr;
+	UHoldItemUseAction* NewHoldAction = NewSelectedItem ? NewSelectedItem->FindHoldItemUseAction() : nullptr;
+
+	if (CachedSelectedItemInstance == NewSelectedItem && CachedHoldAction == NewHoldAction)
+	{
+		return;
+	}
+
+	if (bIsUseInProgress)
+	{
+		EndUseSession(true);
+	}
+
+	CachedSelectedItemInstance = NewSelectedItem;
+	CachedHoldAction = NewHoldAction;
+	RefreshActiveUseAreas();
+	UpdatePartFocusOutlineSuppression();
+}
+
+void UCursorItemUseAreaScopeComponent::RefreshActiveUseAreas()
+{
+	ActiveDescriptorIndices.Reset();
+	SetHoveredDescriptorIndex(INDEX_NONE);
+
+	if (!CachedSelectedItemInstance || !CachedHoldAction)
+	{
+		ApplyVisualStateForAllDescriptors();
+		return;
+	}
+
+	for (int32 Index = 0; Index < RegisteredDescriptors.Num(); ++Index)
+	{
+		if (DoesDescriptorMatchActionQuery(RegisteredDescriptors[Index], CachedHoldAction))
+		{
+			ActiveDescriptorIndices.Add(Index);
+		}
+	}
+
+	ApplyVisualStateForAllDescriptors();
+	UpdateHoveredDescriptorFromCursor();
+}
+
+void UCursorItemUseAreaScopeComponent::UpdateHoveredDescriptorFromCursor()
+{
+	SetHoveredDescriptorIndex(ResolveHoveredActiveDescriptor());
+}
+
+int32 UCursorItemUseAreaScopeComponent::ResolveHoveredActiveDescriptor() const
+{
+	if (!OwnerCharacter || ActiveDescriptorIndices.Num() <= 0)
+	{
+		return INDEX_NONE;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
+	if (!PlayerController || !PlayerController->IsLocalController())
+	{
+		return INDEX_NONE;
+	}
+
+	float ScreenX = 0.0f;
+	float ScreenY = 0.0f;
+	if (!PlayerController->GetMousePosition(ScreenX, ScreenY))
+	{
+		return INDEX_NONE;
+	}
+
+	FVector WorldOrigin = FVector::ZeroVector;
+	FVector WorldDirection = FVector::ForwardVector;
+	if (!PlayerController->DeprojectScreenPositionToWorld(ScreenX, ScreenY, WorldOrigin, WorldDirection))
+	{
+		return INDEX_NONE;
+	}
+
+	const FVector TraceStart = WorldOrigin;
+	const FVector TraceEnd = TraceStart + (WorldDirection * CursorTraceDistance);
+	FHitResult HitResult;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(CursorItemUseAreaTrace), true, OwnerCharacter);
+	if (!GetWorld() || !GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, CursorTraceChannel, QueryParams))
+	{
+		return INDEX_NONE;
+	}
+
+	UPrimitiveComponent* HitComponent = HitResult.GetComponent();
+	if (!HitComponent)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 DescriptorIndex : ActiveDescriptorIndices)
+	{
+		if (!RegisteredDescriptors.IsValidIndex(DescriptorIndex))
+		{
+			continue;
+		}
+
+		if (RegisteredDescriptors[DescriptorIndex].HitComponent == HitComponent)
+		{
+			return DescriptorIndex;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+void UCursorItemUseAreaScopeComponent::SetHoveredDescriptorIndex(int32 NewIndex)
+{
+	if (HoveredDescriptorIndex == NewIndex)
+	{
+		return;
+	}
+
+	HoveredDescriptorIndex = NewIndex;
+	ApplyVisualStateForAllDescriptors();
+}
+
+void UCursorItemUseAreaScopeComponent::ApplyVisualStateForDescriptor(int32 DescriptorIndex, bool bDescriptorActive, bool bIsHovered)
+{
+	if (!RegisteredDescriptors.IsValidIndex(DescriptorIndex))
+	{
+		return;
+	}
+
+	const FItemUseAreaDescriptor& Descriptor = RegisteredDescriptors[DescriptorIndex];
+	const float EffectiveOpacity = bDescriptorActive ? Descriptor.VisualSettings.UseAreaOpacity : 0.0f;
+	const float HoverStrengthValue = bIsHovered ? Descriptor.VisualSettings.HoverStrength : 0.0f;
+	for (UPrimitiveComponent* VisualComponent : Descriptor.VisualComponents)
+	{
+		if (!VisualComponent)
+		{
+			continue;
+		}
+
+		UMaterialInstanceDynamic* MID = ResolveOrCreateMID(VisualComponent);
+		if (!MID)
+		{
+			continue;
+		}
+
+		MID->SetVectorParameterValue(TEXT("UseAreaColor"), Descriptor.VisualSettings.UseAreaColor);
+		MID->SetScalarParameterValue(TEXT("UseAreaOpacity"), EffectiveOpacity);
+		MID->SetScalarParameterValue(TEXT("PulseSpeed"), Descriptor.VisualSettings.PulseSpeed);
+		MID->SetScalarParameterValue(TEXT("HoverStrength"), HoverStrengthValue);
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::ApplyVisualStateForAllDescriptors()
+{
+	for (int32 Index = 0; Index < RegisteredDescriptors.Num(); ++Index)
+	{
+		const bool bDescriptorActive = ActiveDescriptorIndices.Contains(Index);
+		const bool bIsHovered = (HoveredDescriptorIndex == Index);
+		ApplyVisualStateForDescriptor(Index, bDescriptorActive, bIsHovered);
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::ClearAllVisualState()
+{
+	for (int32 Index = 0; Index < RegisteredDescriptors.Num(); ++Index)
+	{
+		ApplyVisualStateForDescriptor(Index, false, false);
+	}
+}
+
+UMaterialInstanceDynamic* UCursorItemUseAreaScopeComponent::ResolveOrCreateMID(UPrimitiveComponent* Component)
+{
+	if (!Component)
+	{
+		return nullptr;
+	}
+
+	if (TObjectPtr<UMaterialInstanceDynamic>* FoundMID = DynamicMaterials.Find(Component))
+	{
+		return FoundMID->Get();
+	}
+
+	UMaterialInstanceDynamic* MID = Component->CreateDynamicMaterialInstance(0);
+	if (!MID)
+	{
+		return nullptr;
+	}
+
+	DynamicMaterials.Add(Component, MID);
+	return MID;
+}
+
+bool UCursorItemUseAreaScopeComponent::DoesDescriptorMatchActionQuery(const FItemUseAreaDescriptor& Descriptor, const UHoldItemUseAction* HoldAction) const
+{
+	if (!HoldAction)
+	{
+		return false;
+	}
+
+	const FGameplayTagQuery Query = HoldAction->GetUseAreaTagQuery();
+	return Query.IsEmpty() || Query.Matches(Descriptor.AreaTags);
+}
+
+void UCursorItemUseAreaScopeComponent::EndUseSession(bool bWasCanceled)
+{
+	if (bIsUseInProgress && CachedHoldAction)
+	{
+		const FItemActionContext Context = BuildItemActionContext(HoveredDescriptorIndex);
+		CachedHoldAction->EndUse(Context, bWasCanceled);
+	}
+
+	bIsUseInProgress = false;
+}
+
+void UCursorItemUseAreaScopeComponent::UpdatePartFocusOutlineSuppression() const
+{
+	if (!SiblingPartFocusScopeComponent)
+	{
+		return;
+	}
+
+	const bool bShouldSuppress = bIsScopeActive && CachedSelectedItemInstance != nullptr;
+	SiblingPartFocusScopeComponent->SetHoverOutlineSuppressed(bShouldSuppress);
+}
+
+FItemActionContext UCursorItemUseAreaScopeComponent::BuildItemActionContext(int32 DescriptorIndex) const
+{
+	FItemActionContext Context;
+	Context.Character = OwnerCharacter;
+	Context.PlayerController = OwnerCharacter ? Cast<APlayerController>(OwnerCharacter->GetController()) : nullptr;
+	Context.World = GetWorld();
+	Context.FocusEngagedHostActor = ActiveHostActor;
+	Context.FocusTarget = OwnerFocusComponent ? OwnerFocusComponent->GetEngagedFocusTarget() : nullptr;
+
+	if (RegisteredDescriptors.IsValidIndex(DescriptorIndex))
+	{
+		const FItemUseAreaDescriptor& Descriptor = RegisteredDescriptors[DescriptorIndex];
+		Context.ItemUseAreaId = Descriptor.AreaId;
+		Context.ItemUseAreaTags = Descriptor.AreaTags;
+		Context.ItemUseAreaHitComponent = Descriptor.HitComponent;
+		Context.ItemUseEffectTargetObject = Descriptor.EffectTargetObject;
+	}
+
+	return Context;
+}

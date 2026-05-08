@@ -6,6 +6,7 @@
 #include "Environment/GameTimeBucketListener.h"
 #include "GameFramework/Actor.h"
 #include "Focus/FocusInteractable.h"
+#include "Focus/ItemUseAreaProvider.h"
 #include "WorldActors/BeeSwarmTypes.h"
 #include "Beehive.generated.h"
 
@@ -24,9 +25,10 @@ class AQueenBeeActor;
 class UCursorPartFocusScopeComponent;
 class UCursorPartFocusActionComponent;
 class UBeehiveCombLiftComponent;
+class UCursorItemUseAreaScopeComponent;
 
 UCLASS()
-class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
+class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IItemUseAreaProvider
 {
 	GENERATED_BODY()
 
@@ -61,6 +63,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
 	void SetLidOpenForPartFocus(bool bOpen);
+
+	virtual void GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 GetCurrentCombCount() const { return CurrentCombCount; }
@@ -173,6 +177,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
 	TObjectPtr<UCursorPartFocusActionComponent> LidPartFocusAction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
+	TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;

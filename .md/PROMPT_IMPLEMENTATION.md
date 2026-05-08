@@ -1,373 +1,736 @@
-﻿# Beehive Honey System 구현 프롬프트
+# FocusEngaged Item Use Area 구현 프롬프트
 
 ## 목표
 
-벌통에 60분 주기 꿀 생산 시스템을 추가한다.
+FocusEngaged 상태의 host actor가 선택적으로 제공하는 **item-use-area** 시스템을 구현한다.
+
+이 기능은 벌통 전용이 아니다. `ABeehive`는 첫 구현 host일 뿐이며, 이후 다른 FocusEngaged actor도 같은 구조를 재사용할 수 있어야 한다.
 
 핵심 요구사항:
 
-- 게임 시간 기준 60분마다 꿀 생산 업데이트를 수행한다.
-- 벌통의 총 꿀 증가량은 현재 벌 수 기준으로 계산한다.
-- 총 꿀 증가량 공식:
-  - `TotalHoneyIncrease = ColonyBeeCount * HoneyProductionCoefficient`
-- 같은 bucket에서 꿀 생산과 벌 수 업데이트가 동시에 발생하면 꿀 생산을 먼저 처리하고, 그 다음 벌 수 업데이트를 처리한다.
-- 소비장별 꿀 증가량에는 편차가 있어야 한다.
-- 단, 소비장이 가득 차지 않은 상태에서는 소비장별 증가량 총합이 벌통의 총 꿀 증가량과 같아야 한다.
-- 소비장이 최대 꿀 용량에 도달해 초과분이 생기면 초과분은 버린다.
-- 꿀 업데이트는 소비장 들림 여부와 무관하게 모든 active 소비장에 적용한다.
-- 소비장은 내부 절대 꿀 양을 저장하고, 시각 표현에는 정규화된 `0.0~1.0` fill ratio를 사용한다.
+- FocusEngaged host가 item-use-area scope/provider를 지원하고 대상 아이템이 선택되어 있으면, 해당 아이템에 대응되는 사용영역은 LMB 조작 여부와 무관하게 항상 표시/점멸한다.
+- FocusEngaged host가 item-use-area scope/provider를 지원하지 않으면, 선택 아이템이 있더라도 기존 FocusAction/PartFocus 입력 정책을 따른다.
+- 선택 아이템이 있고 host가 item-use-area를 지원하면 LMB는 item-use action으로 처리한다.
+- 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
+- LMB Press/Hold/Release는 "아이템 사용중" 세션과 "실질 아이템사용효과" 적용 여부만 제어한다.
+- 실질 아이템사용효과는 LMB hold 중 커서가 현재 item에 대응되는 active use area 위에 있을 때만 적용한다.
+- item-use area 활성 중에는 PartFocus outline보다 item-use area 표시를 우선한다. 결정된 정책 기준으로 선택 아이템이 있을 때 PartFocus outline은 숨긴다.
 
-## 참조 문서
+## 반드시 읽을 문서
 
+- `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/EnvironmentSystem.md`
 - `.md/QNA_ARCHITECTURE.md`
+- `.md/QNA_IMPLEMENTATION.md`
 
-## 주요 파일
+## 구현 범위
 
-수정 대상:
+주요 변경 시스템:
 
+- Focus: item-use-area scope, descriptor, provider, FocusAction input routing
+- Inventory: hold item-use action lifecycle와 item action query
+- Character: LMB Started/Completed 입력 라우팅
+- WorldActors: `ABeehive` first host integration
+- 문서: 구현 후 architecture 문서 최신화
+
+예상 신규 파일:
+
+- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaTypes.h`
+- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h`
+- `Source/BeekeepingSim/Public/Inventory/HoldItemUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
+
+예상 수정 파일:
+
+- `Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h`
+- `Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp`
+- `Source/BeekeepingSim/Public/Focus/BeekeeperFocusComponent.h`
+- `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/FocusActionComponent.h`
+- `Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
+- `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
+- `Source/BeekeepingSim/Public/Inventory/ItemActionContext.h`
+- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
+- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
 
 문서 반영 대상:
 
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
+- 필요 시 `.md/USER_UNREAL.md`
 
-## 설계 결정사항
+## 설계 기준
 
-### 초과 생산량
+### Generic naming
 
-- 소비장별 꿀 적용 시 `MaxHoneyPerComb`을 초과하는 양은 버린다.
-- 초과분 재분배나 벌통 저장고 누적은 하지 않는다.
+벌통 전용 이름을 만들지 않는다.
 
-### 내부 단위와 표시 단위
+사용할 naming:
 
-- 소비장 내부 꿀 양은 절대값으로 저장한다.
-- 표시 비율은 다음 공식으로 계산한다.
-  - `HoneyFillRatio = Clamp(CurrentHoney / MaxHoneyPerComb, 0.0, 1.0)`
-- 머티리얼 scalar parameter `HoneyAmount`에는 절대값이 아니라 `HoneyFillRatio`를 넣는다.
+- `UCursorItemUseAreaScopeComponent`
+- `FItemUseAreaDescriptor`
+- `IItemUseAreaProvider`
+- `UHoldItemUseAction`
 
-### 기본값
+`BeehiveItemUseArea`, `BeehiveUseAreaScope` 같은 이름은 사용하지 않는다.
 
-- `MaxHoneyPerComb = 100.0f`
-- `HoneyProductionCoefficient = 0.01f`
-- `HoneyDistributionDeviationRatio = 0.5f`
-- `HoneyProductionBucketMinutes = 60`
-- `bApplyHoneyProductionOnBeginPlayBucket = false`
+### 시스템 책임
 
-### 분배 방식
+- Focus
+  - FocusEngaged host 내부 item-use-area scope 활성/비활성
+  - 선택 item 기반 active area filter
+  - 커서 hit/hover 판정
+  - LMB Press/Hold/Release routing
+  - PartFocus outline과 item-use area 표시 우선순위 제어
+- Inventory
+  - 선택 item의 hold-use action 제공
+  - 사용 가능한 area tag query 제공
+  - Begin/Hold/End lifecycle와 실질 효과 실행 owner
+- WorldActors
+  - host actor와 child actor가 use area descriptor 제공
+  - `ABeehive`는 첫 host로 provider/scope 연결
+- Character
+  - Enhanced Input Started/Completed를 Focus component로 전달
 
-소비장별 증가량은 랜덤 가중치 정규화 방식으로 계산한다.
+## 데이터 구조
 
-```text
-Weight = RandomRange(1.0 - HoneyDistributionDeviationRatio, 1.0 + HoneyDistributionDeviationRatio)
-CombHoneyIncrease = TotalHoneyIncrease * Weight / WeightSum
-```
+### `FItemUseAreaVisualSettings`
 
-- `HoneyDistributionDeviationRatio`는 `0.0~1.0`으로 clamp한다.
-- active 소비장 수가 0이면 아무것도 하지 않는다.
-- `TotalHoneyIncrease <= 0`이면 아무것도 하지 않는다.
-- 소비장이 가득 차서 일부 증가량이 버려지는 경우를 제외하면 적용 증가량 총합은 `TotalHoneyIncrease`와 같아야 한다.
+`CursorItemUseAreaTypes.h`에 추가한다.
 
-### bucket 처리 순서
-
-`ABeehive::GetGameTimeBucketSubscriptions_Implementation`에서 `HoneyProduction` subscription을 `ColonyPopulation` subscription보다 먼저 추가한다.
-
-권장 순서:
-
-1. `BeeSwarm`
-2. `QueenBeeLocation`
-3. `HoneyProduction`
-4. `ColonyPopulation`
-
-결과:
-
-- 같은 60분 경계에서 꿀 생산은 업데이트 직전 `ColonyBeeCount`를 기준으로 계산된다.
-- 이후 `ApplyColonyPopulationUpdate()`가 다음 주기용 벌 수를 갱신한다.
-
-## `ABeehive` 구현 요구사항
-
-### 추가 UPROPERTY
-
-`Beehive.h`에 아래 설정을 추가한다.
+필드 후보:
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time", meta = (ClampMin = "1", ClampMax = "1440"))
-int32 HoneyProductionBucketMinutes = 60;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time")
-bool bApplyHoneyProductionOnBeginPlayBucket = false;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0"))
-float HoneyProductionCoefficient = 0.01f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-float HoneyDistributionDeviationRatio = 0.5f;
-```
-
-### 추가 함수
-
-`Beehive.h`에 BlueprintCallable/Pure API를 추가한다.
-
-```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Production")
-void ApplyHoneyProductionUpdate();
-
-UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
-float CalculateTotalHoneyIncreaseAmount() const;
-```
-
-private helper는 필요에 따라 추가한다.
-
-```cpp
-void DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease);
-```
-
-### 꿀 생산 계산
-
-```cpp
-float ABeehive::CalculateTotalHoneyIncreaseAmount() const
+USTRUCT(BlueprintType)
+struct FItemUseAreaVisualSettings
 {
-    const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
-    const float SafeCoefficient = FMath::Max(0.0f, HoneyProductionCoefficient);
-    return static_cast<float>(SafeBeeCount) * SafeCoefficient;
-}
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    FLinearColor UseAreaColor = FLinearColor(0.2f, 0.8f, 1.0f, 0.35f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area", meta = (ClampMin = "0.0"))
+    float UseAreaOpacity = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area", meta = (ClampMin = "0.0"))
+    float PulseSpeed = 2.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float HoverStrength = 1.0f;
+};
 ```
 
-### 꿀 생산 적용
+### `FItemUseAreaDescriptor`
 
-`ApplyHoneyProductionUpdate()`는 다음 순서로 동작한다.
+`CursorItemUseAreaTypes.h`에 추가한다.
 
-1. `CalculateTotalHoneyIncreaseAmount()` 호출
-2. `DistributeHoneyIncreaseToCombs(TotalHoneyIncrease)` 호출
+```cpp
+USTRUCT(BlueprintType)
+struct FItemUseAreaDescriptor
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    FName AreaId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    FGameplayTagContainer AreaTags;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    TObjectPtr<AActor> OwnerActor = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    TObjectPtr<UPrimitiveComponent> HitComponent = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    TArray<TObjectPtr<UPrimitiveComponent>> VisualComponents;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    TObjectPtr<UObject> EffectTargetObject = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Use Area")
+    FItemUseAreaVisualSettings VisualSettings;
+};
+```
+
+`EffectTargetObject`는 item action이 실질 효과를 적용할 대상이다. 예:
+
+- host actor 자체
+- host child actor
+- 전용 component
+- `ABeehiveCombActor`
+
+## Provider
+
+### `IItemUseAreaProvider`
+
+`Focus/ItemUseAreaProvider.h`에 `UINTERFACE(BlueprintType)`로 추가한다.
+
+권장 API:
+
+```cpp
+UINTERFACE(BlueprintType)
+class BEEKEEPINGSIM_API UItemUseAreaProvider : public UInterface
+{
+    GENERATED_BODY()
+};
+
+class BEEKEEPINGSIM_API IItemUseAreaProvider
+{
+    GENERATED_BODY()
+
+public:
+    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Item Use Area")
+    void GetItemUseAreaDescriptors(TArray<FItemUseAreaDescriptor>& OutDescriptors) const;
+};
+```
 
 주의:
 
-- 벌 수는 여기서 변경하지 않는다.
-- 벌떼 Niagara 설정은 여기서 변경하지 않는다.
-- 소비장 들림 여부는 무시하고 모든 active comb에 적용한다.
+- `BlueprintNativeEvent`를 사용해 C++ host와 Blueprint child actor 모두 구현 가능하게 한다.
+- `FItemUseAreaDescriptor`는 Focus system type이므로 `ItemUseAreaProvider.h`는 Focus 폴더에 둔다.
+- UObject/UCLASS rename이 아니므로 Core Redirect는 필요 없다.
 
-### bucket 구독 추가
+## Item action 확장
 
-`GetGameTimeBucketSubscriptions_Implementation`에 `HoneyProduction` subscription을 추가한다.
+### `UHoldItemUseAction`
 
-중요:
+`Inventory/HoldItemUseAction.h/cpp`를 추가하고 `UItemAction`을 상속한다.
 
-- 반드시 `ColonyPopulation` subscription보다 먼저 `OutSubscriptions.Add(HoneySubscription)` 해야 한다.
+역할:
 
-```cpp
-FGameTimeBucketSubscription HoneySubscription;
-HoneySubscription.BucketMinutes = FMath::Clamp(HoneyProductionBucketMinutes, 1, 1440);
-HoneySubscription.bApplyImmediatelyOnBeginPlay = bApplyHoneyProductionOnBeginPlayBucket;
-HoneySubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
-HoneySubscription.SubscriptionTag = FName(TEXT("HoneyProduction"));
-OutSubscriptions.Add(HoneySubscription);
-```
+- 특정 item이 어떤 area tag에서 사용 가능한지 제공
+- LMB Press/Hold/Release lifecycle 처리
+- hover area 위에서만 실질 효과 실행
 
-`OnGameTimeBucketEvent_Implementation`에 처리 분기를 추가한다.
+권장 API:
 
 ```cpp
-else if (Event.SubscriptionTag == FName(TEXT("HoneyProduction")))
+UCLASS(Abstract, Blueprintable, EditInlineNew, DefaultToInstanced)
+class BEEKEEPINGSIM_API UHoldItemUseAction : public UItemAction
 {
-    ApplyHoneyProductionUpdate();
-}
+    GENERATED_BODY()
+
+public:
+    UFUNCTION(BlueprintPure, Category = "Item Action|Use Area")
+    virtual FGameplayTagQuery GetUseAreaTagQuery() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual bool CanBeginUse(const FItemActionContext& Context) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual bool BeginUse(const FItemActionContext& Context);
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual void TickUse(const FItemActionContext& Context, float DeltaTime);
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual void EndUse(const FItemActionContext& Context, bool bWasCanceled);
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual bool CanApplyUseEffect(const FItemActionContext& Context) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
+    virtual FItemActionExecutionResult ApplyUseEffect(const FItemActionContext& Context, float DeltaTime);
+
+protected:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action|Use Area")
+    FGameplayTagQuery UseAreaTagQuery;
+};
 ```
 
-## `ABeehiveCombActor` 구현 요구사항
+Blueprint hook가 필요하면 `BlueprintImplementableEvent` 또는 `BlueprintNativeEvent` wrapper를 추가해도 된다. 단, C++ lifecycle 이름은 위 기준을 유지한다.
 
-### 추가 컴포넌트
+### `UItemInstance` helper
 
-`BeehiveCombActor.h`에 Front/Back 꿀 plane mesh component를 추가한다.
-
-```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-TObjectPtr<UStaticMeshComponent> FrontHoneyPlane;
-
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
-```
-
-생성자에서 생성하고 `Root` 또는 `CombMesh`에 attach한다.
+선택 item에서 hold action을 찾기 위한 helper를 추가한다.
 
 권장:
 
-- `CombMesh`에 attach하면 소비장 mesh 기준으로 위치 조정하기 쉽다.
-- 기존 Blueprint serialized component 구조를 고려해 이름은 안정적으로 유지한다.
-
-### 꿀 상태와 설정
-
 ```cpp
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
-float MaxHoneyPerComb = 100.0f;
-
-UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
-float CurrentHoney = 0.0f;
-
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
-FVector FrontHoneyEmptyRelativeLocation = FVector::ZeroVector;
-
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
-FVector FrontHoneyFullRelativeLocation = FVector::ZeroVector;
-
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
-FVector BackHoneyEmptyRelativeLocation = FVector::ZeroVector;
-
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
-FVector BackHoneyFullRelativeLocation = FVector::ZeroVector;
-
-UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
-FName HoneyMaterialParameterName = TEXT("HoneyAmount");
+UFUNCTION(BlueprintPure, Category = "Item")
+UHoldItemUseAction* FindHoldItemUseAction() const;
 ```
 
-Dynamic material instance 캐시는 private transient로 둔다.
+여러 hold action이 있을 수 있는 구조가 필요하면 `GetHoldItemUseActions()`도 가능하다. 1차 구현은 선택 item당 대표 hold action 1개를 우선한다. 여러 개이거나 우선순위가 애매하면 `.md/QNA_IMPLEMENTATION.md`에 질문하고 중단한다.
+
+## Item action context 확장
+
+`FItemActionContext`에 item-use-area용 context를 추가한다.
+
+후보 필드:
 
 ```cpp
-UPROPERTY(Transient)
-TObjectPtr<UMaterialInstanceDynamic> FrontHoneyMaterialInstance;
+UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+TObjectPtr<AActor> FocusEngagedHostActor = nullptr;
 
-UPROPERTY(Transient)
-TObjectPtr<UMaterialInstanceDynamic> BackHoneyMaterialInstance;
+UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+FName ItemUseAreaId;
+
+UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+FGameplayTagContainer ItemUseAreaTags;
+
+UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+TObjectPtr<UPrimitiveComponent> ItemUseAreaHitComponent = nullptr;
+
+UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+TObjectPtr<UObject> ItemUseEffectTargetObject = nullptr;
 ```
 
-### 추가 API
+기존 `FocusTarget`, `Character`, `PlayerController`, `World` 필드는 유지한다.
+
+## Scope component
+
+### `UCursorItemUseAreaScopeComponent`
+
+Focus system에 추가한다.
+
+역할:
+
+- FocusEngaged host에서만 활성화
+- host/provider에서 `FItemUseAreaDescriptor` 수집
+- 선택 item의 `UHoldItemUseAction::GetUseAreaTagQuery()`로 active area filter 갱신
+- active area visual 표시/점멸
+- cursor trace로 hover area 갱신
+- LMB Press/Hold/Release item-use session 관리
+- 실질 effect는 item action에 위임
+
+권장 public API:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
-void AddHoneyAmount(float DeltaHoney);
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+void ActivateItemUseAreaScope(ABeekeeperCharacter* InteractingCharacter);
 
-UFUNCTION(BlueprintCallable, Category = "Beehive|Honey")
-void SetCurrentHoney(float NewHoneyAmount);
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+void DeactivateItemUseAreaScope(bool bCancelActiveUse);
 
-UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
-float GetCurrentHoney() const { return CurrentHoney; }
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+void RebuildItemUseAreaDescriptors();
 
-UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
-float GetHoneyFillRatio() const;
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+void RegisterItemUseAreaDescriptor(const FItemUseAreaDescriptor& Descriptor);
+
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+bool HandleItemUsePressed();
+
+UFUNCTION(BlueprintCallable, Category = "Item Use Area")
+bool HandleItemUseReleased();
+
+UFUNCTION(BlueprintPure, Category = "Item Use Area")
+bool IsItemUseAreaScopeActive() const;
+
+UFUNCTION(BlueprintPure, Category = "Item Use Area")
+bool IsItemUseInProgress() const;
+
+UFUNCTION(BlueprintPure, Category = "Item Use Area")
+bool HasActiveUseAreas() const;
 ```
 
-private helper:
+권장 private state:
 
-```cpp
-void SanitizeHoneyState();
-void ApplyHoneyVisualState();
-void EnsureHoneyMaterialInstances();
-```
+- owner character
+- hotbar component
+- focus component
+- active host actor
+- registered descriptors
+- active descriptor indices
+- hovered descriptor index
+- selected item instance cache
+- active hold action
+- `bIsUseInProgress`
 
-### Honey clamp 정책
+### Activation
 
-```cpp
-void ABeehiveCombActor::SanitizeHoneyState()
-{
-    MaxHoneyPerComb = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyPerComb);
-    CurrentHoney = FMath::Clamp(CurrentHoney, 0.0f, MaxHoneyPerComb);
-}
-```
+`ActivateItemUseAreaScope`:
 
-초과분은 버리므로 `AddHoneyAmount`는 clamp만 수행한다.
+1. `InteractingCharacter` 저장
+2. hotbar/focus component 캐시
+3. current engaged host actor resolve
+4. `RebuildItemUseAreaDescriptors()`
+5. hotbar changed delegate 구독
+6. selected item 기준 active area filter 갱신
+7. tick 활성화
 
-```cpp
-void ABeehiveCombActor::AddHoneyAmount(float DeltaHoney)
-{
-    CurrentHoney += FMath::Max(0.0f, DeltaHoney);
-    SanitizeHoneyState();
-    ApplyHoneyVisualState();
-}
-```
+`DeactivateItemUseAreaScope`:
 
-### 시각 업데이트
+1. active use session이 있으면 `EndUse(..., bWasCanceled=true)` 호출
+2. 모든 active/hover visual 끄기
+3. delegates 해제
+4. caches clear
+5. tick 비활성화
 
-`ApplyHoneyVisualState()`는 다음을 수행한다.
+### Descriptor rebuild
 
-1. `HoneyFillRatio` 계산
-2. Front/Back 꿀 plane relative location 보간
-3. material index 0 dynamic material instance에 scalar parameter 적용
+`RebuildItemUseAreaDescriptors`는 다음을 수행한다.
 
-```cpp
-const float FillRatio = GetHoneyFillRatio();
-FrontHoneyPlane->SetRelativeLocation(FMath::Lerp(FrontHoneyEmptyRelativeLocation, FrontHoneyFullRelativeLocation, FillRatio));
-BackHoneyPlane->SetRelativeLocation(FMath::Lerp(BackHoneyEmptyRelativeLocation, BackHoneyFullRelativeLocation, FillRatio));
-FrontHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
-BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
-```
+1. 기존 descriptor clear
+2. host actor가 `IItemUseAreaProvider` 구현 시 descriptor 수집
+3. host actor의 child actor들을 순회해 `IItemUseAreaProvider` 구현 actor에서 descriptor 수집
+4. host actor의 direct primitive components를 component tag 기반으로 descriptor로 수집
+
+Direct component tag scan은 1차 구현에서 최소 규칙만 둔다.
+
+권장:
+
+- component tag가 `ItemUseArea`이면 사용영역 후보
+- area tag는 별도 component tag naming에서 추출하기 어렵기 때문에, C++ host provider 경로를 우선한다.
+- direct scan만으로 area tags를 안정적으로 구성하기 어렵다면 `ABeehive`에서 provider 구현으로 직접 descriptor를 만든다.
+
+중요:
+
+- 사용영역 mesh는 기존 gameplay mesh, 반투명 가상 mesh, child actor 내부 mesh 모두 허용한다.
+- 최종 처리 기준은 descriptor의 `HitComponent`, `VisualComponents`, `EffectTargetObject`다.
+- descriptor가 유효하지 않으면 skip한다.
+
+### Active area filter
+
+선택 item 변경 시 descriptor rebuild를 하지 않는다. 기존 descriptor를 유지하고 active area filter만 갱신한다.
+
+조건:
+
+- host scope active
+- selected item exists
+- selected item has `UHoldItemUseAction`
+- hold action의 `UseAreaTagQuery`가 descriptor `AreaTags`와 match
+
+선택 item이 없거나 hold action이 없으면 active area는 모두 비활성화한다.
+
+### Visual control
+
+Active area는 LMB와 무관하게 표시/점멸한다.
+
+공통 material parameter:
+
+- `UseAreaColor`
+- `UseAreaOpacity`
+- `PulseSpeed`
+- `HoverStrength`
+
+구현 기준:
+
+- active descriptor의 `VisualComponents`에 visibility true
+- active descriptor의 `HitComponent`는 query collision enabled
+- inactive descriptor는 visibility false, query collision disabled
+- hover descriptor는 `HoverStrength`를 1.0, non-hover active descriptor는 0.0
+- material index 0에 dynamic material instance를 만들어 parameter 적용
+- component가 여러 material slot을 쓰는 경우도 1차 구현은 index 0만 처리한다.
 
 주의:
 
-- material parameter에는 `CurrentHoney` 절대값이 아니라 `FillRatio`를 넣는다.
-- material index 0만 대상으로 한다.
-- Front/Back plane 중 하나가 null이어도 다른 쪽은 정상 적용되어야 한다.
+- 기존 gameplay mesh를 VisualComponent로 쓰는 경우 원래 material을 바꿀 수 있다. 가능하면 가상 반투명 mesh를 visual로 쓰는 경로를 권장한다.
+- 실제 gameplay mesh를 hit-only로 쓰고 visual은 별도 mesh로 두는 descriptor 구성이 가능해야 한다.
 
-### 적용 시점
+### Cursor hit/hover
 
-`ABeehiveCombActor`의 다음 경로에서 꿀 상태도 sanitize/apply 한다.
+커서 trace:
 
-- `OnConstruction`
-- `BeginPlay`
-- `PostEditChangeProperty`
-- `SetCurrentHoney`
-- `AddHoneyAmount`
+- 기존 visibility trace 사용
+- hit component가 active descriptor의 `HitComponent`인지 검사
+- 여러 후보가 있으면 trace hit result에서 가장 가까운 active area component 1개 사용
 
-기존 벌 Niagara parameter 적용과 함수 책임을 섞지 말고, 꿀 시각 적용은 별도 helper로 유지한다.
+유효 hover:
 
-## 문서 업데이트 요구사항
+- scope active
+- selected item has hold action
+- hovered descriptor active
+- descriptor area tag가 action query와 match
 
-`.md/0_ARCHITECTURE.md`에 요약 추가:
+### LMB lifecycle
 
-- `ABeehive`는 `HoneyProduction` bucket을 통해 60분마다 꿀 생산을 처리한다.
-- 같은 bucket에서는 꿀 생산이 colony population보다 먼저 처리된다.
-- 꿀 생산량은 업데이트 직전 `ColonyBeeCount * HoneyProductionCoefficient`다.
-- `ABeehiveCombActor`는 절대 꿀 양과 정규화 fill ratio 기반 Front/Back honey plane 표현을 소유한다.
+`HandleItemUsePressed`:
 
-`.md/Architecture/WorldActorsSystem.md`에 상세 추가:
+- scope inactive면 false
+- host가 item-use-area를 지원하지 않으면 false
+- selected item 없음이면 false
+- selected item에 hold action 없음이면 false
+- action `CanBeginUse(Context)` false면 true를 반환해 입력은 소비하되 session은 시작하지 않는다.
+- BeginUse 성공 시 `bIsUseInProgress=true`
+- 매칭 사용영역이 없어도 session은 시작 가능하다. 단, 실질 effect는 없음.
 
-- `ABeehive` Honey Production 설정과 bucket 흐름
-- `ABeehiveCombActor` Honey 상태, Front/Back plane, material parameter 적용
-- 들림 상태와 무관하게 꿀 업데이트가 모든 active comb에 적용된다는 정책
+`TickComponent`:
 
-## Blueprint / Editor 작업
+- selected item 변경 감지 후 active area filter 갱신
+- cursor hover 갱신
+- active use session이면 action `TickUse(Context, DeltaTime)` 호출
+- active use session이고 valid hovered area가 있으면 `CanApplyUseEffect` 확인 후 `ApplyUseEffect(Context, DeltaTime)` 호출
 
-구현 후 에디터에서 수행할 작업:
+`HandleItemUseReleased`:
 
-1. `BP_BeehiveCombActor` 또는 소비장 Blueprint에서 `FrontHoneyPlane`, `BackHoneyPlane` static mesh를 설정한다.
-2. Front/Back honey plane material index 0에 `HoneyAmount` scalar parameter를 가진 material을 지정한다.
-3. 각 소비장에서 아래 위치 값을 조정한다.
-   - `FrontHoneyEmptyRelativeLocation`
-   - `FrontHoneyFullRelativeLocation`
-   - `BackHoneyEmptyRelativeLocation`
-   - `BackHoneyFullRelativeLocation`
-4. `BP_Beehive` 또는 배치된 벌통에서 꿀 생산 기본값을 확인한다.
-   - `HoneyProductionBucketMinutes = 60`
-   - `bApplyHoneyProductionOnBeginPlayBucket = false`
-   - `HoneyProductionCoefficient = 0.01`
-   - `HoneyDistributionDeviationRatio = 0.5`
-5. Blueprint compile/save를 수행한다.
+- session이 있으면 `EndUse(Context, false)` 호출
+- session clear
+- true 반환
+
+Deactivate/Abort:
+
+- session이 있으면 `EndUse(Context, true)` 호출
+
+## Focus input routing
+
+### Character
+
+현재 `PartFocusClickAction`은 `Started`만 바인딩되어 있다.
+
+변경:
+
+- `Started` -> `ABeekeeperCharacter::PartFocusClickInput` 또는 새 `ItemUsePressedInput`
+- `Completed` -> 새 `ABeekeeperCharacter::PartFocusClickReleaseInput` 또는 `ItemUseReleasedInput`
+
+권장:
+
+- 기존 `PartFocusClickInput()`은 유지한다.
+- 새 함수 `PartFocusClickReleaseInput()`을 추가한다.
+- 내부에서 `BeekeeperFocus->HandlePartFocusClickReleasedInput()` 같은 새 API를 호출한다.
+
+기존 Blueprint-exposed property 이름은 변경하지 않는다. `PartFocusClickAction` 자체를 계속 LMB action으로 사용한다.
+
+### `UBeekeeperFocusComponent`
+
+추가 API:
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Focus")
+bool HandlePartFocusClickReleasedInput();
+```
+
+`HandlePartFocusClickInput()` 동작 변경:
+
+1. engaged focus action이 있으면 action의 `HandlePartFocusClickInputWhileEngaged` 호출
+2. action이 item-use-area supported host를 찾아 item-use pressed를 우선 처리
+3. 처리되지 않으면 기존 PartFocus click fallback
+
+release도 engaged action에 위임한다.
+
+### `UFocusActionComponent`
+
+release hook 추가:
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Focus Action")
+virtual bool HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+```
+
+기본 구현은 `false`.
+
+기존 API 삭제/rename 금지.
+
+### `UAnchoredFocusCursorActionComponent`
+
+현재 anchored cursor action은 owner actor에서 `UCursorPartFocusScopeComponent`를 찾아 PartFocus 입력을 처리한다.
+
+변경:
+
+- BeginFocusAction 시 owner actor의 `UCursorItemUseAreaScopeComponent`가 있으면 activate
+- ReturnCompleted/Abort 시 deactivate
+- click pressed:
+  1. owner actor의 `UCursorItemUseAreaScopeComponent`가 active이고 selected item이 있으면 `HandleItemUsePressed()`를 우선 호출
+  2. 그 결과 true면 PartFocus click은 실행하지 않음
+  3. false면 기존 `CursorPartFocusScope->HandlePartFocusClickInput()` 실행
+- click released:
+  1. item-use-area scope가 active이면 `HandleItemUseReleased()` 호출
+  2. true면 consume
+  3. 아니면 false
+
+host가 item-use-area scope를 갖지 않으면 기존 PartFocus behavior가 유지되어야 한다.
+
+### PartFocus outline 숨김
+
+결정 정책:
+
+- item-use-area를 지원하는 host에서 선택 item이 있으면 PartFocus outline은 숨긴다.
+
+구현 후보:
+
+- `UCursorPartFocusScopeComponent`에 `SetPreviewSuppressed(bool)` 또는 `SetHoverOutlineSuppressed(bool)` 추가
+- `UCursorItemUseAreaScopeComponent`가 selected item/active state 변경 시 sibling `UCursorPartFocusScopeComponent`에 suppression 전달
+
+주의:
+
+- PartFocus action stack cancel/abort 기능은 유지한다.
+- outline/prompt만 숨기는지, hover resolve 자체를 중단하는지 구현 전에 판단한다.
+- 추천: 1차 구현은 hover outline/prompt를 숨기고, 기존 cancel cascade 등 상태 처리는 유지한다.
+
+애매하면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+## `ABeehive` first host integration
+
+`ABeehive`에 `UCursorItemUseAreaScopeComponent`를 추가한다.
+
+```cpp
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
+TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;
+```
+
+`ABeehive`가 `IItemUseAreaProvider`를 구현할지, 별도 provider component를 붙일지 선택한다.
+
+권장:
+
+- 1차 구현은 `ABeehive`가 `IItemUseAreaProvider`를 직접 구현한다.
+- 이유: 이미 `ABeehive`가 active comb membership과 child actor 구성 정보를 알고 있다.
+
+Provider에서 등록할 descriptor 예:
+
+- lid area
+  - `AreaId = "Lid"`
+  - `AreaTags = Beehive.UseArea.Lid`
+  - `EffectTargetObject = this`
+  - `HitComponent`: 기존 lid mesh 또는 반투명 가상 mesh
+  - `VisualComponents`: 반투명 가상 mesh 권장
+- comb area
+  - `AreaId = "Comb_{Index}"`
+  - `AreaTags = Beehive.UseArea.Comb`
+  - `EffectTargetObject = ABeehiveCombActor`
+  - `HitComponent`: comb actor 또는 child actor provider가 제공한 component
+  - `VisualComponents`: comb actor 내부 가상 mesh 권장
+
+기존 벌통에 아직 가상 use area mesh가 없다면:
+
+- C++에서 필수 mesh component를 무리하게 추가하지 않는다.
+- provider는 component tag 기반으로 찾을 수 있는 component가 있을 때만 descriptor를 만든다.
+- 필요한 Blueprint/Editor 작업은 `.md/USER_UNREAL.md` 또는 최종 보고에 명시한다.
+
+## GameplayTag 기준
+
+1차 구현에서 native tag 등록까지 진행할지 확인한다.
+
+권장 tag:
+
+- `Beehive.UseArea.Lid`
+- `Beehive.UseArea.Comb`
+- `Beehive.UseArea.Inner`
+
+이미 프로젝트에 GameplayTags 설정/매니저 패턴이 있으면 기존 방식 사용.
+
+태그 등록 위치가 불명확하면 `.md/QNA_IMPLEMENTATION.md`에 질문하고 중단한다.
+
+## Blueprint / Editor 작업 문서화
+
+Content asset을 직접 수정하지 않는다.
+
+구현 후 사용자가 Editor에서 해야 할 작업을 `.md/USER_UNREAL.md` 또는 최종 보고에 작성한다.
+
+예상 작업:
+
+1. `BP_Beehive` 또는 child Blueprint에 item-use area용 반투명 mesh component 추가
+2. component tag 또는 provider 설정으로 `AreaId`, `AreaTags` 연결
+3. item-use area material에 parameter 추가
+   - `UseAreaColor`
+   - `UseAreaOpacity`
+   - `PulseSpeed`
+   - `HoverStrength`
+4. item definition/action에 `UHoldItemUseAction` subclass 추가
+5. 해당 action의 `UseAreaTagQuery` 설정
+6. Blueprint compile/save
+
+## 구현 단계
+
+### 1단계: 타입과 action 기반
+
+- `CursorItemUseAreaTypes.h`
+- `ItemUseAreaProvider.h`
+- `HoldItemUseAction.h/cpp`
+- `ItemActionContext.h` 확장
+- `ItemInstance` hold action lookup 추가
+
+이 단계는 빌드 가능해야 한다.
+
+### 2단계: scope component
+
+- `UCursorItemUseAreaScopeComponent` 구현
+- descriptor 등록/수집
+- selected item filter
+- visual on/off
+- cursor hover
+- LMB lifecycle
+
+이 단계에서 host integration 없이도 component 단위로 빌드 가능해야 한다.
+
+### 3단계: Focus routing
+
+- Character release input 추가
+- `UBeekeeperFocusComponent` release API 추가
+- `UFocusActionComponent` release hook 추가
+- `UAnchoredFocusCursorActionComponent`에서 item-use scope 우선 처리
+- PartFocus outline suppression 구현
+
+기존 PartFocus R/F/C 입력은 변경하지 않는다.
+
+### 4단계: Beehive integration
+
+- `ABeehive`에 scope component 추가
+- `IItemUseAreaProvider` 구현 또는 provider component 연결
+- 기존 direct component/child actor provider descriptor 수집 경로 연결
+- 가상 mesh가 없는 경우 no-op으로 동작하게 한다.
+
+### 5단계: 문서/검증
+
+- architecture 문서 업데이트
+- `.md/USER_UNREAL.md`에 필요한 Editor 작업 작성
+- UBT 빌드
 
 ## 검증 기준
 
-### C++ 빌드
+### 빌드
 
-- `BeekeepingSimEditor Win64 Development` 빌드 성공
+가능하면 아래 빌드를 수행한다.
 
-### 기능 검증
+```powershell
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
+```
 
-1. 벌통에 active 소비장이 없으면 꿀 생산 업데이트가 crash 없이 no-op이어야 한다.
-2. 벌 수 100, `HoneyProductionCoefficient=0.01`이면 60분마다 총 꿀 생산량은 1.0이어야 한다.
-3. 소비장들이 가득 차지 않은 상태라면 소비장별 증가량 합은 1.0이어야 한다.
-4. 소비장별 증가량은 `HoneyDistributionDeviationRatio=0.5` 기준으로 편차가 있어야 한다.
-5. 꿀 업데이트는 들려진 소비장에도 적용되어야 한다.
-6. 소비장이 최대치에 도달하면 초과분은 버려야 한다.
-7. material parameter `HoneyAmount`에는 `CurrentHoney / MaxHoneyPerComb` 정규화 값이 들어가야 한다.
-8. 같은 60분 bucket에서 꿀 생산이 벌 수 업데이트보다 먼저 실행되어야 한다.
-9. 기존 벌떼 Niagara SpawnAmount/TargetBeeCount 동작을 변경하지 않아야 한다.
+### 코드 검증
+
+- `#include "Public/..."` 형태가 없어야 한다.
+- 기존 Blueprint native parent class rename 없음
+- 기존 `UCursorPartFocusScopeComponent`, `UCursorPartFocusActionComponent`, `UItemAction` public API 삭제 없음
+- `PartFocusClickAction` property rename 없음
+- host가 item-use-area scope를 갖지 않는 경우 기존 PartFocus click 동작 유지
+- selected item이 없으면 기존 FocusAction/PartFocus 입력 정책 유지
+- selected item이 있고 host가 scope를 지원하면 LMB press는 item-use action 우선
+- LMB release 시 active session 정리
+- Focus cancel/abort/end play 시 active session abort
+- active area visual은 LMB와 무관하게 selected item 기준으로 표시
+- hovered active area 위에서만 `ApplyUseEffect` 호출
+- 여러 active area가 겹치면 가장 가까운 hit만 effect 대상
+
+### 수동 검증
+
+Editor 작업 후 확인할 항목:
+
+1. item-use-area 미지원 FocusEngaged actor에서 기존 조작이 유지된다.
+2. 벌통 FocusEngaged + 빈손 상태에서 기존 PartFocus click이 동작한다.
+3. 벌통 FocusEngaged + item-use action이 있는 아이템 선택 시 대응 area가 LMB와 무관하게 점멸한다.
+4. 선택 item 변경 시 active area가 갱신된다.
+5. LMB hold 중 area 밖에서는 사용중 연출만 유지되고 실질 효과는 발생하지 않는다.
+6. LMB hold 중 area 위에서는 실질 효과가 Tick 기반으로 호출된다.
+7. Focus cancel/abort 시 area visual과 item-use session이 정리된다.
+
+## QnA 중단 조건
+
+아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+- GameplayTag 등록 위치/방식이 불명확하다.
+- item 하나에 hold action이 여러 개일 때 우선순위가 필요하다.
+- PartFocus outline suppression을 hover resolve까지 막아야 하는지 불명확하다.
+- Blueprint asset migration 없이는 C++ 빌드/동작 보장이 어려운 경우.
+- UCLASS/USTRUCT/UENUM rename 또는 file rename이 필요해 Core Redirect 검토가 필요한 경우.
+- 기존 public Blueprint API 삭제/변경이 필요해 보이는 경우.
 
 ## 주의사항
 
-- 명시 요청 없이 Content asset을 직접 수정하지 않는다.
-- `ABeehiveCombActor`나 `ABeehive` class rename은 하지 않는다.
-- Blueprint 노출 API를 삭제하지 않는다.
-- 기존 queen bee, colony population, AttractionSwarm Niagara 재초기화 동작을 회귀시키지 않는다.
-- 기존 `RefreshCombSpawnAmounts(true)`의 lifted comb skip 정책은 꿀 업데이트 경로와 분리한다.
+- Content asset은 직접 수정하지 않는다.
+- Config 변경은 GameplayTag 또는 trace channel 때문에 꼭 필요할 때만 수행하고, 필요하면 먼저 QnA에 질문한다.
+- 전용 collision channel은 이번 결정에서 선택하지 않았다. 기존 visibility trace + active descriptor component filter를 사용한다.
+- item-use-area는 generic Focus 기능이다. 벌통 전용 조건을 Focus/Inventory 타입 이름에 넣지 않는다.
+- 실제 게임 상태 변경은 item action/effect 호출 경계 안에 둔다. 이후 authority/RPC로 감쌀 수 있게 scope가 직접 도메인 상태를 바꾸지 않는다.

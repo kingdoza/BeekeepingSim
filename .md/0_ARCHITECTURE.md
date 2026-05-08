@@ -2,7 +2,7 @@
 
 ## 문서 기준
 
-- 기준일: 2026-04-29
+- 기준일: 2026-05-08
 - 상태: 1차 구조 리팩토링과 보류 리팩토링 완료 후 현재 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 60개
-  - Public header: 33개
-  - Private cpp/header: 27개
+- 현재 대상 C++ 파일 수: 66개
+  - Public header: 37개
+  - Private cpp/header: 29개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -88,6 +88,12 @@ Source/BeekeepingSim/
 - FocusEngaged host 내부 파츠 상호작용은 `UCursorPartFocusScopeComponent`가 담당하고, 전역 focus 단일 오너(`UBeekeeperFocusComponent`)와 분리된다.
 - 파츠별 동작은 전용 C++ subclass 대신 공통 `UCursorPartFocusActionComponent` + BP Begin/Cancel/Abort 이벤트 구현을 기본 경로로 사용한다.
 - Host FocusEngaged 이후 파츠 입력은 `LMB`(begin/cancel)와 `R/F/C`(hover preview key action)로 분리한다.
+- Host FocusEngaged 이후 `LMB Completed` 입력은 active host action으로 전달되며, item-use session 종료(`EndUse`)에 사용된다.
+- FocusEngaged item-use area는 벌통 전용이 아니라 host actor가 선택적으로 제공하는 generic 기능으로 설계한다.
+- Host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리하고, host가 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
+- Anchored cursor FocusEngaged 진입 시 hotbar 선택은 빈손으로 전환하며, item-use area는 engaged 이후 대상 아이템을 다시 선택했을 때 활성화된다.
+- 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
+- `ABeehive`는 `UCursorItemUseAreaScopeComponent` + `IItemUseAreaProvider`를 통해 item-use-area first host를 구현한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.

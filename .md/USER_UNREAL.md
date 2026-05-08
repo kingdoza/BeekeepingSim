@@ -157,6 +157,36 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 테스트 레벨에서 저장
 - 에디터 재시작 후 다시 열어 컴포넌트 참조/GameplayTag 설정이 유지되는지 확인
 
+## 9. FocusEngaged Item Use Area 설정
+
+- `BP_Beehive`에서 `ItemUseAreaScope` 컴포넌트가 존재하는지 확인한다.
+- `PartFocusClickAction`(LMB)에 `Started`와 `Completed`가 모두 연결되어 있는지 확인한다.
+  - `Started`: item-use press 또는 part-focus click
+  - `Completed`: item-use release
+- Gameplay Tag 등록:
+  - `Beehive.UseArea.Lid`
+  - `Beehive.UseArea.Comb`
+- item-use area 시각 표현용 머티리얼 파라미터를 사용영역 mesh(material index 0)에 준비한다.
+  - `UseAreaColor`
+  - `UseAreaOpacity`
+  - `PulseSpeed`
+  - `HoverStrength`
+- 권장 authoring:
+  - 실제 gameplay mesh는 hit 용도
+  - 반투명 가상 mesh는 visual 용도
+  - 둘 다 어려우면 현재 mesh를 hit+visual로 임시 사용 가능
+
+## 10. FocusEngaged Item Use Area PIE 검증
+
+- item-use-area 미지원 host에서는 기존 PartFocus 동작이 유지되어야 한다.
+- 벌통 FocusEngaged + 빈손: 기존 PartFocus click 동작 유지
+- 벌통 FocusEngaged + hold-use action 아이템 선택:
+  - 대응 영역이 LMB와 무관하게 표시/점멸
+  - LMB hold 중 영역 밖: `BeginUse/TickUse`만, 실질 효과 없음
+  - LMB hold 중 영역 위: `ApplyUseEffect`가 Tick 기반 호출
+  - LMB release/cancel/abort 시 session이 종료되어야 함
+- 선택 아이템이 있을 때 벌통 PartFocus hover outline/prompt가 숨겨지는지 확인한다.
+
 ## Beehive Comb Delegate 위임
 
 - `BP_Beehive`에서 `Receive Comb Part Focus Begin/Cancel/Abort` 이벤트를 구현해 comb actor별 연출(들기/내리기/강제복귀)을 처리한다.

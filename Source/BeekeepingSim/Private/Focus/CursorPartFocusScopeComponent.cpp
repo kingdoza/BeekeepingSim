@@ -59,6 +59,7 @@ void UCursorPartFocusScopeComponent::DeactivatePartFocusScope(bool bAbortActiveA
 	}
 
 	SetHoveredPartIndex(INDEX_NONE);
+	bHoverOutlineSuppressed = false;
 	bIsScopeActive = false;
 	SetComponentTickEnabled(false);
 	BroadcastPartPrompt();
@@ -131,6 +132,18 @@ bool UCursorPartFocusScopeComponent::HandleCancelInput()
 	}
 
 	return false;
+}
+
+void UCursorPartFocusScopeComponent::SetHoverOutlineSuppressed(bool bSuppressed)
+{
+	if (bHoverOutlineSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bHoverOutlineSuppressed = bSuppressed;
+	ApplyOutlineForPart(HoveredPartIndex, !bHoverOutlineSuppressed);
+	BroadcastPartPrompt();
 }
 
 bool UCursorPartFocusScopeComponent::HandlePreviewKeyInput(ECursorPartFocusPreviewInputKey Key)
@@ -304,7 +317,7 @@ void UCursorPartFocusScopeComponent::SetHoveredPartIndex(int32 NewPartIndex)
 
 	ApplyOutlineForPart(HoveredPartIndex, false);
 	HoveredPartIndex = NewPartIndex;
-	ApplyOutlineForPart(HoveredPartIndex, true);
+	ApplyOutlineForPart(HoveredPartIndex, !bHoverOutlineSuppressed);
 	BroadcastPartPrompt();
 }
 
@@ -392,7 +405,7 @@ void UCursorPartFocusScopeComponent::ApplyOutlineForPart(int32 PartIndex, bool b
 void UCursorPartFocusScopeComponent::BroadcastPartPrompt()
 {
 	FCursorPartFocusPromptData PromptData;
-	if (RegisteredParts.IsValidIndex(HoveredPartIndex) && IsDescriptorPreviewAllowed(RegisteredParts[HoveredPartIndex]))
+	if (!bHoverOutlineSuppressed && RegisteredParts.IsValidIndex(HoveredPartIndex) && IsDescriptorPreviewAllowed(RegisteredParts[HoveredPartIndex]))
 	{
 		PromptData = RegisteredParts[HoveredPartIndex].PromptData;
 	}

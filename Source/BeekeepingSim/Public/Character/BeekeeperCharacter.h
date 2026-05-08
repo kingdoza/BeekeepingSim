@@ -114,6 +114,8 @@ protected:
 
 	void PartFocusClickInput();
 
+	void PartFocusClickReleaseInput();
+
 	void PartFocusRInput();
 
 	void PartFocusFInput();

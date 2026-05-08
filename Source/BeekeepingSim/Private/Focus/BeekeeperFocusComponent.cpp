@@ -166,6 +166,16 @@ bool UBeekeeperFocusComponent::HandlePartFocusClickInput()
 	return EngagedFocusAction->HandlePartFocusClickInputWhileEngaged(OwnerCharacter);
 }
 
+bool UBeekeeperFocusComponent::HandlePartFocusClickReleasedInput()
+{
+	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
+	{
+		return false;
+	}
+
+	return EngagedFocusAction->HandlePartFocusClickReleasedInputWhileEngaged(OwnerCharacter);
+}
+
 bool UBeekeeperFocusComponent::HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key)
 {
 	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)

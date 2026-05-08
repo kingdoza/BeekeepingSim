@@ -12,6 +12,8 @@
 - `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemAction.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/HoldItemUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemActionContext.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemActionTypes.h`
 - `Source/BeekeepingSim/Public/Inventory/HotbarItemInterface.h`
@@ -36,6 +38,7 @@
 - `UItemDefinition`: 정적 아이템 데이터 asset
 - `UItemInstance`: 런타임 아이템 상태와 action 소유 객체
 - `UItemAction`: 아이템 행동 베이스
+- `UHoldItemUseAction`: use-area query + LMB hold-use lifecycle + 효과 적용 경계 베이스
 - `AItemPresentationActor`: first-person held/on-cursor 표시 actor 베이스
 - `ItemStackMoveUtils`: private stack 계산/생성 helper
 
@@ -44,6 +47,7 @@
 - `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag, max stack, durability 설정, action spec을 가진다.
 - `UItemInstance`는 definition, stack count, durability, instance id, action instance를 가진다.
 - `UItemInstance`는 `IHotbarItemInterface`를 구현해 focus item rule 평가에 필요한 tag를 제공한다.
+- `UItemInstance::FindHoldItemUseAction()`은 선택 아이템의 대표 hold-use action 1개를 조회한다.
 - action 객체의 outer는 `UItemInstance`다.
 
 ## Slot Mutation Model
@@ -95,6 +99,11 @@
 - UI는 drop/quick move 의도를 전달하고, 실제 mutation은 Hotbar/Storage 컴포넌트가 수행한다.
 - 현재 quick move 대상 슬롯 선택은 `UItemSlotWidget::TryQuickMove()`에 남아 있다. 규칙이 늘어나면 `Inventory` private helper 또는 service로 이동하는 것이 다음 개선 후보다.
 - `FItemSlotMoveResult`는 partial move 결과를 UI/Blueprint가 해석할 수 있는 공용 구조체다.
+- FocusEngaged item-use-area 설계에서 실질 아이템사용효과의 owner는 item action이다.
+- Hold-use item action은 LMB Press/Hold/Release lifecycle과 매 Tick `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원하는 방향으로 확장한다.
+- Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
+- `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
+- 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
 
 ## Manual Review Points
 

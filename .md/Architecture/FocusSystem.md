@@ -17,6 +17,10 @@
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaTypes.h`
+- `Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h`
+- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
 
 ## Responsibilities
 
@@ -37,6 +41,8 @@
 - `UAnchoredFocusCursorActionComponent`: anchored action에 cursor/input mode 정책 추가
 - `UCursorPartFocusScopeComponent`: FocusEngaged Host 내부 파츠 hover/confirm/cancel/outline/prompt 스코프
 - `UCursorPartFocusActionComponent`: 파츠별 begin/cancel/abort lifecycle + tag/group 정책
+- `UCursorItemUseAreaScopeComponent`: FocusEngaged host 내부 item-use-area 수집/표시/hover/LMB hold-use scope
+- `IItemUseAreaProvider`: host/child actor가 `FItemUseAreaDescriptor`를 제공하는 인터페이스
 - `IFocusInteractable`: actor-level focus 이벤트 인터페이스
 
 ## State Model
@@ -66,6 +72,22 @@
 - 취소 우선순위:
   - active part action stack 역순 cancel cascade
   - stack 비어 있으면 host focus cancel로 폴백
+
+## FocusEngaged Item Use Area Design
+
+- Item-use area는 벌통 전용이 아니라 FocusEngaged host actor가 선택적으로 제공하는 generic 기능으로 설계한다.
+- Generic naming 기준:
+  - `UCursorItemUseAreaScopeComponent`
+  - `FItemUseAreaDescriptor`
+  - `IItemUseAreaProvider` 또는 `UItemUseAreaProviderComponent`
+- `UCursorItemUseAreaScopeComponent`는 FocusEngaged host 내부에서 선택 아이템 기반 사용영역 표시, 커서 hover 판정, LMB hold item-use session, 실질 효과 routing을 담당한다.
+- FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리한다.
+- FocusEngaged host가 item-use-area를 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
+- Anchored cursor FocusEngaged 진입 시 hotbar 선택은 비워진다. item-use area는 engaged 이후 hotbar에서 대상 아이템을 다시 선택했을 때 활성화된다.
+- 사용영역 표시/점멸은 LMB와 무관하며, host가 item-use-area를 지원하고 대상 아이템이 선택된 동안 대응 영역을 표시한다.
+- item-use area 활성 중에는 PartFocus outline보다 item-use area 표시를 우선하며, 결정된 정책 기준으로 선택 아이템이 있을 때 PartFocus outline은 숨긴다.
+- 커서 trace는 기존 visibility trace를 사용하되 active `FItemUseAreaDescriptor`에 등록된 component인지 추가 검증한다.
+- 여러 사용영역이 겹치면 trace hit result에서 가장 가까운 active area component 1개를 hover/effect 대상으로 사용한다.
 
 ## Part Action Policy
 
@@ -97,6 +119,7 @@
 - Host FocusEngaged 진입은 기존 FocusConfirm 경로를 유지한다.
 - Host FocusEngaged 이후 PartFocus 조작:
   - `LMB`: PartFocus begin/cancel 토글
+  - `LMB Completed`: engaged action release hook으로 전달
   - `R/F/C`: 현재 hover preview 대상의 preview key action dispatch
 - `F` 키는 PartFocus engage/cancel 또는 FocusCancel 입력으로 사용하지 않는다.
 

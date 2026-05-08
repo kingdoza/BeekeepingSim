@@ -27,7 +27,7 @@
 
 ## Key Classes
 
-- `ABeehive`: anchored focus/cursor interaction 예시 actor + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
+- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
 - `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
@@ -48,6 +48,7 @@
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
 - `UCursorPartFocusScopeComponent` 1개 (`CursorPartFocusScope`)
 - `UCursorPartFocusActionComponent` 1개 (`LidPartFocusAction`)
+- `UCursorItemUseAreaScopeComponent` 1개 (`ItemUseAreaScope`)
 - `USplineComponent` 1개 (`SwarmSpline`)를 직접 소유하며 레벨 인스턴스별 편집 대상
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
@@ -82,6 +83,10 @@
   - preview-only component parts (prompt 없음, LMB click no-op)
   - preview key 입력(`R/F/C`)은 hover preview 대상의 action handler에서 선택적으로 처리
 - Beehive/Comb의 실제 lid open-close, comb lift-restore는 action component의 owner-actor delegate(`OnPartFocusBegin/Cancel/Abort`) 또는 component 이벤트 구현 경로에서 처리한다.
+- `ABeehive`는 `IItemUseAreaProvider`를 구현해 lid/comb descriptor(`FItemUseAreaDescriptor`)를 제공한다.
+- descriptor 기본 tag:
+  - lid: `Beehive.UseArea.Lid`
+  - comb: `Beehive.UseArea.Comb`
 
 ### `ABeehiveDualSwarmActor`
 
@@ -160,6 +165,10 @@
 
 - WorldActors는 상태 로직보다 component composition에 집중한다.
 - Actor 이름과 native parent 이름은 Blueprint 참조가 있으므로 rename 시 Core Redirect와 Blueprint migration이 필요하다.
+- FocusEngaged item-use area는 벌통 전용 기능이 아니라 generic host-provider 구조로 다룬다.
+- FocusEngaged host actor는 직접 하위 component tag scan과 child actor provider/interface 수집을 통해 `FItemUseAreaDescriptor`를 구성할 수 있다.
+- `ABeehive`는 generic item-use-area 구조의 첫 구현 host로 본다.
+- 사용영역 mesh는 기존 gameplay mesh component, 반투명 가상 mesh component, child actor 내부 mesh component를 모두 허용하되 최종적으로 descriptor의 `HitComponent`, `VisualComponents`, `EffectTargetObject`로 정규화한다.
 - 벌떼 Niagara particle 이동 로직은 Niagara 시스템에서 처리하고 C++은 spline binding/parameter 주입만 담당한다.
 - `ABeehive`의 방향별 spawn 계산식:
   - `Activity = SpawnAmountByHour ? Curve(Hour24/24) : FallbackActivity`

@@ -92,6 +92,9 @@ public:
 	bool HandleCancelInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
+	void SetHoverOutlineSuppressed(bool bSuppressed);
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	void ClearRegisteredParts();
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
@@ -152,4 +155,5 @@ private:
 
 	int32 HoveredPartIndex = INDEX_NONE;
 	bool bIsScopeActive = false;
+	bool bHoverOutlineSuppressed = false;
 };

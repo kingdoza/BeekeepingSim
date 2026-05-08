@@ -149,6 +149,7 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		if (PartFocusClickAction)
 		{
 			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusClickInput);
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::PartFocusClickReleaseInput);
 		}
 
 		if (PartFocusRAction)
@@ -223,6 +224,16 @@ void ABeekeeperCharacter::PartFocusClickInput()
 	}
 
 	BeekeeperFocus->HandlePartFocusClickInput();
+}
+
+void ABeekeeperCharacter::PartFocusClickReleaseInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusClickReleasedInput();
 }
 
 void ABeekeeperCharacter::PartFocusRInput()

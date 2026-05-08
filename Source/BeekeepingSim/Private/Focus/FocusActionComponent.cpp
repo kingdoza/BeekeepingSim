@@ -50,6 +50,11 @@ bool UFocusActionComponent::HandlePartFocusClickInputWhileEngaged(ABeekeeperChar
 	return false;
 }
 
+bool UFocusActionComponent::HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
 bool UFocusActionComponent::HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key)
 {
 	return false;

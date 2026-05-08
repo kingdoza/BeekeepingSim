@@ -3,9 +3,11 @@
 
 #include "Focus/AnchoredFocusCursorActionComponent.h"
 
+#include "Focus/CursorItemUseAreaScopeComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Character/BeekeeperCharacter.h"
+#include "Inventory/BeekeeperHotbarComponent.h"
 
 bool UAnchoredFocusCursorActionComponent::WantsCrosshairHiddenWhileEngaged() const
 {
@@ -22,6 +24,11 @@ EHotbarPresentationMode UAnchoredFocusCursorActionComponent::GetHotbarPresentati
 	return EHotbarPresentationMode::OnCursor;
 }
 
+bool UAnchoredFocusCursorActionComponent::ShouldClearHotbarSelectionOnFocusEngaged() const
+{
+	return true;
+}
+
 bool UAnchoredFocusCursorActionComponent::HandleConfirmInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
 {
 	// Part-focus click is handled by dedicated LMB input path.
@@ -34,6 +41,11 @@ bool UAnchoredFocusCursorActionComponent::HandleCancelInputWhileEngaged(ABeekeep
 	if (!GetOwner())
 	{
 		return false;
+	}
+
+	if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+	{
+		ItemUseAreaScope->HandleItemUseCanceled();
 	}
 
 	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
@@ -51,9 +63,42 @@ bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickInputWhileEngaged(
 		return false;
 	}
 
+	if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+	{
+		if (ItemUseAreaScope->IsItemUseAreaScopeActive())
+		{
+			const UBeekeeperHotbarComponent* HotbarComponent = InteractingCharacter ? InteractingCharacter->GetBeekeeperHotbar() : nullptr;
+			if (HotbarComponent && HotbarComponent->GetSelectedItemInstance())
+			{
+				if (ItemUseAreaScope->HandleItemUsePressed())
+				{
+					return true;
+				}
+			}
+		}
+	}
+
 	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
 	{
 		return ScopeComponent->HandlePartFocusClickInput();
+	}
+
+	return false;
+}
+
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	if (!GetOwner())
+	{
+		return false;
+	}
+
+	if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+	{
+		if (ItemUseAreaScope->IsItemUseAreaScopeActive() && ItemUseAreaScope->HandleItemUseReleased())
+		{
+			return true;
+		}
 	}
 
 	return false;
@@ -89,6 +134,11 @@ void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharac
 
 	if (GetOwner())
 	{
+		if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+		{
+			ItemUseAreaScope->ActivateItemUseAreaScope(InteractingCharacter);
+		}
+
 		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
 		{
 			ScopeComponent->ActivatePartFocusScope(InteractingCharacter);
@@ -107,6 +157,11 @@ void UAnchoredFocusCursorActionComponent::OnFocusReturnCompleted(ABeekeeperChara
 
 	if (GetOwner())
 	{
+		if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+		{
+			ItemUseAreaScope->DeactivateItemUseAreaScope(true);
+		}
+
 		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
 		{
 			ScopeComponent->DeactivatePartFocusScope(true);
@@ -129,6 +184,11 @@ void UAnchoredFocusCursorActionComponent::OnFocusActionAborted(ABeekeeperCharact
 
 	if (GetOwner())
 	{
+		if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = GetOwner()->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+		{
+			ItemUseAreaScope->DeactivateItemUseAreaScope(true);
+		}
+
 		if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
 		{
 			ScopeComponent->DeactivatePartFocusScope(true);

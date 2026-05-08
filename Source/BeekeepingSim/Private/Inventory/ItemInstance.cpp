@@ -2,6 +2,7 @@
 
 #include "Engine/Texture2D.h"
 #include "Engine/StaticMesh.h"
+#include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemAction.h"
 #include "Inventory/ItemDefinition.h"
 
@@ -96,6 +97,19 @@ UItemAction* UItemInstance::FindActionByTag(FGameplayTag ActionTag) const
 		if (IsValid(Action) && Action->GetActionTypeTag() == ActionTag)
 		{
 			return Action;
+		}
+	}
+
+	return nullptr;
+}
+
+UHoldItemUseAction* UItemInstance::FindHoldItemUseAction() const
+{
+	for (UItemAction* Action : Actions)
+	{
+		if (UHoldItemUseAction* HoldAction = Cast<UHoldItemUseAction>(Action))
+		{
+			return HoldAction;
 		}
 	}
 
