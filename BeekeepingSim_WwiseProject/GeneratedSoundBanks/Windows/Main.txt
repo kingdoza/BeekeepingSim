@@ -1,0 +1,9 @@
+Event	ID	Name			Wwise Object Path	Notes
+	1145416619	sfx_player_footstep_concrete			\Default Work Unit\sfx_player_footstep_concrete	
+
+In Memory Audio	ID	Name	Audio source file		Wwise Object Path	Notes	Data Size
+	35617457	footstep_concrete02	.cache\26\{26D66F69-29B6-D63F-F327-3C7EBA5A6F68}.wem		\Containers\Default Work Unit\footstep_concrete\footstep_concrete02		22048
+	229904905	footstep_concrete01	.cache\98\{98680572-5B67-AEDC-1DD5-D69A18D625D6}.wem		\Containers\Default Work Unit\footstep_concrete\footstep_concrete01		33720
+	623152525	footstep_concrete03	.cache\79\{793579CB-CFF7-00A3-DBB4-F33DDCD5864C}.wem		\Containers\Default Work Unit\footstep_concrete\footstep_concrete03		31480
+	828605018	footstep_concrete04	.cache\7F\{7FEA788C-C44F-0122-3F9D-5589EA9EC78E}.wem		\Containers\Default Work Unit\footstep_concrete\footstep_concrete04		35716
+
