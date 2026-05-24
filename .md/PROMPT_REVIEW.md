@@ -1,85 +1,63 @@
-# 구현 리뷰 프롬프트: DynamicSky SkyAtmosphere Scattering 방식 변경
+# 구현 리뷰 프롬프트: Beekeeper Flashlight Toggle (`T`)
 
 ## 우선순위
 
-1. High: DynamicSky scattering source of truth 교체 정확성
-2. High: 일출/일몰 `GapTime` 전환 보간 규칙 정확성 (자정 wrap 포함)
-3. High: 기존 시간 소스/구독/visibility 규칙 회귀 없음
-4. Medium: Editor preview 즉시 반영 정확성
-5. Medium: 문서 본문/USER_UNREAL 정합성
+1. High: 책임 분리 준수 (`ABeekeeperCharacter` 입력 라우팅 / `UBeekeeperFlashlightComponent` 상태·조명 관리)
+2. High: 입력/토글 동작 정확성 (`FlashlightToggleAction` Started 바인딩, focus lock 무관 토글)
+3. High: 카메라 부착 및 로컬 정책 준수 (1인칭 카메라 추종, replication 미도입)
+4. Medium: 기존 입력/시스템 회귀 없음
+5. Medium: 문서/Editor 수동 작업 안내 정합성
 
 ---
 
 ## 리뷰 대상 파일
 
 ### 코드
-- `Source/BeekeepingSim/Public/Environment/DynamicSky.h`
-- `Source/BeekeepingSim/Private/Environment/DynamicSky.cpp`
-- `Source/BeekeepingSim/Public/Environment/DynamicSkyTypes.h` (변경 시)
+- `Source/BeekeepingSim/Public/Character/BeekeeperFlashlightComponent.h`
+- `Source/BeekeepingSim/Private/Character/BeekeeperFlashlightComponent.cpp`
+- `Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h`
+- `Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp`
 
 ### 문서
-- `.md/Architecture/EnvironmentSystem.md`
+- `.md/Architecture/CharacterSystem.md`
+- `.md/0_ARCHITECTURE.md`
 - `.md/USER_UNREAL.md`
 
 ---
 
 ## 핵심 검증 항목
 
-### High 1: Curve 제거 / 4개 값 전환
-- `ADynamicSky`에서 아래 식별자가 완전히 제거되었는가:
-  - `RayleighScatteringCurve`
-  - `MultiScatteringCurve`
-  - `FallbackRayleighScattering`
-  - `FallbackMultiScattering`
-- 대신 아래 4개가 source of truth로 존재하는가:
-  - `SunLightRayleighScattering`
-  - `NoSunLightRayleighScattering`
-  - `SunLightMultiScattering`
-  - `NoSunLightMultiScattering`
-- `CurveTime = Hour24 / 24.0` 기반 scattering 평가가 제거되었는가
+### High 1: 책임 분리
+- `ABeekeeperCharacter`가 손전등 상태를 직접 소유하지 않고 입력에서 `ToggleFlashlight()`만 호출하는가
+- `UBeekeeperFlashlightComponent`가 아래를 담당하는가:
+  - `USpotLightComponent` 소유
+  - 내부 on/off 상태
+  - 조명 설정 적용(강도/거리/콘각/색/그림자)
 
-### High 2: 보간 규칙 정확성
-- `EvaluateSunLightBlendAlpha(float Hour24)`가 다음 의미를 지키는가:
-  - `0.0`: no-sunlight 안정 구간
-  - `1.0`: sunlight 안정 구간
-  - `0..1`: 일출/일몰 전환 구간
-- 일출 전환:
-  - `SunriseHour - GapTime` ~ `SunriseHour + GapTime`
-  - `NoSunLight* -> SunLight*` 보간
-- 일몰 전환:
-  - `SunsetHour - GapTime` ~ `SunsetHour + GapTime`
-  - `SunLight* -> NoSunLight*` 보간
-- 자정 wrap 구간에서도 alpha가 끊기지 않는가
-- RayleighScattering 보간은 `FLinearColor` 채널별 linear lerp인지 확인 (HSV 보간 없음)
-- MultiScattering 보간은 float linear lerp인지 확인
+### High 2: 입력/토글
+- `FlashlightToggleAction` property가 추가되었는가
+- `SetupPlayerInputComponent()`에서 null check 후 `ETriggerEvent::Started`로 바인딩하는가
+- `FlashlightToggleInput()`이 `bIsFocusInteractionInputLocked` 조건으로 차단되지 않는가
+- `SetFlashlightEnabled(true/false)`가 실제 `SpotLight` visibility와 동기화되는가
 
-### High 3: 기존 동작 회귀 없음
-- Sun/Moon visibility 배타 규칙 유지:
-  - `bSunLightVisible` 와 `bMoonLightVisible`이 동시에 true가 되는 경로 없음
-- MID 파라미터 규칙:
-  - `IsStarVisible`은 태양빛 존재시간 기준으로 설정되는가
-  - `IsMoonVisible`은 항상 `1.0`으로 설정되는가
-- `ApplySkyStateInternal` 적용 방식 유지:
-  - `SetRayleighScattering(...)`
-  - `SetMultiScatteringFactor(FMath::Max(0.0f, MultiScattering))`
-- 시간 source / bucket / clock 관련 클래스(`AGameTimeOfDayActor`, `ITimeOfDayProvider`, `UGameTimeBucketSubsystem`, `ABeekeeperController`) 변경 없음
+### High 3: 카메라 부착 및 로컬 정책
+- `BeginPlay()`에서 손전등이 `FirstPersonCamera`에 부착되는가
+- 시점 회전에 따라 손전등 방향이 카메라를 추종하는 구조인가
+- replication/RPC 코드가 추가되지 않았는가
+- 손전등이 gameplay authority/AI 감지 경로로 연결되지 않았는가
 
-### Medium 1: Editor Preview 반영
-- `PostEditChangeProperty`에서 preview 즉시 반영 트리거가 아래를 포함하는가:
-  - `SunLightRayleighScattering`
-  - `NoSunLightRayleighScattering`
-  - `SunLightMultiScattering`
-  - `NoSunLightMultiScattering`
-  - `SunriseHour`, `SunsetHour`, `GapTime`, `OrbitYaw`, `PreviewHour24`
-- `bUseEditorPreviewTime` 조건 하에서 PIE 없이 적용되는가
+### Medium 1: 회귀 방지
+- 기존 입력 property (`PartFocusF/R/C`, focus/hotbar/sprint/jump/move/look) rename/delete 없음
+- 기존 Focus/Inventory/UI/Environment 로직 변경 없음
+- `#include "Public/..."` 패턴 없음
 
-### Medium 2: include/타입 정리
-- `DynamicSky`에서 `UCurveLinearColor` forward declaration/include가 제거되었는가
-- `#include "Public/..."` 패턴이 없는가
-
-### Medium 3: 문서 정합성
-- `EnvironmentSystem.md`에 curve 방식 제거 + 4개 값 + `GapTime` 보간 규칙이 기록되었는가
-- `USER_UNREAL.md`에서 curve asset 연결 안내가 제거되고 4개 scattering 값 설정 안내가 반영되었는가
+### Medium 2: 문서/수동 작업
+- Character 문서에 flashlight 컴포넌트/흐름/검증 포인트가 반영되었는가
+- `USER_UNREAL`에 아래 수동 작업이 명시되었는가:
+  - `IA_FlashlightToggle` 생성
+  - Mapping Context에 추가 + `T` 키 매핑
+  - `BP_BeekeeperCharacter.FlashlightToggleAction` 할당
+  - BP compile/save
 
 ---
 
@@ -89,25 +67,21 @@
   - `BeekeepingSimEditor Win64 Development`
 
 - 검색:
-  - `rg "RayleighScatteringCurve|MultiScatteringCurve|FallbackRayleighScattering|FallbackMultiScattering|CurveTime" Source/BeekeepingSim/Public/Environment/DynamicSky.h Source/BeekeepingSim/Private/Environment/DynamicSky.cpp -n`
-  - `rg "SunLightRayleighScattering|NoSunLightRayleighScattering|SunLightMultiScattering|NoSunLightMultiScattering|EvaluateSunLightBlendAlpha|EvaluateRayleighScattering|EvaluateMultiScattering" Source/BeekeepingSim/Public/Environment/DynamicSky.h Source/BeekeepingSim/Private/Environment/DynamicSky.cpp -n`
-  - `rg "UCurveLinearColor" Source/BeekeepingSim/Public/Environment/DynamicSky.h Source/BeekeepingSim/Private/Environment/DynamicSky.cpp -n`
+  - `rg "BeekeeperFlashlight|FlashlightToggleAction|FlashlightToggleInput|ToggleFlashlight|SetFlashlightEnabled|InitializeFlashlightAttachment" Source/BeekeepingSim/Public/Character Source/BeekeepingSim/Private/Character -n`
+  - `rg "bIsFocusInteractionInputLocked" Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp -n`
+  - `rg "GetLifetimeReplicatedProps|DOREPLIFETIME|Server|Client|NetMulticast" Source/BeekeepingSim/Public/Character Source/BeekeepingSim/Private/Character -n`
   - `rg '#include \"Public/' Source/BeekeepingSim/Public Source/BeekeepingSim/Private -n`
 
 ---
 
-## 수동 검증 가이드 (Editor)
+## 수동 검증 가이드 (PIE)
 
-1. `ADynamicSky::bUseEditorPreviewTime` ON
-2. `PreviewHour24`를 일출 전/중/후로 이동
-   - scattering이 `NoSunLight -> SunLight`로 연속 보간되는지
-3. `PreviewHour24`를 일몰 전/중/후로 이동
-   - scattering이 `SunLight -> NoSunLight`로 연속 보간되는지
-4. `GapTime` 증가/감소
-   - 전환 구간 폭이 함께 증가/감소하는지
-5. 낮/밤 안정 구간 확인
-   - 낮: `SunLight*` 값 고정
-   - 밤: `NoSunLight*` 값 고정
+1. `T` 입력 시 손전등 On
+2. 다시 `T` 입력 시 Off
+3. 마우스 시점 이동 시 손전등 방향이 카메라와 함께 회전
+4. FocusEngaged/입력 잠금 상태에서도 `T` 토글 동작
+5. 이동/점프/스프린트/focus/hotbar 기존 입력 정상 동작
+6. `BeekeeperFlashlight` Details 값 변경 시 밝기/거리/콘각/그림자 반영
 
 ---
 
@@ -117,3 +91,4 @@
 2. Open Questions / Assumptions
 3. Regression Risks
 4. 최종 판단: Pass / Conditional Pass / Fail
+

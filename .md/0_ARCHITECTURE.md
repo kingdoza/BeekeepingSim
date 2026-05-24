@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 98개
-  - Public header: 54개
-  - Private cpp/header: 44개
+- 현재 대상 C++ 파일 수: 100개
+  - Public header: 55개
+  - Private cpp/header: 45개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -58,7 +58,7 @@ Source/BeekeepingSim/
 - 시스템 하위 폴더명은 include 경로의 1차 네임스페이스 역할을 한다.
 - 현재 파일 분포:
   - Camera: Public 1 / Private 1
-  - Character: Public 4 / Private 4
+  - Character: Public 5 / Private 5
   - Environment: Public 5 / Private 2
   - Focus: Public 13 / Private 8
   - Interaction: Public 2 / Private 2

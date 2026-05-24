@@ -229,3 +229,26 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
   - Verify bucket-driven world gameplay still reacts on schedule.
 - Blueprint compile/save:
   - Recompile/save any level Blueprint or actor Blueprint that references old time actor wiring if warnings appear.
+
+## Beekeeper Flashlight Toggle (2026-05-24)
+
+- Input assets:
+  - Create `IA_FlashlightToggle` input action.
+  - Add it to the player mapping context.
+  - Map key `T` to `IA_FlashlightToggle`.
+- Character blueprint wiring:
+  - Assign `IA_FlashlightToggle` to `BP_BeekeeperCharacter.FlashlightToggleAction`.
+- Flashlight tuning:
+  - In `BeekeeperFlashlight` component details, tune:
+    - `Intensity`
+    - `AttenuationRadius`
+    - `InnerConeAngle`
+    - `OuterConeAngle`
+    - `bCastShadows`
+    - `RelativeLocation` / `RelativeRotation`
+- Validation:
+  - Press `T` to toggle On/Off in PIE.
+  - Verify flashlight direction follows first-person camera rotation.
+  - Verify toggle still works while focus interaction input is locked.
+- Save/compile:
+  - Compile/save `BP_BeekeeperCharacter` and related input assets.

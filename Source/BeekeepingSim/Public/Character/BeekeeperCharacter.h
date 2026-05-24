@@ -11,6 +11,7 @@ class UBeekeeperCameraShakeComponent;
 class UBeekeeperFocusComponent;
 class UBeekeeperHotbarComponent;
 class UBeekeeperHeldItemVisualizerComponent;
+class UBeekeeperFlashlightComponent;
 struct FInputActionValue;
 class UInputAction;
 class UCameraComponent;
@@ -41,6 +42,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBeekeeperHeldItemVisualizerComponent> BeekeeperHeldItemVisualizer;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBeekeeperFlashlightComponent> BeekeeperFlashlight;
 	
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float MouseSensitivity;
@@ -81,6 +85,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> PartFocusCAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> FlashlightToggleAction;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MoveSpeedScale = 1;
@@ -121,6 +128,8 @@ protected:
 	void PartFocusFInput();
 
 	void PartFocusCInput();
+
+	void FlashlightToggleInput();
 	
 	UFUNCTION(Blueprintable, Category = "Input")
 	void DoMove(float Right, float Forward);
@@ -147,6 +156,8 @@ public:
 	UBeekeeperHotbarComponent* GetBeekeeperHotbar() const { return BeekeeperHotbar; }
 
 	UBeekeeperHeldItemVisualizerComponent* GetBeekeeperHeldItemVisualizer() const { return BeekeeperHeldItemVisualizer; }
+
+	UBeekeeperFlashlightComponent* GetBeekeeperFlashlight() const { return BeekeeperFlashlight; }
 
 	void SetFocusInteractionInputLocked(bool bLocked);
 

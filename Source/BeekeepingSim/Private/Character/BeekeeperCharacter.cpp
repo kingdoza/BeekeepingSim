@@ -7,6 +7,7 @@
 #include "Focus/BeekeeperFocusComponent.h"
 #include "Focus/CursorPartFocusTypes.h"
 #include "Character/BeekeeperHeldItemVisualizerComponent.h"
+#include "Character/BeekeeperFlashlightComponent.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Character/BeekeeperMovementComponent.h"
 #include "Camera/CameraComponent.h"
@@ -29,6 +30,9 @@ ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitial
 	FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
 	FirstPersonCamera->SetRelativeLocationAndRotation(FVector(-2.8f, 5.89f, 0.0f), FRotator(0.0f, 90.0f, -90.0f));
 	FirstPersonCamera->bUsePawnControlRotation = true;
+
+	BeekeeperFlashlight = CreateDefaultSubobject<UBeekeeperFlashlightComponent>(TEXT("BeekeeperFlashlight"));
+	BeekeeperFlashlight->SetupAttachment(FirstPersonCamera);
 	
 	GetMesh()->SetOwnerNoSee(true);
 	GetMesh()->CastShadow = false;
@@ -52,6 +56,11 @@ void ABeekeeperCharacter::BeginPlay()
 	{
 		DefaultFirstPersonCameraRelativeLocation = FirstPersonCamera->GetRelativeLocation();
 		DefaultFirstPersonCameraRelativeRotation = FirstPersonCamera->GetRelativeRotation();
+
+		if (BeekeeperFlashlight)
+		{
+			BeekeeperFlashlight->InitializeFlashlightAttachment(FirstPersonCamera);
+		}
 	}
 }
 
@@ -166,6 +175,11 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		{
 			EnhancedInputComponent->BindAction(PartFocusCAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusCInput);
 		}
+
+		if (FlashlightToggleAction)
+		{
+			EnhancedInputComponent->BindAction(FlashlightToggleAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FlashlightToggleInput);
+		}
 	}
 }
 
@@ -264,6 +278,16 @@ void ABeekeeperCharacter::PartFocusCInput()
 	}
 
 	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::C);
+}
+
+void ABeekeeperCharacter::FlashlightToggleInput()
+{
+	if (!BeekeeperFlashlight)
+	{
+		return;
+	}
+
+	BeekeeperFlashlight->ToggleFlashlight();
 }
 
 void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)

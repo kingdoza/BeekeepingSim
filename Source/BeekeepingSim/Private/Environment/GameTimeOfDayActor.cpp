@@ -8,7 +8,7 @@
 
 namespace
 {
-	constexpr float MinDayLengthSeconds = 1.0f;
+	constexpr float MinGameTimeDayLengthSeconds = 1.0f;
 }
 
 AGameTimeOfDayActor::AGameTimeOfDayActor()
@@ -48,7 +48,7 @@ void AGameTimeOfDayActor::Tick(float DeltaTime)
 		return;
 	}
 
-	if (DayLengthSeconds < MinDayLengthSeconds)
+	if (DayLengthSeconds < MinGameTimeDayLengthSeconds)
 	{
 		if (!bHasLoggedInvalidDayLength)
 		{
