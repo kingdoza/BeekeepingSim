@@ -6,6 +6,8 @@
 #include "BeekeepingSimCameraManager.h"
 #include "Character/BeekeeperCharacter.h"
 #include "Environment/EnvironmentTimeOfDayActor.h"
+#include "Environment/GameTimeOfDayActor.h"
+#include "Environment/TimeOfDayProvider.h"
 #include "Environment/TimeOfDayTypes.h"
 #include "EngineUtils.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
@@ -36,24 +38,45 @@ void ABeekeeperController::BeginPlay()
 		}
 	}
 
-	BoundTimeOfDayActor = FindTimeOfDayActor();
-	if (!BoundTimeOfDayActor)
+	BoundTimeOfDayProviderActor = FindTimeOfDayProviderActor();
+	if (!BoundTimeOfDayProviderActor)
 	{
-		UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("%s could not find AEnvironmentTimeOfDayActor for time-of-day clock widget binding."), *GetName());
+		UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("%s could not find ITimeOfDayProvider actor for time-of-day clock widget binding."), *GetName());
 		return;
 	}
 
-	BoundTimeOfDayActor->OnTimeOfDayChanged.AddDynamic(this, &ABeekeeperController::HandleTimeOfDayChanged);
-	HandleTimeOfDayChanged(BoundTimeOfDayActor->GetCurrentHour24(), FTimeOfDayVisualState());
+	BoundGameTimeOfDayActor = Cast<AGameTimeOfDayActor>(BoundTimeOfDayProviderActor);
+	BoundLegacyEnvironmentActor = Cast<AEnvironmentTimeOfDayActor>(BoundTimeOfDayProviderActor);
+
+	if (BoundGameTimeOfDayActor)
+	{
+		BoundGameTimeOfDayActor->OnGameTimeOfDayChanged.AddDynamic(this, &ABeekeeperController::HandleGameTimeOfDayChanged);
+		HandleGameTimeOfDayChanged(BoundGameTimeOfDayActor->GetCurrentHour24());
+		return;
+	}
+
+	if (BoundLegacyEnvironmentActor)
+	{
+		BoundLegacyEnvironmentActor->OnTimeOfDayChanged.AddDynamic(this, &ABeekeeperController::HandleTimeOfDayChanged);
+		HandleTimeOfDayChanged(BoundLegacyEnvironmentActor->GetCurrentHour24(), FTimeOfDayVisualState());
+	}
 }
 
 void ABeekeeperController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (BoundTimeOfDayActor)
+	if (BoundGameTimeOfDayActor)
 	{
-		BoundTimeOfDayActor->OnTimeOfDayChanged.RemoveDynamic(this, &ABeekeeperController::HandleTimeOfDayChanged);
-		BoundTimeOfDayActor = nullptr;
+		BoundGameTimeOfDayActor->OnGameTimeOfDayChanged.RemoveDynamic(this, &ABeekeeperController::HandleGameTimeOfDayChanged);
+		BoundGameTimeOfDayActor = nullptr;
 	}
+
+	if (BoundLegacyEnvironmentActor)
+	{
+		BoundLegacyEnvironmentActor->OnTimeOfDayChanged.RemoveDynamic(this, &ABeekeeperController::HandleTimeOfDayChanged);
+		BoundLegacyEnvironmentActor = nullptr;
+	}
+
+	BoundTimeOfDayProviderActor = nullptr;
 
 	if (TimeOfDayClockWidget)
 	{
@@ -118,7 +141,7 @@ bool ABeekeeperController::AdjustActiveItemSlotDragQuantity(float WheelDelta)
 	return PreviousQuantity != ActiveItemSlotDragOperation->MoveQuantity;
 }
 
-AEnvironmentTimeOfDayActor* ABeekeeperController::FindTimeOfDayActor() const
+AActor* ABeekeeperController::FindTimeOfDayProviderActor() const
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -126,27 +149,71 @@ AEnvironmentTimeOfDayActor* ABeekeeperController::FindTimeOfDayActor() const
 		return nullptr;
 	}
 
-	AEnvironmentTimeOfDayActor* FoundActor = nullptr;
-	for (TActorIterator<AEnvironmentTimeOfDayActor> It(World); It; ++It)
+	return FindCanonicalTimeProviderActor(World, true);
+}
+
+AActor* ABeekeeperController::FindCanonicalTimeProviderActor(UWorld* World, bool bLogIfMultiple) const
+{
+	AGameTimeOfDayActor* FirstGameTimeActor = nullptr;
+	AEnvironmentTimeOfDayActor* FirstLegacyActor = nullptr;
+	int32 GameTimeActorCount = 0;
+	int32 LegacyActorCount = 0;
+
+	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		if (!FoundActor)
+		AActor* Candidate = *It;
+		if (!IsValid(Candidate) || !Candidate->GetClass()->ImplementsInterface(UTimeOfDayProvider::StaticClass()))
 		{
-			FoundActor = *It;
+			continue;
 		}
-		else
+
+		if (AGameTimeOfDayActor* GameTimeActor = Cast<AGameTimeOfDayActor>(Candidate))
 		{
-			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple AEnvironmentTimeOfDayActor instances detected for clock widget. Using first discovered actor: %s"), *GetNameSafe(FoundActor));
-			break;
+			++GameTimeActorCount;
+			if (!FirstGameTimeActor)
+			{
+				FirstGameTimeActor = GameTimeActor;
+			}
+			continue;
+		}
+
+		if (AEnvironmentTimeOfDayActor* LegacyActor = Cast<AEnvironmentTimeOfDayActor>(Candidate))
+		{
+			++LegacyActorCount;
+			if (!FirstLegacyActor)
+			{
+				FirstLegacyActor = LegacyActor;
+			}
 		}
 	}
 
-	return FoundActor;
+	if (bLogIfMultiple)
+	{
+		if (GameTimeActorCount > 1)
+		{
+			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple AGameTimeOfDayActor instances detected for clock widget. Using first discovered actor: %s"), *GetNameSafe(FirstGameTimeActor));
+		}
+		if (GameTimeActorCount == 0 && LegacyActorCount > 1)
+		{
+			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple legacy AEnvironmentTimeOfDayActor providers detected for clock widget. Using first discovered actor: %s"), *GetNameSafe(FirstLegacyActor));
+		}
+	}
+
+	return FirstGameTimeActor ? static_cast<AActor*>(FirstGameTimeActor) : static_cast<AActor*>(FirstLegacyActor);
 }
 
 void ABeekeeperController::HandleTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState)
 {
 	(void)VisualState;
 
+	if (TimeOfDayClockWidget)
+	{
+		TimeOfDayClockWidget->SetHour24(Hour24);
+	}
+}
+
+void ABeekeeperController::HandleGameTimeOfDayChanged(float Hour24)
+{
 	if (TimeOfDayClockWidget)
 	{
 		TimeOfDayClockWidget->SetHour24(Hour24);

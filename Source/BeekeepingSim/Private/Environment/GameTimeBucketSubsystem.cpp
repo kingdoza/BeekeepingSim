@@ -1,29 +1,44 @@
 #include "Environment/GameTimeBucketSubsystem.h"
 
 #include "Environment/EnvironmentTimeOfDayActor.h"
+#include "Environment/GameTimeOfDayActor.h"
 #include "Environment/GameTimeBucketListener.h"
+#include "Environment/TimeOfDayProvider.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 
 void UGameTimeBucketSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 	RefreshListeners();
-	EnsureTimeActorBound();
+	EnsureTimeProviderBound();
 }
 
 void UGameTimeBucketSubsystem::Deinitialize()
 {
-	UnbindTimeActor();
+	UnbindTimeProviderActor();
 	RegisteredSubscriptions.Reset();
 	Super::Deinitialize();
 }
 
 void UGameTimeBucketSubsystem::SetTimeOfDayActor(AEnvironmentTimeOfDayActor* InTimeOfDayActor)
 {
-	BindTimeActor(InTimeOfDayActor);
-	if (IsValid(TimeOfDayActor))
+	SetTimeOfDayProvider(InTimeOfDayActor);
+}
+
+void UGameTimeBucketSubsystem::SetTimeOfDayProvider(AActor* InTimeOfDayProviderActor)
+{
+	// Keep canonical source stable: legacy provider cannot override an already bound game-time actor.
+	if (BoundGameTimeActor && InTimeOfDayProviderActor && !InTimeOfDayProviderActor->IsA<AGameTimeOfDayActor>())
 	{
-		ProcessSubscriptionsForCurrentTime(TimeOfDayActor->GetCurrentHour24(), false);
+		return;
+	}
+
+	BindTimeProviderActor(InTimeOfDayProviderActor);
+	if (IsValid(TimeOfDayProviderActor) && TimeOfDayProviderActor->GetClass()->ImplementsInterface(UTimeOfDayProvider::StaticClass()))
+	{
+		const float CurrentHour24 = ITimeOfDayProvider::Execute_GetCurrentHour24(TimeOfDayProviderActor);
+		ProcessSubscriptionsForCurrentTime(CurrentHour24, false);
 	}
 }
 
@@ -47,9 +62,10 @@ void UGameTimeBucketSubsystem::RegisterListener(AActor* ListenerActor)
 		RegisteredSubscriptions.Add(MoveTemp(Entry));
 	}
 
-	if (IsValid(TimeOfDayActor))
+	if (IsValid(TimeOfDayProviderActor) && TimeOfDayProviderActor->GetClass()->ImplementsInterface(UTimeOfDayProvider::StaticClass()))
 	{
-		ProcessSubscriptionsForCurrentTime(TimeOfDayActor->GetCurrentHour24(), false);
+		const float CurrentHour24 = ITimeOfDayProvider::Execute_GetCurrentHour24(TimeOfDayProviderActor);
+		ProcessSubscriptionsForCurrentTime(CurrentHour24, false);
 	}
 }
 
@@ -98,9 +114,9 @@ void UGameTimeBucketSubsystem::HandleTimeOfDayChanged(float Hour24, const FTimeO
 	ProcessSubscriptionsForCurrentTime(Hour24, bWrappedDay);
 }
 
-bool UGameTimeBucketSubsystem::EnsureTimeActorBound()
+bool UGameTimeBucketSubsystem::EnsureTimeProviderBound()
 {
-	if (IsValid(TimeOfDayActor))
+	if (IsValid(TimeOfDayProviderActor))
 	{
 		return true;
 	}
@@ -111,54 +127,122 @@ bool UGameTimeBucketSubsystem::EnsureTimeActorBound()
 		return false;
 	}
 
-	AEnvironmentTimeOfDayActor* FoundActor = nullptr;
-	for (TActorIterator<AEnvironmentTimeOfDayActor> It(World); It; ++It)
-	{
-		if (!FoundActor)
-		{
-			FoundActor = *It;
-		}
-		else
-		{
-			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple AEnvironmentTimeOfDayActor instances detected. Using first discovered actor: %s"), *GetNameSafe(FoundActor));
-			break;
-		}
-	}
+	AActor* FoundActor = FindCanonicalTimeProviderActor(World, true);
 
 	if (FoundActor)
 	{
-		BindTimeActor(FoundActor);
+		BindTimeProviderActor(FoundActor);
 		return true;
 	}
 
 	return false;
 }
 
-void UGameTimeBucketSubsystem::BindTimeActor(AEnvironmentTimeOfDayActor* InActor)
+AActor* UGameTimeBucketSubsystem::FindCanonicalTimeProviderActor(UWorld* World, bool bLogIfMultiple) const
 {
-	if (TimeOfDayActor == InActor)
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	AGameTimeOfDayActor* FirstGameTimeActor = nullptr;
+	AEnvironmentTimeOfDayActor* FirstLegacyActor = nullptr;
+	int32 GameTimeActorCount = 0;
+	int32 LegacyActorCount = 0;
+
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Candidate = *It;
+		if (!IsValid(Candidate) || !Candidate->GetClass()->ImplementsInterface(UTimeOfDayProvider::StaticClass()))
+		{
+			continue;
+		}
+
+		if (AGameTimeOfDayActor* GameTimeActor = Cast<AGameTimeOfDayActor>(Candidate))
+		{
+			++GameTimeActorCount;
+			if (!FirstGameTimeActor)
+			{
+				FirstGameTimeActor = GameTimeActor;
+			}
+			continue;
+		}
+
+		if (AEnvironmentTimeOfDayActor* LegacyActor = Cast<AEnvironmentTimeOfDayActor>(Candidate))
+		{
+			++LegacyActorCount;
+			if (!FirstLegacyActor)
+			{
+				FirstLegacyActor = LegacyActor;
+			}
+		}
+	}
+
+	if (bLogIfMultiple)
+	{
+		if (GameTimeActorCount > 1)
+		{
+			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple AGameTimeOfDayActor instances detected for bucket subsystem. Using first discovered actor: %s"), *GetNameSafe(FirstGameTimeActor));
+		}
+		if (GameTimeActorCount == 0 && LegacyActorCount > 1)
+		{
+			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("Multiple legacy AEnvironmentTimeOfDayActor providers detected for bucket subsystem. Using first discovered actor: %s"), *GetNameSafe(FirstLegacyActor));
+		}
+	}
+
+	return FirstGameTimeActor ? static_cast<AActor*>(FirstGameTimeActor) : static_cast<AActor*>(FirstLegacyActor);
+}
+
+void UGameTimeBucketSubsystem::BindTimeProviderActor(AActor* InActor)
+{
+	if (TimeOfDayProviderActor == InActor)
 	{
 		return;
 	}
 
-	UnbindTimeActor();
-	TimeOfDayActor = InActor;
+	UnbindTimeProviderActor();
+	TimeOfDayProviderActor = InActor;
 	CurrentDayOffset = 0;
 	LastObservedMinuteOfDay = INDEX_NONE;
 
-	if (IsValid(TimeOfDayActor))
+	if (!IsValid(TimeOfDayProviderActor))
 	{
-		TimeOfDayActor->OnTimeOfDayChanged.AddDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
+		return;
+	}
+
+	BoundGameTimeActor = Cast<AGameTimeOfDayActor>(TimeOfDayProviderActor);
+	if (BoundGameTimeActor)
+	{
+		BoundGameTimeActor->OnGameTimeOfDayChanged.AddDynamic(this, &UGameTimeBucketSubsystem::HandleGameTimeOfDayChanged);
+		return;
+	}
+
+	BoundLegacyEnvironmentActor = Cast<AEnvironmentTimeOfDayActor>(TimeOfDayProviderActor);
+	if (BoundLegacyEnvironmentActor)
+	{
+		BoundLegacyEnvironmentActor->OnTimeOfDayChanged.AddDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
 	}
 }
 
-void UGameTimeBucketSubsystem::UnbindTimeActor()
+void UGameTimeBucketSubsystem::UnbindTimeProviderActor()
 {
-	if (IsValid(TimeOfDayActor))
+	if (BoundGameTimeActor)
 	{
-		TimeOfDayActor->OnTimeOfDayChanged.RemoveDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
+		BoundGameTimeActor->OnGameTimeOfDayChanged.RemoveDynamic(this, &UGameTimeBucketSubsystem::HandleGameTimeOfDayChanged);
+		BoundGameTimeActor = nullptr;
 	}
-	TimeOfDayActor = nullptr;
+
+	if (BoundLegacyEnvironmentActor)
+	{
+		BoundLegacyEnvironmentActor->OnTimeOfDayChanged.RemoveDynamic(this, &UGameTimeBucketSubsystem::HandleTimeOfDayChanged);
+		BoundLegacyEnvironmentActor = nullptr;
+	}
+	TimeOfDayProviderActor = nullptr;
+}
+
+void UGameTimeBucketSubsystem::HandleGameTimeOfDayChanged(float Hour24)
+{
+	HandleTimeOfDayChanged(Hour24, FTimeOfDayVisualState());
 }
 
 void UGameTimeBucketSubsystem::RemoveListenerEntries(AActor* ListenerActor)

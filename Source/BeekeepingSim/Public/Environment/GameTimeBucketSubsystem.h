@@ -6,6 +6,7 @@
 #include "GameTimeBucketSubsystem.generated.h"
 
 class AEnvironmentTimeOfDayActor;
+class AGameTimeOfDayActor;
 struct FTimeOfDayVisualState;
 
 UCLASS()
@@ -19,6 +20,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Game Time Bucket")
 	void SetTimeOfDayActor(AEnvironmentTimeOfDayActor* InTimeOfDayActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Game Time Bucket")
+	void SetTimeOfDayProvider(AActor* InTimeOfDayProviderActor);
 
 	UFUNCTION(BlueprintCallable, Category = "Game Time Bucket")
 	void RegisterListener(AActor* ListenerActor);
@@ -41,10 +45,13 @@ private:
 
 	UFUNCTION()
 	void HandleTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState);
+	UFUNCTION()
+	void HandleGameTimeOfDayChanged(float Hour24);
 
-	bool EnsureTimeActorBound();
-	void BindTimeActor(AEnvironmentTimeOfDayActor* InActor);
-	void UnbindTimeActor();
+	bool EnsureTimeProviderBound();
+	AActor* FindCanonicalTimeProviderActor(UWorld* World, bool bLogIfMultiple) const;
+	void BindTimeProviderActor(AActor* InActor);
+	void UnbindTimeProviderActor();
 	void RemoveListenerEntries(AActor* ListenerActor);
 	void RemoveInvalidEntries();
 	void ProcessSubscriptionsForCurrentTime(float Hour24, bool bWrappedDay);
@@ -57,7 +64,13 @@ private:
 	static float MinuteOfDayToHour24(int32 MinuteOfDay);
 
 	UPROPERTY()
-	TObjectPtr<AEnvironmentTimeOfDayActor> TimeOfDayActor = nullptr;
+	TObjectPtr<AActor> TimeOfDayProviderActor = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AGameTimeOfDayActor> BoundGameTimeActor = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AEnvironmentTimeOfDayActor> BoundLegacyEnvironmentActor = nullptr;
 
 	TArray<FRegisteredGameTimeBucketSubscription> RegisteredSubscriptions;
 	int32 CurrentDayOffset = 0;

@@ -204,3 +204,28 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 원하는 최종 방향이 있으면 코드 보정 대신 `CombLiftTargetRoot`를 에디터에서 직접 회전시켜 맞춘다.
 - 소비장 기본 이동/복귀는 C++ `UBeehiveCombLiftComponent`가 처리한다.
 - `ReceiveCombPartFocusBegin/Cancel/Abort`는 추가 연출(사운드/이펙트) 용도로 사용한다.
+## DynamicSky / GameTimeOfDay (2026-05-24)
+
+- Level placement:
+  - Place one `AGameTimeOfDayActor` in the level.
+  - Place one `ADynamicSky` in the level.
+- `ADynamicSky` asset wiring:
+  - Assign `SkySphereMeshAsset` and `SkySphereMaterial`.
+  - Set `SunLightRayleighScattering` and `NoSunLightRayleighScattering` colors.
+  - Set `SunLightMultiScattering` and `NoSunLightMultiScattering` float values.
+  - Curve assets are no longer used for DynamicSky Rayleigh/MultiScattering.
+  - Verify `SunDirectionalLight` uses Atmosphere Sun Light Index `0`.
+  - Verify `MoonDirectionalLight` uses Atmosphere Sun Light Index `1`.
+  - Sun/Moon directional light component visibility is not toggled by DynamicSky at runtime.
+- Start time from preview:
+  - Enable `bUseEditorPreviewTime`.
+  - Set `PreviewHour24`.
+  - Keep `bStartGameTimeFromPreviewHour` enabled to start PIE from the DynamicSky preview hour.
+- Transition cleanup:
+  - Existing `AEnvironmentTimeOfDayActor` should not be used as the primary sky visual actor for new levels.
+- Validation checklist:
+  - Toggle `bUseEditorPreviewTime` on `ADynamicSky`, change `PreviewHour24`, verify immediate visual updates.
+  - In PIE, verify clock widget updates from provider time.
+  - Verify bucket-driven world gameplay still reacts on schedule.
+- Blueprint compile/save:
+  - Recompile/save any level Blueprint or actor Blueprint that references old time actor wiring if warnings appear.

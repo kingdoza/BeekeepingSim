@@ -106,7 +106,7 @@ Source/BeekeepingSim/
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
-- Runtime clock UI는 bucket system을 사용하지 않는다. `ABeekeeperController`가 `AEnvironmentTimeOfDayActor`를 resolve하고 `OnTimeOfDayChanged`를 구독해 `UTimeOfDayClockWidget`에 `Hour24`를 주입한다.
+- Runtime clock UI는 bucket system을 사용하지 않는다. `ABeekeeperController`가 `ITimeOfDayProvider`를 resolve하고, `AGameTimeOfDayActor`를 우선 구독해 `UTimeOfDayClockWidget`에 `Hour24`를 주입한다. (`AEnvironmentTimeOfDayActor`는 compatibility fallback)
 
 ## 주요 의존 방향
 
@@ -119,7 +119,7 @@ Source/BeekeepingSim/
 - WorldActors -> Focus, Interaction, Inventory, Environment
 - Environment -> Core
 
-WorldActors의 Environment 의존은 `AEnvironmentTimeOfDayActor` 직접 참조/polling이 아니라 `IGameTimeBucketListener` interface + `UGameTimeBucketSubsystem` dispatch 경로로 제한한다. 단, local runtime clock UI binding은 `ABeekeeperController`가 Environment actor를 직접 resolve하는 Character-side UI 편의 경로다.
+WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아니라 `IGameTimeBucketListener` interface + `UGameTimeBucketSubsystem` dispatch 경로로 제한한다. local runtime clock UI binding은 `ABeekeeperController`의 provider resolve(`ITimeOfDayProvider`, `AGameTimeOfDayActor` 우선) 경로를 사용한다.
 
 의존 방향은 완전한 단방향 레이어가 아니라 Unreal 컴포넌트 조합을 반영한다. 새 기능을 추가할 때는 "상태 오너"와 "표시/입력 라우터"를 먼저 구분한다.
 
@@ -136,3 +136,13 @@ WorldActors의 Environment 의존은 `AEnvironmentTimeOfDayActor` 직접 참조/
 - C++ domain state mutation은 각 시스템의 컴포넌트/actor가 맡고, Widget은 입력 의도와 표시 상태를 라우팅한다.
 - UI 편의 흐름을 제외한 gameplay actor 간 시간 반응은 직접 polling보다 interface/subsystem event 경로를 우선 사용한다.
 - 새 시스템, 새 의존 방향, Blueprint/API 계약 변경은 이 문서와 관련 `.md/Architecture/*System.md`를 함께 갱신한다.
+
+## Update 2026-05-24
+
+- Environment time ownership is split:
+  - `AGameTimeOfDayActor` owns runtime `Hour24` progression and `OnGameTimeOfDayChanged(float)`.
+  - `ADynamicSky` consumes `ITimeOfDayProvider` and applies sky visuals only.
+- `ITimeOfDayProvider` is the shared time-source contract for runtime consumers.
+- `UGameTimeBucketSubsystem` now supports provider binding via `SetTimeOfDayProvider(AActor*)` and keeps `SetTimeOfDayActor(...)` as compatibility wrapper.
+- `ABeekeeperController` clock binding resolves `ITimeOfDayProvider` first (prefers `AGameTimeOfDayActor` delegate path).
+- `AEnvironmentTimeOfDayActor` remains for compatibility/transition and now also exposes `OnGameTimeOfDayChanged(float)`.

@@ -24,6 +24,14 @@
 - 레벨 디자이너가 light/fog/sky actor와 curve asset을 연결할 수 있는 최소 Blueprint 계약 제공
 - gameplay actor가 분 단위 bucket 경계 이벤트를 구독할 수 있는 world subsystem 제공
 
+## Canonical Runtime Model (2026-05-24+)
+
+- Runtime 시간 source of truth는 `AGameTimeOfDayActor`다.
+- 공통 시간 계약은 `ITimeOfDayProvider`다.
+- `UGameTimeBucketSubsystem`은 provider를 구독해 bucket 이벤트를 dispatch한다.
+- `ADynamicSky`는 provider hour를 받아 visual만 갱신한다(시간 누적/변이 금지).
+- `AEnvironmentTimeOfDayActor`는 compatibility/transition actor다.
+
 ## Key Classes
 
 - `AEnvironmentTimeOfDayActor`: 레벨에 1개 배치되는 환경 director
@@ -89,7 +97,7 @@
 
 ## Game Time Bucket Model
 
-- `UGameTimeBucketSubsystem`은 world begin play에서 listener scan을 수행하고, `AEnvironmentTimeOfDayActor::BeginPlay()`가 `SetTimeOfDayActor(this)`를 호출하면 해당 actor에 bind한다.
+- `UGameTimeBucketSubsystem`은 world begin play에서 listener scan을 수행하고, `ITimeOfDayProvider`를 canonical 정책(`AGameTimeOfDayActor` 우선, legacy fallback)으로 bind한다.
 - Listener는 runtime spawn 시 직접 `RegisterListener()`를 호출할 수 있고, `EndPlay`에서 `UnregisterListener()`를 호출해야 한다.
 - 하나의 actor는 `SubscriptionTag`가 다른 여러 subscription을 반환할 수 있다.
 - `LatestOnly`는 경계가 여러 개 지나도 현재 bucket만 dispatch한다.
@@ -220,7 +228,7 @@
 
 - Environment는 레벨 전역 연출 authority다. gameplay actor나 UI가 별도 시간 흐름을 소유하지 않는다.
 - `ABeehiveDualSwarmActor`는 환경 concrete class를 모른 채 상위 actor(`ABeehive`)가 계산한 최종 parameter를 전달받는다.
-- `AEnvironmentTimeOfDayActor`는 BeginPlay에서 `UGameTimeBucketSubsystem::SetTimeOfDayActor(this)`를 호출해 수동 지정 우선 경로를 제공한다.
+- `AEnvironmentTimeOfDayActor`는 transition 호환을 위해 BeginPlay에서 provider 등록을 시도하되, `AGameTimeOfDayActor`가 존재하면 canonical source를 덮어쓰지 않는다.
 - 시간대별 연출 값은 curve asset 데이터로 authoring하고, C++은 평가/적용만 담당한다.
 - 새벽 안개, 아침 주황, 낮 하늘색, 저녁 노을, 밤 남색은 `Sky*ColorCurve`와 `FogDensityCurve`로 표현한다.
 - 태양/달 활성 정책은 light intensity curve만 믿지 않고 지평선 판정으로 한 번 더 강제한다.
@@ -242,6 +250,54 @@
 
 ## Time Clock UI Integration
 
-- Runtime clock UI owner는 `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 직접 구독할 수 있다.
+- Runtime clock UI owner는 controller를 통해 provider 값을 주입받는다. (`AGameTimeOfDayActor::OnGameTimeOfDayChanged` 우선)
 - Clock UI는 `UGameTimeBucketSubsystem`을 사용하지 않는다. Bucket dispatch는 gameplay bucket logic 전용이다.
 - 현재 흐름은 `ABeekeeperController`가 environment actor를 resolve하고 `UTimeOfDayClockWidget`에 `Hour24`를 주입하는 방식이다.
+
+## Update 2026-05-24 (DynamicSky/GameTimeOfDay Split)
+
+- New `ITimeOfDayProvider` interface is the canonical runtime time-source contract.
+- New `AGameTimeOfDayActor` owns:
+  - `Hour24` source of truth
+  - day-length progression
+  - `OnGameTimeOfDayChanged(float Hour24)` delegate broadcast
+- New `ADynamicSky` owns environment visual components and applies visuals from provider hour only.
+- `ADynamicSky` configures its directional light components for SkyAtmosphere ownership:
+  - `SunDirectionalLight`: `AtmosphereSunLight=true`, `AtmosphereSunLightIndex=0`
+  - `MoonDirectionalLight`: `AtmosphereSunLight=true`, `AtmosphereSunLightIndex=1`
+- `ADynamicSky` does not toggle Sun/Moon directional light component visibility at runtime.
+- Sky sphere material visibility parameters:
+  - `IsStarVisible` follows the sun-light presence window.
+  - `IsMoonVisible` is always set to `1.0`.
+- `ADynamicSky` can optionally use its editor preview hour as the runtime start hour when `bUseEditorPreviewTime` and `bStartGameTimeFromPreviewHour` are both true.
+  - Canonical path: `AGameTimeOfDayActor` resolves `ADynamicSky::PreviewHour24` before its first time broadcast.
+  - Legacy path: `ADynamicSky` pushes `PreviewHour24` to `AEnvironmentTimeOfDayActor` on BeginPlay.
+- `UGameTimeBucketSubsystem` now binds providers through `SetTimeOfDayProvider(AActor*)`.
+- `AEnvironmentTimeOfDayActor` is retained as transition-compatible actor; existing public Blueprint APIs remain available.
+
+## Update 2026-05-24 (DynamicSky SkyAtmosphere Scattering Simplification)
+
+- `ADynamicSky` no longer uses curve assets for SkyAtmosphere `RayleighScattering` and `MultiScattering`.
+- DynamicSky scattering source of truth is four Details-panel values:
+  - `SunLightRayleighScattering` (`FLinearColor`)
+  - `NoSunLightRayleighScattering` (`FLinearColor`)
+  - `SunLightMultiScattering` (`float`)
+  - `NoSunLightMultiScattering` (`float`)
+- The same `GapTime` used by the sun-light presence window is also the scattering transition width.
+- Sun/Moon world rotation uses unclamped extrapolation outside the canonical orbit range:
+  - Sun: `SunriseHour` to `SunsetHour` maps exactly to `0 -> -180` degrees.
+  - Sun gap intervals continue the same angular velocity outside that range.
+  - Moon: `SunsetHour` to next `SunriseHour` maps exactly to `0 -> -180` degrees.
+  - Moon gap intervals continue the same angular velocity outside that range.
+- Sunrise transition:
+  - `SunriseHour - GapTime` to `SunriseHour + GapTime`
+  - interpolate from no-sunlight values to sunlight values.
+- Sunset transition:
+  - `SunsetHour - GapTime` to `SunsetHour + GapTime`
+  - interpolate from sunlight values to no-sunlight values.
+- Stable sunlight window uses sunlight values.
+- Stable non-sunlight window uses no-sunlight values.
+- Removed DynamicSky curve contract:
+  - `RayleighScatteringCurve`
+  - `MultiScatteringCurve`
+  - curve fallback values and curve evaluation logic.

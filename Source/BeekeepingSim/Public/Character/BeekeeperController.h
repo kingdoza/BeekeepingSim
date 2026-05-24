@@ -12,6 +12,8 @@ class UStorageBoxComponent;
 class UItemSlotDragDropOperation;
 class UTimeOfDayClockWidget;
 class AEnvironmentTimeOfDayActor;
+class AGameTimeOfDayActor;
+class AActor;
 struct FTimeOfDayVisualState;
 
 UCLASS()
@@ -65,13 +67,23 @@ protected:
 	TObjectPtr<UTimeOfDayClockWidget> TimeOfDayClockWidget;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AEnvironmentTimeOfDayActor> BoundTimeOfDayActor;
+	TObjectPtr<AActor> BoundTimeOfDayProviderActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AGameTimeOfDayActor> BoundGameTimeOfDayActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AEnvironmentTimeOfDayActor> BoundLegacyEnvironmentActor;
 	
 	virtual void SetupInputComponent() override;
 
 private:
-	AEnvironmentTimeOfDayActor* FindTimeOfDayActor() const;
+	AActor* FindCanonicalTimeProviderActor(UWorld* World, bool bLogIfMultiple) const;
+	AActor* FindTimeOfDayProviderActor() const;
 
 	UFUNCTION()
 	void HandleTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState);
+
+	UFUNCTION()
+	void HandleGameTimeOfDayChanged(float Hour24);
 };

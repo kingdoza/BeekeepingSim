@@ -14,16 +14,29 @@
   <component name="ChangeListManager">
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/EnvironmentSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/EnvironmentSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/UISystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/UISystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beehive/BP_Beehive.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/USER_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/USER_UNREAL.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeePollenPatty.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_BeePollenPatty.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Items/Definitions/DA_Sprayer.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Items/Definitions/DA_Sprayer.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Material/M_ItemUseArea.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Material/M_ItemUseArea.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/7/MB/E8JF54C51FGECC78SRLKT4.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/5/OV/3O1OXCA1I5JJLUIXNVM85I.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/A/LW/P69SY5UXF6B0Z02KZ9VMOD.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/A/X4/GN6LNMPSU0ACB0YR9JEQ37.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/B/ER/XIY1ZIX4U1CKIX072Z1FP1.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/E/41/CJTUYL9QJYG3F72P15L1NI.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/E/41/CJTUYL9QJYG3F72P15L1NI.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalObjects__/Beekeeper/Lvl_BeekeeperTest/2/8F/LE4GLMGZWY340N821DUIKI.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperController.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeBucketSubsystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeBucketSubsystem.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperController.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Environment/EnvironmentTimeOfDayActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Environment/EnvironmentTimeOfDayActor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Environment/GameTimeBucketSubsystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Environment/GameTimeBucketSubsystem.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -246,6 +259,8 @@
       <workItem from="1777925305926" duration="16870000" />
       <workItem from="1778170678250" duration="2593000" />
       <workItem from="1778250525842" duration="2747000" />
+      <workItem from="1779574093144" duration="210000" />
+      <workItem from="1779574373656" duration="3132000" />
     </task>
     <servers />
   </component>

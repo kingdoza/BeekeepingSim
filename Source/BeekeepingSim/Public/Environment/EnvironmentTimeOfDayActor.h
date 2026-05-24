@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Environment/TimeOfDayProvider.h"
 #include "Environment/TimeOfDayTypes.h"
 #include "GameFramework/Actor.h"
 #include "EnvironmentTimeOfDayActor.generated.h"
@@ -20,7 +21,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBeekeepingEnvironment, Log, All);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTimeOfDayChangedSignature, float, Hour24, const FTimeOfDayVisualState&, VisualState);
 
 UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API AEnvironmentTimeOfDayActor : public AActor
+class BEEKEEPINGSIM_API AEnvironmentTimeOfDayActor : public AActor, public ITimeOfDayProvider
 {
 	GENERATED_BODY()
 
@@ -28,12 +29,13 @@ public:
 	AEnvironmentTimeOfDayActor();
 
 	virtual void Tick(float DeltaTime) override;
+	virtual float GetCurrentHour24_Implementation() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "Time Of Day")
 	void SetCurrentHour24(float NewHour);
 
-	UFUNCTION(BlueprintCallable, Category = "Time Of Day")
-	float GetCurrentHour24() const { return CurrentHour24; }
+	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Time Of Day")
+	float GetCurrentHour24() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Time Of Day")
 	void SetTimeProgressionEnabled(bool bEnabled);
@@ -46,6 +48,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Time Of Day")
 	FOnTimeOfDayChangedSignature OnTimeOfDayChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Time Of Day")
+	FOnGameTimeOfDayChangedSignature OnGameTimeOfDayChanged;
 
 protected:
 	virtual void BeginPlay() override;

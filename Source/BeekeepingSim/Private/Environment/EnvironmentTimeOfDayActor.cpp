@@ -1,6 +1,7 @@
 #include "Environment/EnvironmentTimeOfDayActor.h"
 
 #include "Environment/GameTimeBucketSubsystem.h"
+#include "Environment/GameTimeOfDayActor.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -10,6 +11,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/SkyLight.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "UObject/UnrealType.h"
@@ -62,7 +64,21 @@ void AEnvironmentTimeOfDayActor::BeginPlay()
 	{
 		if (UGameTimeBucketSubsystem* BucketSubsystem = World->GetSubsystem<UGameTimeBucketSubsystem>())
 		{
-			BucketSubsystem->SetTimeOfDayActor(this);
+			AGameTimeOfDayActor* FoundGameTimeActor = nullptr;
+			for (TActorIterator<AGameTimeOfDayActor> It(World); It; ++It)
+			{
+				FoundGameTimeActor = *It;
+				break;
+			}
+
+			if (FoundGameTimeActor)
+			{
+				BucketSubsystem->SetTimeOfDayProvider(FoundGameTimeActor);
+			}
+			else
+			{
+				BucketSubsystem->SetTimeOfDayProvider(this);
+			}
 		}
 	}
 }
@@ -96,6 +112,11 @@ void AEnvironmentTimeOfDayActor::Tick(float DeltaTime)
 	ApplyCurrentTimeState();
 }
 
+float AEnvironmentTimeOfDayActor::GetCurrentHour24_Implementation() const
+{
+	return CurrentHour24;
+}
+
 void AEnvironmentTimeOfDayActor::SetCurrentHour24(float NewHour)
 {
 	CurrentHour24 = NormalizeHour(NewHour);
@@ -118,6 +139,7 @@ void AEnvironmentTimeOfDayActor::ApplyPreviewTime()
 	const FTimeOfDayVisualState PreviewState = EvaluateVisualState(PreviewHour24);
 	ApplyVisualState(PreviewState);
 	OnTimeOfDayChanged.Broadcast(PreviewState.Hour24, PreviewState);
+	OnGameTimeOfDayChanged.Broadcast(PreviewState.Hour24);
 #endif
 }
 
@@ -343,6 +365,7 @@ void AEnvironmentTimeOfDayActor::ApplyCurrentTimeState()
 	const FTimeOfDayVisualState State = EvaluateCurrentVisualState();
 	ApplyVisualState(State);
 	OnTimeOfDayChanged.Broadcast(State.Hour24, State);
+	OnGameTimeOfDayChanged.Broadcast(State.Hour24);
 }
 
 float AEnvironmentTimeOfDayActor::EvaluateCurveFloatOrFallback(const UCurveFloat* Curve, float Time, float FallbackValue) const

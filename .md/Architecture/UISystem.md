@@ -50,7 +50,7 @@
 ## Time Clock Flow
 
 1. `ABeekeeperController`가 local player에서 `UTimeOfDayClockWidget`을 생성하고 viewport에 추가한다.
-2. Controller가 `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged`를 구독한다.
+2. Controller가 `ITimeOfDayProvider`를 resolve하고 `AGameTimeOfDayActor::OnGameTimeOfDayChanged`를 우선 구독한다.
 3. 시간이 바뀌면 controller가 `UTimeOfDayClockWidget::SetHour24()`를 호출한다.
 4. Widget은 `Hour24`를 `[0, 24)`로 normalize하고 `FloorToInt(Hour24 * 60)` 기준 total minute로 변환한다.
 5. 표시 minute가 이전 값과 다를 때만 `OnDisplayedTimeChanged(NewTimeText, Hour, Minute)`를 호출한다.
@@ -112,5 +112,10 @@
 - full stack drag cancel/drop 후 source visual 복구 여부
 - storage UI 종료 시 active drag operation과 active storage context 정리 여부
 - clock widget이 같은 minute 안에서 불필요하게 Blueprint 이벤트를 반복 호출하지 않는지 확인
-- clock widget이 환경 actor를 직접 검색하거나 gameplay bucket subsystem에 의존하지 않는지 확인
+- clock widget이 provider를 직접 resolve하지 않고, controller 주입 경로만 사용하는지 확인
 - Blueprint에서 legacy wrapper를 제거하려면 먼저 `WBP_ItemSlot` 그래프를 새 API로 migration해야 한다.
+
+## Update 2026-05-24
+
+- `UTimeOfDayClockWidget` API is unchanged.
+- Time injection source is migrated at controller side from concrete environment actor lookup to provider-based lookup (`ITimeOfDayProvider`).

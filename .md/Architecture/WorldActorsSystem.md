@@ -261,3 +261,8 @@
 - `AWorldItemPickup::OnConstruction()` 후 prompt/mesh가 item definition과 동기화되는지 확인
 - StorageBox interaction 종료 후 storage component 상태는 유지되고 UI transient state만 정리되는지 확인
 - `BeehiveDualSwarmActorCustomization`이 unrelated NiagaraComponent details를 숨기지 않고 벌통/소비장 관련 Niagara에만 적용되는지 확인
+
+## Update 2026-05-24
+
+- WorldActors bucket listener integration now consumes provider-backed bucket events (`UGameTimeBucketSubsystem` bound to `ITimeOfDayProvider`).
+- No direct `AGameTimeOfDayActor` dependency is introduced in WorldActors gameplay actors.

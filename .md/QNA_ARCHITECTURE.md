@@ -228,7 +228,7 @@
   - 옵션 B: 각 사용영역 provider/child actor가 자신의 occupied 상태를 관리한다.
   - 옵션 C: item-use-area scope가 occupied 상태를 transient로 관리한다.
 - 권장 옵션: 옵션 A
-답변: 옵션
+답변: 옵션 A
 
 8. 화분떡 사용영역 비활성화 방식
 - 질문 내용: 화분떡이 이미 있는 사용영역을 어떤 방식으로 비활성화할지 결정이 필요하다.
@@ -238,7 +238,7 @@
   - 옵션 B: descriptor에 `bBlocked`/`bOccupied` 같은 필드를 추가하고 scope가 active filter에서 제외한다.
   - 옵션 C: descriptor는 반환하되 visual만 숨기고 effect만 막는다.
 - 권장 옵션: 옵션 A
-답변: 옵션
+답변: 옵션 A
 
 9. 화분떡 아이템 소모 정책
 - 질문 내용: 화분떡 부착 성공 시 아이템 stack을 어떻게 처리할지 결정이 필요하다.
@@ -258,3 +258,67 @@
   - 옵션 B: `EffectTargetObject`를 slot 전용 actor/component로 두고, action이 그 target에 직접 설치를 요청한다.
   - 옵션 C: action이 hit component 이름으로 slot을 역추적한다.
 - 권장 옵션: 옵션 A
+답변: 옵션 A
+
+### DynamicSky TimeOfDay QnA
+
+1. TimeOfDay 소유자 분리 방식
+- 질문 내용: `EnvironmentTimeOfDay`가 환경 표현용으로 사용되지 않게 될 때, 게임 시간 `TimeOfDay`를 어떤 객체가 소유할지 결정이 필요하다.
+- 필요한 이유: 현재 `AEnvironmentTimeOfDayActor`는 `CurrentHour24`, 시간 진행, `OnTimeOfDayChanged`, 환경 시각 적용을 모두 소유한다. DynamicSky 도입 후에도 벌통 bucket, clock UI, 이후 gameplay time event는 같은 `Hour24` 기준을 계속 사용해야 하므로 시간 source of truth를 명확히 분리해야 한다.
+- 선택지
+  - 옵션 A: 기존 `AEnvironmentTimeOfDayActor`에서 환경 표현 로직만 제거하고, 시간 소유자/이벤트 broadcaster로 유지한다.
+  - 옵션 B: 새 `AGameTimeOfDayActor`를 만들고, 기존 `AEnvironmentTimeOfDayActor`의 시간 소유/진행/이벤트 책임을 이관한다.
+  - 옵션 C: `UWorldSubsystem` 기반 시간 관리자로 옮기고, actor 배치 없이 월드 단위로 `TimeOfDay`를 소유한다.
+- 권장 옵션: 옵션 B
+답변: 옵션 B
+
+2. 기존 `OnTimeOfDayChanged` delegate 호환 정책
+- 질문 내용: DynamicSky 도입 시 기존 `OnTimeOfDayChanged(float Hour24, const FTimeOfDayVisualState& VisualState)` 시그니처를 유지할지, 시간 전용 delegate로 새로 만들지 결정이 필요하다.
+- 필요한 이유: `FTimeOfDayVisualState`는 기존 Environment 표현 결과를 담는 구조체다. DynamicSky가 표현 책임을 가져가면 시간 source가 visual state를 계산해 넘기는 것은 책임 경계와 맞지 않는다. 하지만 기존 delegate를 바로 변경하면 Blueprint/API 참조, bucket subsystem, clock widget binding에 영향이 있다.
+- 선택지
+  - 옵션 A: 기존 delegate를 유지하고 `FTimeOfDayVisualState`는 transition 기간 동안만 전달한다.
+  - 옵션 B: 새 시간 전용 delegate를 추가한다. 예: `OnGameTimeOfDayChanged(float Hour24)`. 기존 delegate는 deprecated wrapper로 유지한다.
+  - 옵션 C: 기존 delegate를 즉시 시간 전용 시그니처로 변경하고 관련 참조를 한 번에 migration한다.
+- 권장 옵션: 옵션 B
+답변: 옵션 B
+
+3. DynamicSky의 TimeOfDay 연결 방식
+- 질문 내용: `ADynamicSky`가 runtime `TimeOfDay`를 어떤 방식으로 받을지 결정이 필요하다.
+- 필요한 이유: DynamicSky는 실시간으로 하늘 상태를 갱신해야 하지만 게임 시간을 소유하면 안 된다. concrete actor 직접 참조, interface 구독, subsystem 조회 중 어떤 경로를 공식 계약으로 둘지 정해야 Blueprint authoring과 C++ 의존성이 안정된다.
+- 선택지
+  - 옵션 A: `ADynamicSky`가 `AGameTimeOfDayActor` concrete reference를 가진다.
+  - 옵션 B: `ITimeOfDayProvider` interface를 구현한 actor를 참조하고, `GetCurrentHour24` 및 time changed 구독 API를 통해 연결한다.
+  - 옵션 C: `ADynamicSky`가 `UWorldSubsystem` 시간 관리자를 직접 조회해 구독한다.
+- 권장 옵션: 옵션 B
+답변: 옵션 B
+
+4. 에디터 프리뷰 시작시간의 런타임 반영 주체
+- 질문 내용: `ADynamicSky::bStartPlayFromPreviewHour`가 true일 때 preview 시간이 실제 게임 시작 시간에 어떻게 반영될지 결정이 필요하다.
+- 필요한 이유: 에디터 프리뷰 시간은 DynamicSky의 visual preview 값이고, runtime `TimeOfDay`는 별도 시간 소유자가 가진다. DynamicSky가 BeginPlay에서 시간 소유자의 값을 직접 변경하면 표현 actor가 domain time을 mutate하는 예외가 생긴다.
+- 선택지
+  - 옵션 A: `ADynamicSky`가 BeginPlay에서 TimeOfDay owner에 `PreviewHour24`를 직접 설정한다.
+  - 옵션 B: TimeOfDay owner가 자체 `InitialHour24`/preview-start 옵션을 소유하고, DynamicSky preview 시간은 visual preview에만 사용한다.
+  - 옵션 C: editor utility 또는 level setting에서 DynamicSky preview 값을 TimeOfDay owner 초기값으로 동기화한다.
+- 권장 옵션: 옵션 B
+답변: 옵션 A 확장안. `ADynamicSky`가 `bUseEditorPreviewTime`과 `bStartGameTimeFromPreviewHour`가 모두 true일 때 게임 시작 시간을 DynamicSky preview 시간과 동기화한다. Canonical `AGameTimeOfDayActor`는 첫 `OnGameTimeOfDayChanged` broadcast 전에 `ADynamicSky::PreviewHour24`를 시작 시간으로 채택한다. Legacy `AEnvironmentTimeOfDayActor` provider 경로에서는 `ADynamicSky`가 BeginPlay에서 `PreviewHour24`를 `SetCurrentHour24`로 주입한다.
+
+5. SkyAtmosphere curve 타입 계약
+- 질문 내용: SkyAtmosphere의 `RayleighScattering`과 `MultiScattering`을 어떤 curve 타입으로 authoring할지 결정이 필요하다.
+- 필요한 이유: 두 값은 단순 float로 볼 수도 있고, RGB/vector 성분을 가진 색/벡터 값으로 다룰 수도 있다. 타입 계약이 확정되어야 Details 패널 property, 평가 함수, Blueprint asset authoring 방식이 정해진다.
+- 선택지
+  - 옵션 A: `UCurveFloat`를 사용해 scalar 값만 시간대별로 조절한다.
+  - 옵션 B: `UCurveLinearColor` 또는 vector curve를 사용해 채널별 값을 시간대별로 조절한다.
+  - 옵션 C: curve asset 대신 `FRuntimeFloatCurve`/inline curve를 actor property로 노출한다.
+  - 옵션 D: curve를 사용하지 않고 태양빛 존재시간용/비존재시간용 `RayleighScattering` 색상 2개와 `MultiScattering` float 2개를 Details 값으로 노출한다. 일출/일몰 주변 `GapTime` 전환 구간에서는 두 상태 값을 보간한다.
+- 권장 옵션: 옵션 B
+답변: 옵션 D. 기존 curve 기반 설계는 폐기한다. `RayleighScatteringCurve`, `MultiScatteringCurve`, curve 평가 로직은 제거하고, 태양빛 존재시간 여부와 gap 보간 alpha로 `RayleighScattering` 색상 2개와 `MultiScattering` float 2개를 평가한다.
+
+6. Sun/Moon 궤도 회전축과 기준 방향
+- 질문 내용: "0도에서 -180도까지 회전"을 Unreal `FRotator`에서 어떤 축과 기준 방향으로 해석할지 결정이 필요하다.
+- 필요한 이유: DirectionalLight의 빛 방향은 actor rotation convention에 의존한다. Pitch 기준으로 0 -> -180을 적용할지, 기존 east-west yaw 보간과 결합할지, art direction상 해가 뜨는 방향을 어떤 world axis로 둘지 확정해야 레벨/sky material/그림자 방향이 일관된다.
+- 선택지
+  - 옵션 A: Pitch를 0 -> -180으로 보간하고 Yaw는 고정 `OrbitYaw`를 사용한다.
+  - 옵션 B: 기존 EnvironmentTimeOfDay처럼 altitude를 pitch로, 동서 이동을 yaw 보간으로 계산한다.
+  - 옵션 C: `USplineComponent` 또는 authoring curve로 sun/moon rotation을 직접 정의한다.
+- 권장 옵션: 옵션 A
+답변: 옵션 A 확장안. 태양과 달의 회전 기준은 `WorldRotation`이다. 태양과 달은 공통 궤적을 사용하며, 해당 궤적의 `Yaw`는 Details 패널에서 조절 가능해야 한다.
