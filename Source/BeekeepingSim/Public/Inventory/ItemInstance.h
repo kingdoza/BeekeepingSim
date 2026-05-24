@@ -10,6 +10,7 @@
 
 class UItemAction;
 class UItemDefinition;
+class UHoldItemUseAction;
 class AItemPresentationActor;
 
 UCLASS(BlueprintType)
@@ -70,6 +71,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemAction* FindActionByTag(FGameplayTag ActionTag) const;
+
+	UFUNCTION(BlueprintPure, Category = "Item")
+	UHoldItemUseAction* FindHoldItemUseAction() const;
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	bool HasActionByTag(FGameplayTag ActionTag) const;

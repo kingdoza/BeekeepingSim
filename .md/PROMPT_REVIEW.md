@@ -1,94 +1,94 @@
-# 코드 리뷰 요청 프롬프트 (Environment 24시간 하늘/조명/태양/달 시스템)
+# 구현 리뷰 프롬프트: Beekeeper Flashlight Toggle (`T`)
 
-아래 변경은 Unreal Engine 5.7 기준 `Environment` 신규 시스템 구현이다.  
-리뷰 목표는 **시간 모델 정확성, 태양/달 활성 정책, Blueprint 계약 안정성, 문서-코드 일치성** 검증이다.
+## 우선순위
 
----
-
-## 리뷰 전제 (구현 사실)
-
-- 신규 Source 추가:
-  - `Source/BeekeepingSim/Public/Environment/TimeOfDayTypes.h`
-  - `Source/BeekeepingSim/Public/Environment/EnvironmentTimeOfDayActor.h`
-  - `Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp`
-- 신규 타입:
-  - `FTimeOfDayCurveSet`
-  - `FTimeOfDayVisualState`
-  - `AEnvironmentTimeOfDayActor`
-- Blueprint 계약:
-  - `SetCurrentHour24(float)`
-  - `GetCurrentHour24() const`
-  - `SetTimeProgressionEnabled(bool)`
-  - `ApplyPreviewTime()`
-  - `EvaluateCurrentVisualState() const`
-  - `OnTimeOfDayChanged(float, const FTimeOfDayVisualState&)`
+1. High: 책임 분리 준수 (`ABeekeeperCharacter` 입력 라우팅 / `UBeekeeperFlashlightComponent` 상태·조명 관리)
+2. High: 입력/토글 동작 정확성 (`FlashlightToggleAction` Started 바인딩, focus lock 무관 토글)
+3. High: 카메라 부착 및 로컬 정책 준수 (1인칭 카메라 추종, replication 미도입)
+4. Medium: 기존 입력/시스템 회귀 없음
+5. Medium: 문서/Editor 수동 작업 안내 정합성
 
 ---
 
-## 리뷰 목표
+## 리뷰 대상 파일
 
-1. `CurrentHour24` wrap/진행 로직이 24시간 모델에 맞는지
-2. 태양/달 궤도와 light on/off 정책이 요구사항과 일치하는지
-3. curve null 시 fallback 경로가 안전한지
-4. editor preview 경로(`PostEditChangeProperty`, `CallInEditor`)가 runtime clock과 분리되어 있는지
-5. tick/로그/skylight recapture 정책이 과도하지 않은지
-6. 문서 반영(`0_ARCHITECTURE`, `EnvironmentSystem`, `USER_UNREAL`)이 구현과 일치하는지
+### 코드
+- `Source/BeekeepingSim/Public/Character/BeekeeperFlashlightComponent.h`
+- `Source/BeekeepingSim/Private/Character/BeekeeperFlashlightComponent.cpp`
+- `Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h`
+- `Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp`
 
----
-
-## 리뷰 대상 경로
-
-- `Source/BeekeepingSim/Public/Environment/**`
-- `Source/BeekeepingSim/Private/Environment/**`
+### 문서
+- `.md/Architecture/CharacterSystem.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/EnvironmentSystem.md`
 - `.md/USER_UNREAL.md`
 
 ---
 
-## 필수 검증 포인트
+## 핵심 검증 항목
 
-### A. 시간/궤도 계산
-- `DayLengthSeconds` 기반 `HoursPerSecond = 24 / DayLengthSeconds` 적용 여부
-- `CurrentHour24` normalize/wrap 안전성
-- `SunriseHour`, `SunsetHour`, `MaxSunAltitudeDegrees`, `CelestialYawOffsetDegrees` 반영 여부
-- `MoonHour = CurrentHour24 + 12` wrap 평가 여부
+### High 1: 책임 분리
+- `ABeekeeperCharacter`가 손전등 상태를 직접 소유하지 않고 입력에서 `ToggleFlashlight()`만 호출하는가
+- `UBeekeeperFlashlightComponent`가 아래를 담당하는가:
+  - `USpotLightComponent` 소유
+  - 내부 on/off 상태
+  - 조명 설정 적용(강도/거리/콘각/색/그림자)
 
-### B. light 활성 정책
-- 태양이 지평선 아래면 `SunIntensity = 0` 강제 여부
-- 태양이 떠 있으면 moon intensity가 0으로 강제되는지
-- `bMoonLightActive = !bSunAboveHorizon && bMoonAboveHorizon` 정책 일치 여부
+### High 2: 입력/토글
+- `FlashlightToggleAction` property가 추가되었는가
+- `SetupPlayerInputComponent()`에서 null check 후 `ETriggerEvent::Started`로 바인딩하는가
+- `FlashlightToggleInput()`이 `bIsFocusInteractionInputLocked` 조건으로 차단되지 않는가
+- `SetFlashlightEnabled(true/false)`가 실제 `SpotLight` visibility와 동기화되는가
 
-### C. curve/fallback 안전성
-- 모든 curve pointer가 optional로 동작하는지
-- null curve에서 fallback이 사용되는지
-- 음수 강도/밀도 clamp 처리 적절성
+### High 3: 카메라 부착 및 로컬 정책
+- `BeginPlay()`에서 손전등이 `FirstPersonCamera`에 부착되는가
+- 시점 회전에 따라 손전등 방향이 카메라를 추종하는 구조인가
+- replication/RPC 코드가 추가되지 않았는가
+- 손전등이 gameplay authority/AI 감지 경로로 연결되지 않았는가
 
-### D. 적용 경로 안전성
-- `SkyLight` recapture가 tick마다 발생하지 않는지 (`bRecaptureSkyLightOnApply` opt-in)
-- `SkyParameterCollection` 미설정/instance 실패 시 crash 없이 동작하는지
-- warning 로그가 tick마다 반복되지 않는지
+### Medium 1: 회귀 방지
+- 기존 입력 property (`PartFocusF/R/C`, focus/hotbar/sprint/jump/move/look) rename/delete 없음
+- 기존 Focus/Inventory/UI/Environment 로직 변경 없음
+- `#include "Public/..."` 패턴 없음
 
-### E. Blueprint/API 안정성
-- 요구된 함수/프로퍼티/델리게이트 이름이 정확히 일치하는지
-- `#include "Public/..."` 위반이 없는지
+### Medium 2: 문서/수동 작업
+- Character 문서에 flashlight 컴포넌트/흐름/검증 포인트가 반영되었는가
+- `USER_UNREAL`에 아래 수동 작업이 명시되었는가:
+  - `IA_FlashlightToggle` 생성
+  - Mapping Context에 추가 + `T` 키 매핑
+  - `BP_BeekeeperCharacter.FlashlightToggleAction` 할당
+  - BP compile/save
 
 ---
 
-## 권장 확인 명령
+## 빌드/검색 검증
 
-- `rg '#include "Public/' Source/BeekeepingSim`
-- `rg "EnvironmentTimeOfDayActor|TimeOfDay|OnTimeOfDayChanged" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
-- `git diff -- Source/BeekeepingSim/Public/Environment Source/BeekeepingSim/Private/Environment .md/0_ARCHITECTURE.md .md/Architecture/EnvironmentSystem.md .md/USER_UNREAL.md .md/PROMPT_REVIEW.md`
+- UBT:
+  - `BeekeepingSimEditor Win64 Development`
+
+- 검색:
+  - `rg "BeekeeperFlashlight|FlashlightToggleAction|FlashlightToggleInput|ToggleFlashlight|SetFlashlightEnabled|InitializeFlashlightAttachment" Source/BeekeepingSim/Public/Character Source/BeekeepingSim/Private/Character -n`
+  - `rg "bIsFocusInteractionInputLocked" Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp -n`
+  - `rg "GetLifetimeReplicatedProps|DOREPLIFETIME|Server|Client|NetMulticast" Source/BeekeepingSim/Public/Character Source/BeekeepingSim/Private/Character -n`
+  - `rg '#include \"Public/' Source/BeekeepingSim/Public Source/BeekeepingSim/Private -n`
 
 ---
 
-## 출력 형식 (반드시 준수)
+## 수동 검증 가이드 (PIE)
 
-1. **Findings (High -> Medium -> Low)**  
-   - 각 이슈에 파일/심볼/근거 포함
-2. **Open Questions / Assumptions**
-3. **Regression Risk Checklist**
-4. **최종 판정: Pass / Conditional Pass / Fail**
+1. `T` 입력 시 손전등 On
+2. 다시 `T` 입력 시 Off
+3. 마우스 시점 이동 시 손전등 방향이 카메라와 함께 회전
+4. FocusEngaged/입력 잠금 상태에서도 `T` 토글 동작
+5. 이동/점프/스프린트/focus/hotbar 기존 입력 정상 동작
+6. `BeekeeperFlashlight` Details 값 변경 시 밝기/거리/콘각/그림자 반영
 
-이슈가 없으면 **“High/Medium 이슈 없음”**을 명시하고, 남은 테스트 공백을 짧게 정리한다.
+---
+
+## 리뷰 결과 출력 형식
+
+1. Findings (High / Medium / Low)
+2. Open Questions / Assumptions
+3. Regression Risks
+4. 최종 판단: Pass / Conditional Pass / Fail
+

@@ -5,7 +5,9 @@
 #include "Camera/BeekeeperCameraShakeComponent.h"
 #include "Character/BeekeeperController.h"
 #include "Focus/BeekeeperFocusComponent.h"
+#include "Focus/CursorPartFocusTypes.h"
 #include "Character/BeekeeperHeldItemVisualizerComponent.h"
+#include "Character/BeekeeperFlashlightComponent.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Character/BeekeeperMovementComponent.h"
 #include "Camera/CameraComponent.h"
@@ -28,6 +30,9 @@ ABeekeeperCharacter::ABeekeeperCharacter(const FObjectInitializer& ObjectInitial
 	FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
 	FirstPersonCamera->SetRelativeLocationAndRotation(FVector(-2.8f, 5.89f, 0.0f), FRotator(0.0f, 90.0f, -90.0f));
 	FirstPersonCamera->bUsePawnControlRotation = true;
+
+	BeekeeperFlashlight = CreateDefaultSubobject<UBeekeeperFlashlightComponent>(TEXT("BeekeeperFlashlight"));
+	BeekeeperFlashlight->SetupAttachment(FirstPersonCamera);
 	
 	GetMesh()->SetOwnerNoSee(true);
 	GetMesh()->CastShadow = false;
@@ -51,6 +56,11 @@ void ABeekeeperCharacter::BeginPlay()
 	{
 		DefaultFirstPersonCameraRelativeLocation = FirstPersonCamera->GetRelativeLocation();
 		DefaultFirstPersonCameraRelativeRotation = FirstPersonCamera->GetRelativeRotation();
+
+		if (BeekeeperFlashlight)
+		{
+			BeekeeperFlashlight->InitializeFlashlightAttachment(FirstPersonCamera);
+		}
 	}
 }
 
@@ -144,6 +154,32 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		{
 			EnhancedInputComponent->BindAction(HotbarWheelAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::HotbarWheelInput);
 		}
+
+		if (PartFocusClickAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusClickInput);
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::PartFocusClickReleaseInput);
+		}
+
+		if (PartFocusRAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusRAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusRInput);
+		}
+
+		if (PartFocusFAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusFAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusFInput);
+		}
+
+		if (PartFocusCAction)
+		{
+			EnhancedInputComponent->BindAction(PartFocusCAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusCInput);
+		}
+
+		if (FlashlightToggleAction)
+		{
+			EnhancedInputComponent->BindAction(FlashlightToggleAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FlashlightToggleInput);
+		}
 	}
 }
 
@@ -192,6 +228,66 @@ void ABeekeeperCharacter::FocusCancelInput()
 	}
 
 	BeekeeperFocus->CancelFocus();
+}
+
+void ABeekeeperCharacter::PartFocusClickInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusClickInput();
+}
+
+void ABeekeeperCharacter::PartFocusClickReleaseInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusClickReleasedInput();
+}
+
+void ABeekeeperCharacter::PartFocusRInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::R);
+}
+
+void ABeekeeperCharacter::PartFocusFInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::F);
+}
+
+void ABeekeeperCharacter::PartFocusCInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey::C);
+}
+
+void ABeekeeperCharacter::FlashlightToggleInput()
+{
+	if (!BeekeeperFlashlight)
+	{
+		return;
+	}
+
+	BeekeeperFlashlight->ToggleFlashlight();
 }
 
 void ABeekeeperCharacter::HotbarSlotInput(const FInputActionValue& Value)

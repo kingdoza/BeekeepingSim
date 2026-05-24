@@ -11,7 +11,7 @@
 작업 시작 시 반드시 읽는다.
 
 - `.md/0_ARCHITECTURE.md`
-- 작업과 직접 관련된 `.md/Architecture/{System}.md`
+- 작업과 직접 관련된 `.md/Architecture/*System.md`
 - `.md/QNA_IMPLEMENTATION.md`
 
 필요 시 함께 참고한다.
@@ -33,27 +33,20 @@
 
 ## Source 구조 기준
 
-현재 C++ 시스템 폴더:
-
-- `Source/BeekeepingSim/Public/Character`, `Private/Character`
-- `Source/BeekeepingSim/Public/Camera`, `Private/Camera`
-- `Source/BeekeepingSim/Public/Focus`, `Private/Focus`
-- `Source/BeekeepingSim/Public/Interaction`, `Private/Interaction`
-- `Source/BeekeepingSim/Public/Inventory`, `Private/Inventory`
-- `Source/BeekeepingSim/Public/UI`, `Private/UI`
-- `Source/BeekeepingSim/Public/WorldActors`, `Private/WorldActors`
-
-`Core`는 문서상 경계이며 소스 폴더가 아니다.
+- 현재 Source 시스템 폴더와 파일 분포는 `.md/0_ARCHITECTURE.md`의 `Source 구조` 섹션을 단일 출처로 삼는다.
+- 시스템별 책임과 의존 방향은 `.md/0_ARCHITECTURE.md`의 `시스템 문서`, `시스템 간 책임 흐름`, `주요 의존 방향` 섹션을 따른다.
+- `Core`는 문서상 경계이며 소스 폴더가 아니다.
+- 시스템 추가/삭제가 있으면 이 파일이 아니라 `.md/0_ARCHITECTURE.md`와 관련 `.md/Architecture/*System.md`를 갱신한다.
 
 ## 구현 절차
 
-1. `.md/0_ARCHITECTURE.md`와 관련 시스템 문서를 읽는다.
+1. `.md/0_ARCHITECTURE.md`를 읽고 작업과 직접 관련된 `.md/Architecture/*System.md`를 선택해 읽는다.
 2. 작업 범위와 영향 파일을 보고한다.
 3. Blueprint/API/Core Redirect 영향이 있는지 확인한다.
 4. 애매한 점이 있으면 `.md/QNA_IMPLEMENTATION.md`에 질문을 작성하고 중단한다.
 5. 구현한다.
 6. 빌드 또는 가능한 검증을 수행한다.
-7. 구조 변경이 있으면 `.md/0_ARCHITECTURE.md`와 관련 `.md/Architecture/{System}.md`를 갱신한다.
+7. 구조 변경이 있으면 `.md/0_ARCHITECTURE.md`와 관련 `.md/Architecture/*System.md`를 갱신한다.
 8. 리뷰용 프롬프트가 필요하면 `.md/PROMPT_REVIEW.md`를 작성한다.
 9. Editor 수동 검증이 필요하면 `.md/USER_UNREAL.md` 또는 최종 보고에 사용자 작업을 명시한다.
 
@@ -107,7 +100,7 @@
 구조 변경 시 다음을 갱신한다.
 
 - 전체 시스템 목록, Blueprint 계약, 완료된 고위험 리팩토링: `.md/0_ARCHITECTURE.md`
-- 시스템 책임/flow/API 변경: 해당 `.md/Architecture/{System}.md`
+- 시스템 책임/flow/API 변경: 관련 `.md/Architecture/*System.md`
 - Core Redirect 또는 공통 규칙 변경: `.md/Architecture/CoreSystem.md`
 
 단순 버그 수정이나 내부 구현만 바뀐 경우에는 문서 갱신이 필요 없을 수 있다. 이때 최종 보고에 "아키텍처 문서 반영 불필요" 사유를 적는다.

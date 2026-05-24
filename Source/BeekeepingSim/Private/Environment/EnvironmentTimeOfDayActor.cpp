@@ -1,5 +1,7 @@
 #include "Environment/EnvironmentTimeOfDayActor.h"
 
+#include "Environment/GameTimeBucketSubsystem.h"
+#include "Environment/GameTimeOfDayActor.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -9,6 +11,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/SkyLight.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "UObject/UnrealType.h"
@@ -56,6 +59,28 @@ void AEnvironmentTimeOfDayActor::BeginPlay()
 #endif
 
 	ApplyCurrentTimeState();
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameTimeBucketSubsystem* BucketSubsystem = World->GetSubsystem<UGameTimeBucketSubsystem>())
+		{
+			AGameTimeOfDayActor* FoundGameTimeActor = nullptr;
+			for (TActorIterator<AGameTimeOfDayActor> It(World); It; ++It)
+			{
+				FoundGameTimeActor = *It;
+				break;
+			}
+
+			if (FoundGameTimeActor)
+			{
+				BucketSubsystem->SetTimeOfDayProvider(FoundGameTimeActor);
+			}
+			else
+			{
+				BucketSubsystem->SetTimeOfDayProvider(this);
+			}
+		}
+	}
 }
 
 void AEnvironmentTimeOfDayActor::Tick(float DeltaTime)
@@ -72,10 +97,10 @@ void AEnvironmentTimeOfDayActor::Tick(float DeltaTime)
 	{
 		if (!bHasLoggedInvalidDayLength)
 		{
-			UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("DayLengthSeconds is invalid (%.3f). Use value >= 1.0."), DayLengthSeconds);
+			//UE_LOG(LogBeekeepingEnvironment, Warning, TEXT("DayLengthSeconds is invalid (%.3f). Use value >= 1.0."), DayLengthSeconds);
 			bHasLoggedInvalidDayLength = true;
 		}
-		UE_LOG(LogBeekeepingEnvironment, Log, TEXT("Current time: %s"), *FormatHour24(CurrentHour24));
+		//UE_LOG(LogBeekeepingEnvironment, Log, TEXT("Current time: %s"), *FormatHour24(CurrentHour24));
 		return;
 	}
 
@@ -83,8 +108,13 @@ void AEnvironmentTimeOfDayActor::Tick(float DeltaTime)
 
 	const float HoursPerSecond = 24.0f / DayLengthSeconds;
 	CurrentHour24 = NormalizeHour(CurrentHour24 + (DeltaTime * HoursPerSecond));
-	UE_LOG(LogBeekeepingEnvironment, Log, TEXT("Current time: %s"), *FormatHour24(CurrentHour24));
+	//UE_LOG(LogBeekeepingEnvironment, Log, TEXT("Current time: %s"), *FormatHour24(CurrentHour24));
 	ApplyCurrentTimeState();
+}
+
+float AEnvironmentTimeOfDayActor::GetCurrentHour24_Implementation() const
+{
+	return CurrentHour24;
 }
 
 void AEnvironmentTimeOfDayActor::SetCurrentHour24(float NewHour)
@@ -109,6 +139,7 @@ void AEnvironmentTimeOfDayActor::ApplyPreviewTime()
 	const FTimeOfDayVisualState PreviewState = EvaluateVisualState(PreviewHour24);
 	ApplyVisualState(PreviewState);
 	OnTimeOfDayChanged.Broadcast(PreviewState.Hour24, PreviewState);
+	OnGameTimeOfDayChanged.Broadcast(PreviewState.Hour24);
 #endif
 }
 
@@ -255,7 +286,7 @@ void AEnvironmentTimeOfDayActor::ApplyVisualState(const FTimeOfDayVisualState& S
 	if (SunLight)
 	{
 		SunLight->SetActorRotation(State.SunRotation);
-		if (UDirectionalLightComponent* SunComponent = SunLight->GetComponent())
+		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
 			SunComponent->SetUseTemperature(true);
 			SunComponent->SetTemperature(State.SunTemperature);
@@ -266,7 +297,7 @@ void AEnvironmentTimeOfDayActor::ApplyVisualState(const FTimeOfDayVisualState& S
 	if (MoonLight)
 	{
 		MoonLight->SetActorRotation(State.MoonRotation);
-		if (UDirectionalLightComponent* MoonComponent = MoonLight->GetComponent())
+		if (UDirectionalLightComponent* MoonComponent = Cast<UDirectionalLightComponent>(MoonLight->GetLightComponent()))
 		{
 			MoonComponent->SetUseTemperature(true);
 			MoonComponent->SetTemperature(State.MoonTemperature);
@@ -334,6 +365,7 @@ void AEnvironmentTimeOfDayActor::ApplyCurrentTimeState()
 	const FTimeOfDayVisualState State = EvaluateCurrentVisualState();
 	ApplyVisualState(State);
 	OnTimeOfDayChanged.Broadcast(State.Hour24, State);
+	OnGameTimeOfDayChanged.Broadcast(State.Hour24);
 }
 
 float AEnvironmentTimeOfDayActor::EvaluateCurveFloatOrFallback(const UCurveFloat* Curve, float Time, float FallbackValue) const

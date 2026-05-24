@@ -11,7 +11,7 @@
 리뷰 시작 시 반드시 읽는다.
 
 - `.md/0_ARCHITECTURE.md`
-- 변경과 관련된 `.md/Architecture/{System}.md`
+- 변경과 관련된 `.md/Architecture/*System.md`
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/QNA_REVIEW.md`
 
@@ -39,9 +39,9 @@ Blueprint/API 변경이 있으면 다음도 검토한다.
 ## 리뷰 시작 체크리스트
 
 - [ ] `.md/0_ARCHITECTURE.md` 읽음
-- [ ] 관련 시스템 문서 읽음
+- [ ] `.md/0_ARCHITECTURE.md`의 시스템 문서 목록과 의존 방향을 기준으로 관련 시스템 문서 읽음
 - [ ] 변경 파일 목록 확인
-- [ ] Source 구조가 현재 시스템 폴더 기준인지 확인
+- [ ] Source 구조가 `.md/0_ARCHITECTURE.md`의 현재 Source 구조 기준인지 확인
 - [ ] Blueprint/API/Core Redirect 영향 확인
 - [ ] 미답변 `.md/QNA_REVIEW.md` 질문 확인
 
@@ -93,16 +93,13 @@ Blueprint/API 변경이 있으면 다음도 검토한다.
 - BlueprintCallable/Pure 노출이 실제 사용 의도와 맞는지 확인한다.
 - UCLASS/USTRUCT/UENUM rename에는 Core Redirect와 post-migration 검증이 있는지 확인한다.
 
-## 중점 시스템별 체크
+## 시스템별 체크 기준
 
-- Character: input routing, active storage/drag operation cleanup, held item visualizer local-only 동작
-- Camera: focus 이동 후 landing shake suppress, non-local tick 비용
-- Focus: PreviewFocus/EngagedFocus 전환, crosshair visibility 단일 기준, cancel/abort 복구
-- Interaction: pickup/storage action failure path, widget cleanup, input mode 복구
-- Inventory: stack merge/split/swap 결과, delegate broadcast 순서, outer ownership
-- UI: drag/drop payload, partial preview, Blueprint API 계약 유지
-- WorldActors: component composition, Blueprint native parent 안정성
-- Core: include 경로, Core Redirect, 공통 문서 규칙 충돌 여부
+- 시스템 목록과 역할은 `.md/0_ARCHITECTURE.md`를 단일 출처로 삼는다.
+- 변경 파일이 속한 시스템 문서의 `Responsibilities`, `Runtime Flow`, `Dependencies`, `Design Notes`, `Manual Review Points`를 우선 체크한다.
+- 변경이 여러 시스템 경계를 건드리면 관련된 모든 `.md/Architecture/*System.md`를 함께 읽고, 의존 방향과 상태 오너가 문서와 맞는지 확인한다.
+- `CoreSystem.md`는 include 경로, Core Redirect, 공통 문서 규칙, 예외 의존, editor-only 경계가 걸릴 때 확인한다.
+- 이 파일에는 하위 시스템명을 중복 고정하지 않는다. 시스템 추가/삭제 시 리뷰 기준은 `.md/0_ARCHITECTURE.md`와 시스템 문서 갱신으로 동기화한다.
 
 ## 출력 형식
 

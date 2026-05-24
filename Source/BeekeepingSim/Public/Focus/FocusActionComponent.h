@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Focus/CursorPartFocusTypes.h"
 #include "Inventory/HotbarPresentationTypes.h"
 #include "FocusActionComponent.generated.h"
 
@@ -25,6 +26,21 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Focus Action")
 	virtual bool CancelFocusAction(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandleConfirmInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandleCancelInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Focus Action")
 	virtual void AbortFocusAction(ABeekeeperCharacter* InteractingCharacter);

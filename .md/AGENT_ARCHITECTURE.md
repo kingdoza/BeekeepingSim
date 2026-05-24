@@ -19,15 +19,10 @@
 | 문서 | 역할 |
 |---|---|
 | `.md/0_ARCHITECTURE.md` | 전체 지도, 시스템 링크, Blueprint 계약, 완료된 고위험 리팩토링 기록 |
-| `.md/Architecture/CharacterSystem.md` | 캐릭터, 컨트롤러, 이동, held item 시각화 |
-| `.md/Architecture/CameraSystem.md` | 카메라 셰이크 |
-| `.md/Architecture/FocusSystem.md` | PreviewFocus/EngagedFocus, FocusTarget, FocusAction, 크로스헤어 정책 |
-| `.md/Architecture/InteractionSystem.md` | Pickup/StorageBox 상호작용 액션 |
-| `.md/Architecture/InventorySystem.md` | Hotbar, Storage, Item model, stack 이동 |
-| `.md/Architecture/UISystem.md` | Widget, drag/drop, Blueprint UI API |
-| `.md/Architecture/WorldActorsSystem.md` | Beehive, WorldItemPickup, StorageBox actor 구성 |
-| `.md/Architecture/EnvironmentSystem.md` | 24시간 가속 시간, 하늘/조명, 태양/달, 에디터 프리뷰 |
+| `.md/Architecture/*System.md` | 시스템별 책임, 핵심 클래스, 실행 흐름, 의존성, 수동 검토 지점 |
 | `.md/Architecture/CoreSystem.md` | 공통 문서 규칙, Core Redirect, 시스템 경계 |
+
+현재 시스템 목록과 각 시스템 문서의 역할은 `.md/0_ARCHITECTURE.md`의 `시스템 문서`, `Source 구조`, `주요 의존 방향` 섹션을 단일 출처로 삼는다. 이 에이전트 문서에는 하위 시스템명을 중복 고정하지 않는다.
 
 QnA가 필요한 경우:
 
@@ -41,16 +36,8 @@ QnA가 필요한 경우:
 - `Source/BeekeepingSim/Public`
 - `Source/BeekeepingSim/Private`
 
-현재 시스템 폴더:
-
-- `Character`
-- `Camera`
-- `Focus`
-- `Interaction`
-- `Inventory`
-- `UI`
-- `WorldActors`
-- `Environment`
+- 현재 시스템 폴더와 파일 분포는 `.md/0_ARCHITECTURE.md`의 `Source 구조` 섹션을 따른다.
+- 시스템 추가/삭제가 있으면 이 파일이 아니라 `.md/0_ARCHITECTURE.md`와 해당 `.md/Architecture/*System.md`를 갱신한다.
 
 특수 범위:
 
@@ -61,11 +48,12 @@ QnA가 필요한 경우:
 ## 세션 시작 절차
 
 1. `.md/0_ARCHITECTURE.md`를 읽는다.
-2. 작업과 관련된 `.md/Architecture/{System}.md`를 읽는다.
-3. 필요한 경우 `.md/QNA_ARCHITECTURE.md`의 미해결 질문을 확인한다.
-4. 실제 Source 파일 구조가 문서와 일치하는지 확인한다.
-5. Blueprint/API/Core Redirect 영향이 있는지 먼저 판단한다.
-6. 파악 내용을 요약하고, 구현 지시가 없으면 설계 제안까지만 수행한다.
+2. `.md/0_ARCHITECTURE.md`의 시스템 문서 목록과 의존 방향을 기준으로 작업과 관련된 `.md/Architecture/*System.md`를 고른다.
+3. 작업과 관련된 시스템 문서를 읽는다. 경계가 애매하면 인접/의존 시스템 문서도 함께 읽는다.
+4. 필요한 경우 `.md/QNA_ARCHITECTURE.md`의 미해결 질문을 확인한다.
+5. 실제 Source 파일 구조가 문서와 일치하는지 확인한다.
+6. Blueprint/API/Core Redirect 영향이 있는지 먼저 판단한다.
+7. 파악 내용을 요약하고, 구현 지시가 없으면 설계 제안까지만 수행한다.
 
 ## QnA 규칙
 
@@ -99,7 +87,7 @@ QnA가 필요한 경우:
 구조 변경 설계를 확정할 때는 다음 기준을 따른다.
 
 - 전체 지도 변경: `.md/0_ARCHITECTURE.md`
-- 시스템별 상세 변경: `.md/Architecture/{System}.md`
+- 시스템별 상세 변경: 관련 `.md/Architecture/*System.md`
 - Core Redirect와 공통 규칙: `.md/Architecture/CoreSystem.md`
 - Blueprint API 계약 변경: `.md/0_ARCHITECTURE.md`와 관련 시스템 문서에 모두 반영
 
