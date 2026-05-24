@@ -38,6 +38,8 @@ void UCursorPartFocusScopeComponent::TickComponent(float DeltaTime, ELevelTick T
 
 	UpdateHoveredPartFromCursor();
 	RemoveInactiveActions();
+	UpdatePartPointerGestureState(DeltaTime);
+	UpdatePartDrag(DeltaTime);
 }
 
 void UCursorPartFocusScopeComponent::ActivatePartFocusScope(ABeekeeperCharacter* InteractingCharacter)
@@ -51,6 +53,11 @@ void UCursorPartFocusScopeComponent::ActivatePartFocusScope(ABeekeeperCharacter*
 
 void UCursorPartFocusScopeComponent::DeactivatePartFocusScope(bool bAbortActiveActions)
 {
+	if (bPartDragInProgress)
+	{
+		EndPartDrag(true);
+	}
+
 	if (bAbortActiveActions)
 	{
 		while (CancelTopActionCascade(true))
@@ -61,6 +68,7 @@ void UCursorPartFocusScopeComponent::DeactivatePartFocusScope(bool bAbortActiveA
 	SetHoveredPartIndex(INDEX_NONE);
 	bHoverOutlineSuppressed = false;
 	bIsScopeActive = false;
+	ResetPartPointerGestureState();
 	SetComponentTickEnabled(false);
 	BroadcastPartPrompt();
 }
@@ -72,41 +80,127 @@ bool UCursorPartFocusScopeComponent::HandleConfirmInput()
 
 bool UCursorPartFocusScopeComponent::HandlePartFocusClickInput()
 {
+	UpdateHoveredPartFromCursor();
+	if (RegisteredParts.IsValidIndex(HoveredPartIndex))
+	{
+		return ExecutePartClickForDescriptor(RegisteredParts[HoveredPartIndex]);
+	}
+
+	if (HandleEdgeCancelClick())
+	{
+		if (!HandleCancelInput())
+		{
+			RequestHostFocusCancel();
+		}
+		return true;
+	}
+
+	return true;
+}
+
+bool UCursorPartFocusScopeComponent::HandlePartFocusPointerPressed()
+{
 	if (!bIsScopeActive)
 	{
 		return false;
 	}
 
+	ResetPartPointerGestureState();
 	UpdateHoveredPartFromCursor();
-	if (RegisteredParts.IsValidIndex(HoveredPartIndex))
+	if (RegisteredParts.IsValidIndex(HoveredPartIndex) && IsDescriptorPreviewAllowed(RegisteredParts[HoveredPartIndex]))
 	{
 		const FCursorPartFocusPartDescriptor& Descriptor = RegisteredParts[HoveredPartIndex];
-		if (IsDescriptorPreviewAllowed(Descriptor))
+		PressedPartIndex = HoveredPartIndex;
+		PressedPartId = Descriptor.PartId;
+		PressedPartAction = Descriptor.ActionHandler;
+		bIsPartPrimaryPointerDown = true;
+		bPressedInEdgeCancelRegion = false;
+		if (TryGetMouseScreenPosition(PressedPartScreenPosition))
 		{
-			if (Descriptor.EngageMode == ECursorPartFocusEngageMode::PreviewOnly)
-			{
-				return true;
-			}
+			bPressedInEdgeCancelRegion = IsMouseInEdgeCancelRegion(PressedPartScreenPosition);
+		}
+		return true;
+	}
 
-			UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
-			if (!Action || !OwnerCharacter)
-			{
-				return true;
-			}
+	bIsPartPrimaryPointerDown = true;
+	TryGetMouseScreenPosition(PressedPartScreenPosition);
+	bPressedInEdgeCancelRegion = IsMouseInEdgeCancelRegion(PressedPartScreenPosition);
+	return true;
+}
 
-			if (Action->IsPartActionEngaged())
-			{
-				TSet<TObjectPtr<UCursorPartFocusActionComponent>> Visited;
-				CancelActionCascade(Action, false, Visited);
-				RemoveInactiveActions();
-				return true;
-			}
+bool UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased()
+{
+	if (!bIsScopeActive)
+	{
+		return false;
+	}
 
-			return BeginPartActionForDescriptor(Descriptor);
+	const bool bWasPointerDown = bIsPartPrimaryPointerDown;
+	bool bDragWasInProgress = bPartDragInProgress;
+	const FName CapturedPartId = PressedPartId;
+	const TObjectPtr<UCursorPartFocusActionComponent> CapturedPartAction = PressedPartAction;
+	const bool bPressedAtEdgeCancel = bPressedInEdgeCancelRegion;
+	float MaxMoveDistance = MaxPartPointerMoveDistanceSincePress;
+
+	if (!bWasPointerDown)
+	{
+		ResetPartPointerGestureState();
+		return false;
+	}
+
+	FVector2D ReleaseScreenPosition = FVector2D::ZeroVector;
+	const bool bHasReleaseMousePosition = TryGetMouseScreenPosition(ReleaseScreenPosition);
+	if (bHasReleaseMousePosition)
+	{
+		const float ReleaseMoveDistance = FVector2D::Distance(ReleaseScreenPosition, PressedPartScreenPosition);
+		MaxMoveDistance = FMath::Max(MaxMoveDistance, ReleaseMoveDistance);
+	}
+
+	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+	const float Threshold = FocusSettings ? FMath::Max(0.0f, FocusSettings->ClickCancelThresholdPixels) : 12.0f;
+	const bool bExceededThreshold = MaxMoveDistance > Threshold;
+	const bool bReleasedAtEdgeCancel = bHasReleaseMousePosition && IsMouseInEdgeCancelRegion(ReleaseScreenPosition);
+
+	if (!bDragWasInProgress && bExceededThreshold)
+	{
+		bPartClickCanceledByMovement = true;
+		if (TryBeginPartDrag())
+		{
+			bDragWasInProgress = true;
 		}
 	}
 
-	if (HandleEdgeCancelClick())
+	if (bDragWasInProgress)
+	{
+		EndPartDrag(false);
+		ResetPartPointerGestureState();
+		return true;
+	}
+
+	const bool bClickCanceled = bPartClickCanceledByMovement || bExceededThreshold;
+	ResetPartPointerGestureState();
+
+	if (bClickCanceled)
+	{
+		return true;
+	}
+
+	UpdateHoveredPartFromCursor();
+	if (RegisteredParts.IsValidIndex(HoveredPartIndex))
+	{
+		const FCursorPartFocusPartDescriptor& ReleaseDescriptor = RegisteredParts[HoveredPartIndex];
+		if (IsDescriptorPreviewAllowed(ReleaseDescriptor))
+		{
+			const bool bPartIdMatched = !CapturedPartId.IsNone() && CapturedPartId == ReleaseDescriptor.PartId;
+			const bool bActionMatched = CapturedPartAction == nullptr || CapturedPartAction == ReleaseDescriptor.ActionHandler;
+			if (bPartIdMatched && bActionMatched)
+			{
+				return ExecutePartClickForDescriptor(ReleaseDescriptor);
+			}
+		}
+	}
+
+	if (bPressedAtEdgeCancel && bReleasedAtEdgeCancel)
 	{
 		if (!HandleCancelInput())
 		{
@@ -560,10 +654,7 @@ bool UCursorPartFocusScopeComponent::HandleEdgeCancelClick() const
 		return false;
 	}
 
-	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
-	const float RawThickness = FocusSettings ? FocusSettings->ScreenEdgeCancelRegionThickness : 64.0f;
-	const float T = FMath::Max(0.0f, RawThickness);
-	return ScreenX <= T || ScreenY <= T || ScreenX >= (static_cast<float>(SizeX) - T) || ScreenY >= (static_cast<float>(SizeY) - T);
+	return IsMouseInEdgeCancelRegion(FVector2D(ScreenX, ScreenY));
 }
 
 void UCursorPartFocusScopeComponent::RequestHostFocusCancel() const
@@ -572,4 +663,171 @@ void UCursorPartFocusScopeComponent::RequestHostFocusCancel() const
 	{
 		OwnerFocusComponent->CancelFocus();
 	}
+}
+
+bool UCursorPartFocusScopeComponent::ExecutePartClickForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor)
+{
+	if (Descriptor.EngageMode == ECursorPartFocusEngageMode::PreviewOnly)
+	{
+		return true;
+	}
+
+	UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
+	if (!Action || !OwnerCharacter)
+	{
+		return true;
+	}
+
+	if (Action->IsPartActionEngaged())
+	{
+		TSet<TObjectPtr<UCursorPartFocusActionComponent>> Visited;
+		CancelActionCascade(Action, false, Visited);
+		RemoveInactiveActions();
+		return true;
+	}
+
+	return BeginPartActionForDescriptor(Descriptor);
+}
+
+void UCursorPartFocusScopeComponent::ResetPartPointerGestureState()
+{
+	PressedPartId = NAME_None;
+	PressedPartIndex = INDEX_NONE;
+	PressedPartAction = nullptr;
+	PressedPartScreenPosition = FVector2D::ZeroVector;
+	MaxPartPointerMoveDistanceSincePress = 0.0f;
+	bIsPartPrimaryPointerDown = false;
+	bPartClickCanceledByMovement = false;
+	bPartDragInProgress = false;
+	bPressedInEdgeCancelRegion = false;
+}
+
+bool UCursorPartFocusScopeComponent::TryGetMouseScreenPosition(FVector2D& OutPosition) const
+{
+	if (!OwnerCharacter)
+	{
+		return false;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
+	if (!PlayerController || !PlayerController->IsLocalController())
+	{
+		return false;
+	}
+
+	float ScreenX = 0.0f;
+	float ScreenY = 0.0f;
+	if (!PlayerController->GetMousePosition(ScreenX, ScreenY))
+	{
+		return false;
+	}
+
+	OutPosition = FVector2D(ScreenX, ScreenY);
+	return true;
+}
+
+void UCursorPartFocusScopeComponent::UpdatePartPointerGestureState(float DeltaTime)
+{
+	if (!bIsPartPrimaryPointerDown || bPartDragInProgress)
+	{
+		return;
+	}
+
+	FVector2D CurrentMousePosition = FVector2D::ZeroVector;
+	if (TryGetMouseScreenPosition(CurrentMousePosition))
+	{
+		const float MoveDistance = FVector2D::Distance(CurrentMousePosition, PressedPartScreenPosition);
+		MaxPartPointerMoveDistanceSincePress = FMath::Max(MaxPartPointerMoveDistanceSincePress, MoveDistance);
+	}
+
+	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+	const float Threshold = FocusSettings ? FMath::Max(0.0f, FocusSettings->ClickCancelThresholdPixels) : 12.0f;
+	if (MaxPartPointerMoveDistanceSincePress <= Threshold)
+	{
+		return;
+	}
+
+	bPartClickCanceledByMovement = true;
+	TryBeginPartDrag();
+}
+
+bool UCursorPartFocusScopeComponent::TryBeginPartDrag()
+{
+	if (bPartDragInProgress || !bIsPartPrimaryPointerDown || !OwnerCharacter || !PressedPartAction)
+	{
+		return false;
+	}
+
+	if (!PressedPartAction->CanBeginPartFocusDrag(this, OwnerCharacter))
+	{
+		return false;
+	}
+
+	if (!PressedPartAction->BeginPartFocusDrag(this, OwnerCharacter))
+	{
+		PressedPartAction->SetPartFocusDragInProgress(false);
+		return false;
+	}
+
+	PressedPartAction->SetPartFocusDragInProgress(true);
+	bPartDragInProgress = true;
+	return true;
+}
+
+void UCursorPartFocusScopeComponent::UpdatePartDrag(float DeltaTime)
+{
+	if (!bPartDragInProgress || !PressedPartAction || !OwnerCharacter)
+	{
+		return;
+	}
+
+	PressedPartAction->UpdatePartFocusDrag(this, OwnerCharacter, DeltaTime);
+}
+
+void UCursorPartFocusScopeComponent::EndPartDrag(bool bCanceled)
+{
+	if (!PressedPartAction || !OwnerCharacter)
+	{
+		bPartDragInProgress = false;
+		return;
+	}
+
+	PressedPartAction->EndPartFocusDrag(this, OwnerCharacter, bCanceled);
+	PressedPartAction->SetPartFocusDragInProgress(false);
+	bPartDragInProgress = false;
+}
+
+bool UCursorPartFocusScopeComponent::IsPartFocusDragInProgress() const
+{
+	return bPartDragInProgress;
+}
+
+bool UCursorPartFocusScopeComponent::IsMouseInEdgeCancelRegion(const FVector2D& ScreenPosition) const
+{
+	if (!OwnerCharacter)
+	{
+		return false;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
+	if (!PlayerController || !PlayerController->IsLocalController())
+	{
+		return false;
+	}
+
+	int32 SizeX = 0;
+	int32 SizeY = 0;
+	PlayerController->GetViewportSize(SizeX, SizeY);
+	if (SizeX <= 0 || SizeY <= 0)
+	{
+		return false;
+	}
+
+	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+	const float RawThickness = FocusSettings ? FocusSettings->ScreenEdgeCancelRegionThickness : 64.0f;
+	const float T = FMath::Max(0.0f, RawThickness);
+	return ScreenPosition.X <= T
+		|| ScreenPosition.Y <= T
+		|| ScreenPosition.X >= (static_cast<float>(SizeX) - T)
+		|| ScreenPosition.Y >= (static_cast<float>(SizeY) - T);
 }

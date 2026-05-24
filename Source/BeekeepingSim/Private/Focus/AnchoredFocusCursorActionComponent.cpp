@@ -58,6 +58,16 @@ bool UAnchoredFocusCursorActionComponent::HandleCancelInputWhileEngaged(ABeekeep
 
 bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
 {
+	return HandlePartFocusPointerPressedInputWhileEngaged(InteractingCharacter);
+}
+
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return HandlePartFocusPointerReleasedInputWhileEngaged(InteractingCharacter);
+}
+
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusPointerPressedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
 	if (!GetOwner())
 	{
 		return false;
@@ -80,13 +90,13 @@ bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickInputWhileEngaged(
 
 	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
 	{
-		return ScopeComponent->HandlePartFocusClickInput();
+		return ScopeComponent->HandlePartFocusPointerPressed();
 	}
 
 	return false;
 }
 
-bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+bool UAnchoredFocusCursorActionComponent::HandlePartFocusPointerReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
 {
 	if (!GetOwner())
 	{
@@ -99,6 +109,11 @@ bool UAnchoredFocusCursorActionComponent::HandlePartFocusClickReleasedInputWhile
 		{
 			return true;
 		}
+	}
+
+	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+	{
+		return ScopeComponent->HandlePartFocusPointerReleased();
 	}
 
 	return false;

@@ -33,10 +33,22 @@ public:
 	void CancelFocus();
 
 	UFUNCTION(BlueprintCallable, Category = "Focus")
+	void HandleFocusPrimaryPressedInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	void HandleFocusPrimaryReleasedInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
 	bool HandlePartFocusClickInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Focus")
 	bool HandlePartFocusClickReleasedInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandlePartFocusPointerPressedInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandlePartFocusPointerReleasedInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Focus")
 	bool HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
@@ -109,6 +121,10 @@ protected:
 
 	bool ShouldDisableTickForNonLocal() const;
 
+	bool TryGetMouseScreenPosition(FVector2D& OutPosition) const;
+
+	void ResetFocusPrimaryGestureState();
+
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float FocusTraceDistance = 500.0f;
@@ -136,6 +152,14 @@ private:
 
 	UPROPERTY(Transient)
 	bool bHasEngagedPromptOverride = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFocusTargetComponent> PressedFocusTarget;
+
+	FVector2D PressedFocusScreenPosition = FVector2D::ZeroVector;
+	float MaxFocusPointerMoveDistanceSincePress = 0.0f;
+	bool bIsFocusPrimaryPointerDown = false;
+	bool bFocusClickCanceledByMovement = false;
 
 	bool bIsFocusEngaged = false;
 

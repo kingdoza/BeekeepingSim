@@ -83,3 +83,10 @@
   - bind `AGameTimeOfDayActor::OnGameTimeOfDayChanged`
   - immediately push current provider hour to `UTimeOfDayClockWidget`
 - Legacy compatibility path to `AEnvironmentTimeOfDayActor::OnTimeOfDayChanged` remains.
+
+## Update 2026-05-25
+
+- `ABeekeeperCharacter` LMB focus 입력 라우팅이 press/release gesture 모델로 변경되었다.
+  - `FocusConfirmAction`: `Started -> FocusPrimaryPressedInput`, `Completed -> FocusPrimaryReleasedInput`
+  - `PartFocusClickAction`: `Started -> PartFocusPointerPressedInput`, `Completed -> PartFocusPointerReleasedInput`
+- 기존 `FocusConfirmInput`, `PartFocusClickInput`, `PartFocusClickReleaseInput` 함수는 삭제하지 않고 새 pointer API wrapper로 유지한다.

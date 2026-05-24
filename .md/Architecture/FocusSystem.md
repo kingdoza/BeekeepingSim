@@ -125,15 +125,36 @@
 
 - Host FocusEngaged 진입은 기존 FocusConfirm 경로를 유지한다.
 - Host FocusEngaged 이후 PartFocus 조작:
-  - `LMB`: PartFocus begin/cancel 토글
-  - `LMB Completed`: engaged action release hook으로 전달
+  - `LMB Started`: pointer press 후보 저장
+  - `LMB Completed`: click 확정 시 begin/cancel 실행 또는 drag end 실행
   - `R/F/C`: 현재 hover preview 대상의 preview key action dispatch
+- Host FocusEngaged 상태에서 `FocusConfirmAction Started`는 즉시 confirm hook을 실행하지 않고 consume-only로 유지한다.
 - `F` 키는 PartFocus engage/cancel 또는 FocusCancel 입력으로 사용하지 않는다.
+
+## LMB Gesture Model (2026-05-25)
+
+- 전역 Focus confirm과 PartFocus click은 `LMB down`에서 즉시 실행하지 않는다.
+- click 확정 조건:
+  - press 대상과 release 대상이 동일
+  - press~release 최대 이동거리가 `ClickCancelThresholdPixels` 이하
+  - drag가 시작되지 않음
+- threshold 초과 시 click은 즉시 취소된다.
+  - drag 불가 대상: click만 취소, 추가 동작 없음
+  - drag 가능 대상: click 취소 후 drag begin 시도
+  - drag 시작 후 release: drag end만 실행, click 미실행
+- Focus pending click state owner: `UBeekeeperFocusComponent`
+- PartFocus pending click/drag state owner: `UCursorPartFocusScopeComponent`
+- `UAnchoredFocusCursorActionComponent`는 engaged 입력 라우터로 유지된다.
+- item-use-area hold-use는 기존 press begin/release end를 유지하며, 입력 소비 시 PartFocus gesture를 시작하지 않는다.
+- edge cancel click은 release 확정 시점에서만 판정한다(press/release 모두 edge cancel 영역 + threshold 이하).
 
 ## Settings Contract
 
 - `UBeekeepingSimFocusSettings`는 `Config=Game, DefaultConfig`인 project setting class다.
-- 현재 설정값은 `ScreenEdgeCancelRegionThickness` 하나이며, `UCursorPartFocusScopeComponent`가 `GetDefault<UBeekeepingSimFocusSettings>()`로 읽는다.
+- 현재 설정값:
+  - `ClickCancelThresholdPixels` (기본 12)
+  - `ScreenEdgeCancelRegionThickness` (기본 64)
+- `UBeekeeperFocusComponent`와 `UCursorPartFocusScopeComponent`가 `GetDefault<UBeekeepingSimFocusSettings>()`로 읽는다.
 - Focus tuning 값을 추가할 때는 component hard-code보다 settings class 확장을 우선 검토한다.
 
 ## Crosshair Policy

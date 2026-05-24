@@ -87,3 +87,24 @@ bool UCursorPartFocusActionComponent::HandlePreviewKeyAction(UCursorPartFocusSco
 
 	return true;
 }
+
+bool UCursorPartFocusActionComponent::CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
+{
+	return false;
+}
+
+bool UCursorPartFocusActionComponent::BeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	bIsPartFocusDragInProgress = false;
+	return false;
+}
+
+void UCursorPartFocusActionComponent::UpdatePartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, float DeltaTime)
+{
+}
+
+bool UCursorPartFocusActionComponent::EndPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, bool bCanceled)
+{
+	bIsPartFocusDragInProgress = false;
+	return false;
+}

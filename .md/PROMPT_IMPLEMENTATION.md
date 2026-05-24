@@ -1,223 +1,389 @@
-# Beekeeper Flashlight Toggle 구현 프롬프트
+# Beehive Comb Drag Flip/Shake 구현 프롬프트
 
 ## 목표
 
-키보드 `T` 키로 On/Off 토글할 수 있는 1인칭 손전등 기능을 구현한다.
+FocusEngaged 상태에서 들어 올린 소비장(`ABeehiveCombActor`)을 LMB drag로 조작한다.
 
-손전등은 `ABeekeeperCharacter`의 입력으로 토글되지만, 조명 상태와 조명 컴포넌트 관리는 별도 캐릭터 컴포넌트가 소유한다.
+- 좌우 drag: 소비장 180도 뒤집기
+- 상하 반복 drag: 소비장 털기
+
+click과 drag는 같은 LMB 입력을 공유하므로, 기존 Focus LMB gesture model을 유지하면서 소비장 전용 drag 해석만 추가한다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/CharacterSystem.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - `.md/Architecture/CoreSystem.md`
+- `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
+
+특히 `.md/QNA_ARCHITECTURE.md`의 `Beehive Comb Drag QnA` 섹션을 구현 기준으로 삼는다.
+
+## 구현 전 확인
+
+먼저 현재 Source에 Focus LMB gesture/drag lifecycle이 구현되어 있는지 확인한다.
+
+확인 대상:
+
+- `UBeekeepingSimFocusSettings::ClickCancelThresholdPixels`
+- `UCursorPartFocusScopeComponent::HandlePartFocusPointerPressed`
+- `UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased`
+- `UCursorPartFocusActionComponent`의 drag lifecycle API
+  - `CanBeginPartFocusDrag`
+  - `BeginPartFocusDrag`
+  - `UpdatePartFocusDrag`
+  - `EndPartFocusDrag`
+  - `IsPartFocusDragInProgress`
+
+위 기반이 없으면 이번 작업 범위 안에서 generic Focus drag lifecycle을 먼저 구현해도 된다. 단, 기존 BlueprintCallable API 삭제/rename 없이 추가 방식으로 구현한다.
 
 ## 구현 범위
 
-추가 대상:
+주 수정 대상:
 
-- `Source/BeekeepingSim/Public/Character/BeekeeperFlashlightComponent.h`
-- `Source/BeekeepingSim/Private/Character/BeekeeperFlashlightComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
 
-수정 대상:
+필요 시 수정:
 
-- `Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h`
-- `Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp`
-- `.md/Architecture/CharacterSystem.md`
+- `Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h`
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+
+문서 갱신 대상:
+
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - 필요 시 `.md/0_ARCHITECTURE.md`
-- 필요 시 `.md/USER_UNREAL.md`
+- 필요 시 `.md/QNA_IMPLEMENTATION.md`
 
 수정하지 말 것:
 
 - `Content/` asset 직접 수정 또는 resave
 - `Config/DefaultEngine.ini`
-- Focus/Inventory/UI/Environment 시스템 로직
-- 기존 입력 action property rename/delete
+- 기존 UCLASS/USTRUCT/UENUM rename
+- 기존 BlueprintCallable API 삭제 또는 rename
+- Inventory/UI/Environment 도메인 로직
+- Beehive lift movement의 slot transform 정책
 
 ## 확정 요구사항
 
-### 입력
+### Drag 가능 조건
 
-- 손전등 토글 키는 `T`다.
-- C++에는 `FlashlightToggleAction` 입력 액션 property를 추가한다.
-- 실제 `T` 키 매핑은 Unreal Editor에서 Input Action/Mapping Context asset에 설정하는 수동 작업으로 남긴다.
-- 기존 `PartFocusFAction`, `PartFocusRAction`, `PartFocusCAction` 등 기존 입력 property는 변경하지 않는다.
+- 소비장 drag는 해당 소비장 part action이 engaged되어 있고, 그 소비장이 lifted 상태일 때만 허용한다.
+- lid open + hover만으로는 drag를 시작하지 않는다.
+- drag 불가능 상태에서 click cancel threshold를 넘으면 click만 취소되고 no-op이다.
 
-### 책임 분리
+### Flip
 
-- `ABeekeeperCharacter`는 입력 라우터와 컴포넌트 조립 지점이다.
-- 손전등 상태와 `USpotLightComponent` 관리는 `UBeekeeperFlashlightComponent`가 담당한다.
-- `ABeekeeperCharacter`는 입력을 받아 `UBeekeeperFlashlightComponent::ToggleFlashlight()`만 호출한다.
+- 좌우 drag는 소비장 180도 뒤집기 동작이다.
+- flip 판정:
+  - 누적 X 이동량이 `CombFlipDragThresholdPixels` 이상
+  - `Abs(X) > Abs(Y) * HorizontalDominanceRatio`
+- `HorizontalDominanceRatio`는 대각선/애매한 drag가 flip으로 오인되지 않게 하는 방향 우세 조건이다.
+- 한 drag session에서 mode가 flip으로 확정되면 release까지 다른 mode로 전환하지 않는다.
 
-### 부착 기준
+### Shake
 
-- 손전등 조명은 `FirstPersonCamera` 기준으로 부착한다.
-- 카메라 방향을 따라가야 하므로 mesh hand/head socket 기준 부착을 기본값으로 사용하지 않는다.
-- `FirstPersonCamera`가 focus camera override 중 detach/reattach 되더라도, 손전등은 카메라 하위 컴포넌트로 유지되어 현재 카메라 방향을 따라가야 한다.
+- 상하 반복 drag는 소비장 털기 동작이다.
+- shake 판정:
+  - Y 이동이 `CombShakeStrokeThresholdPixels` 이상 누적된 뒤 방향이 반전될 때 stroke count 증가
+  - `RequiredShakeStrokeCount`에 도달하면 털기 실행
+- 1차 구현 효과는 `ABeehiveCombActor::ReduceTargetBeeCountByRatio`만 호출해 소비장 표면 벌 수를 줄인다.
+- 꿀, 위생, 아이템 수확, Inventory 변경은 이번 범위에서 구현하지 않는다.
 
-### 로컬/복제 정책
+### No-op 허용
 
-- 현재 단계는 로컬 1인칭 손전등으로 구현한다.
-- replication, 서버 RPC, 다른 플레이어용 3인칭 손전등은 구현하지 않는다.
-- 손전등 조명이 gameplay authority나 AI 감지 source가 되지 않도록 한다.
+- click cancel threshold를 넘었지만 flip/shake threshold 또는 dominance 조건을 만족하지 못하면 아무 동작도 실행하지 않는다.
+- release 시점 fallback으로 flip/shake를 억지 실행하지 않는다.
+- mode가 확정되지 않은 drag session은 release 시 no-op이다.
 
-### Focus 입력 정책
+### Animation/Visual
 
-- 손전등 토글은 focus interaction input lock 중에도 허용한다.
-- `MoveInput`, `LookInput`, `SprintStartInput`, `DoJumpStart`처럼 `bIsFocusInteractionInputLocked`로 차단하지 않는다.
-- UI modal에서 입력을 막아야 하는 경우는 Mapping Context 우선순위/asset 설정으로 처리한다.
+- C++은 상태 변경과 Blueprint event만 제공한다.
+- 실제 flip/shake 애니메이션은 Blueprint에서 처리할 수 있게 이벤트를 노출한다.
+- C++ Tick 기반 flip/shake 보간은 이번 범위에서 구현하지 않는다.
 
-## 신규 컴포넌트 설계
+## Focus Generic Drag Lifecycle
 
-`UBeekeeperFlashlightComponent`를 `UActorComponent` 또는 `USceneComponent` 중 하나로 구현한다.
+이미 구현되어 있으면 기존 구조를 사용한다. 없으면 아래 방향으로 추가한다.
 
-권장:
-
-- `UActorComponent`로 만들고 내부에서 `USpotLightComponent` default subobject를 생성한다.
-- `InitializeFlashlightAttachment(USceneComponent* AttachParent)` 또는 `InitializeFlashlightAttachment(UCameraComponent* Camera)`를 제공해 캐릭터가 카메라를 넘긴다.
-
-대안:
-
-- `USceneComponent`로 만들고 자신을 카메라에 붙인 뒤 자식 `USpotLightComponent`를 가진다.
-
-어느 방식을 선택하든 아래 외부 계약은 유지한다.
+`UCursorPartFocusActionComponent`에 drag lifecycle API를 추가한다.
 
 ```cpp
-void ToggleFlashlight();
-void SetFlashlightEnabled(bool bEnabled);
-bool IsFlashlightEnabled() const;
+UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+virtual bool CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
+
+UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+virtual bool BeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+
+UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+virtual void UpdatePartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, float DeltaTime);
+
+UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+virtual bool EndPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, bool bCanceled);
+
+UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+bool IsPartFocusDragInProgress() const;
 ```
 
-## 주요 property
+기본 구현:
 
-`UBeekeeperFlashlightComponent`에 Details 조절용 property를 둔다.
+- `CanBeginPartFocusDrag()`는 false.
+- `BeginPartFocusDrag()`는 false.
+- `UpdatePartFocusDrag()`는 no-op.
+- `EndPartFocusDrag()`는 false.
+
+`UCursorPartFocusScopeComponent`는 press 이후 click cancel threshold 초과 시 press action의 drag 가능 여부를 확인하고 drag lifecycle을 호출한다.
+
+추가로 drag action이 현재 마우스 delta를 해석할 수 있어야 한다. 가장 단순한 계약은 scope가 drag 중 screen delta를 제공하는 것이다.
+
+권장 API:
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight")
-bool bStartEnabled = false;
+UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+FVector2D GetPartFocusDragDeltaFromPress() const;
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight", meta = (ClampMin = "0.0"))
-float Intensity = 5000.0f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight", meta = (ClampMin = "0.0"))
-float AttenuationRadius = 1200.0f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight", meta = (ClampMin = "0.0", ClampMax = "89.0"))
-float InnerConeAngle = 18.0f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight", meta = (ClampMin = "0.0", ClampMax = "89.0"))
-float OuterConeAngle = 32.0f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight")
-FLinearColor LightColor = FLinearColor::White;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight")
-bool bCastShadows = true;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight")
-FVector RelativeLocation = FVector::ZeroVector;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flashlight")
-FRotator RelativeRotation = FRotator::ZeroRotator;
+UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+FVector2D GetPartFocusDragDeltaSinceLastUpdate() const;
 ```
 
-내부 상태:
+Scope 책임:
 
-```cpp
-UPROPERTY(Transient)
-bool bIsFlashlightEnabled = false;
+- press screen position 저장
+- 현재 screen position 추적
+- press 기준 누적 delta 제공
+- 직전 update 기준 delta 제공
+- drag update 전에 delta 값을 갱신
+
+## BeehiveCombActor 변경
+
+`ABeehiveCombActor`에 소비장 flip/shake 상태와 Blueprint event를 추가한다.
+
+### Component 구조
+
+QnA 기준으로 `CombPivotRoot`를 추가한다.
+
+권장 구조:
+
+```text
+Root
+  CombPivotRoot
+    CombMesh
+      QueenFrontAttachPoint
+      QueenBackAttachPoint
+      FrontHoneyPlane
+      BackHoneyPlane
+    FrontFaceBeeNiagara
+    BackFaceBeeNiagara
 ```
 
-SpotLight 참조:
+주의:
+
+- 기존 `Root`와 actor/slot transform은 `UBeehiveCombLiftComponent`가 간접적으로 사용하므로 유지한다.
+- slot `UChildActorComponent` relative transform을 flip 용도로 회전하지 않는다.
+- `CombPivotRoot`는 소비장 내부 visual pivot이다.
+- 기존 component 이름은 가능한 유지한다. 새 component 추가는 허용한다.
+- 기존 child Blueprint에서 component hierarchy 변경 영향이 있을 수 있으므로 최종 보고에 Blueprint compile/save 필요성을 적는다.
+
+### 상태/API
+
+권장 enum:
 
 ```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flashlight", meta = (AllowPrivateAccess = "true"))
-TObjectPtr<USpotLightComponent> FlashlightSpotLight;
+UENUM(BlueprintType)
+enum class EBeehiveCombVisibleFace : uint8
+{
+	Front,
+	Back
+};
 ```
 
-필요하면 이름은 기존 스타일에 맞춰 조정해도 되지만, UCLASS/UPROPERTY rename이 필요한 구조는 만들지 않는다.
+UENUM 추가가 부담되면 `bool bIsBackFaceVisible`로 구현해도 된다. 새 enum 추가는 rename이 아니므로 Core Redirect는 필요하지 않다.
 
-## 권장 함수 구조
-
-`UBeekeeperFlashlightComponent`:
+권장 public API:
 
 ```cpp
-UBeekeeperFlashlightComponent();
-virtual void BeginPlay() override;
-void InitializeFlashlightAttachment(USceneComponent* AttachParent);
-void ToggleFlashlight();
-void SetFlashlightEnabled(bool bEnabled);
-bool IsFlashlightEnabled() const;
-void ApplyFlashlightSettings();
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void FlipCombFace();
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void SetVisibleCombFace(EBeehiveCombVisibleFace NewFace);
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+EBeehiveCombVisibleFace GetVisibleCombFace() const;
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ApplyCombShakeByRatio(float ReductionRatio);
+```
+
+Blueprint events:
+
+```cpp
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb")
+void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);
+
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb")
+void ReceiveCombShaken(int32 StrokeCount, float ReductionRatio);
 ```
 
 동작:
 
-1. 생성자에서 `FlashlightSpotLight`를 생성한다.
-2. 기본 visibility는 꺼진 상태로 둔다.
-3. `BeginPlay()`에서 `bStartEnabled`를 `SetFlashlightEnabled()`로 적용한다.
-4. `InitializeFlashlightAttachment()`에서 카메라에 attach하고 relative transform을 적용한다.
-5. `ApplyFlashlightSettings()`에서 intensity, radius, cone angle, color, shadow 설정을 `USpotLightComponent`에 반영한다.
-6. `SetFlashlightEnabled()`는 내부 상태와 `FlashlightSpotLight->SetVisibility(...)`를 함께 갱신한다.
+- `FlipCombFace()`는 visible face 상태를 토글한다.
+- `SetVisibleCombFace()`는 상태를 저장하고 `CombPivotRoot` local rotation을 적용한다.
+- 기본 rotation은 front = identity, back = local yaw 180도. 실제 asset 축이 다르면 BP event에서 보정할 수 있게 한다.
+- `ApplyCombShakeByRatio()`는 `ReduceTargetBeeCountByRatio(ReductionRatio)`를 호출하고 `ReceiveCombShaken(...)` 이벤트를 발생시킨다.
 
-`ABeekeeperCharacter`:
+front/back 의미:
+
+- 기존 `FrontFaceBeeNiagara`, `BackFaceBeeNiagara`, `QueenFrontAttachPoint`, `QueenBackAttachPoint` 데이터 이름은 유지한다.
+- flip은 visible face 상태를 바꾼다.
+- 데이터 자체를 swap하지 않는다.
+- 필요하면 `GetVisibleCombFace()`를 통해 현재 보이는 face를 해석한다.
+
+## BeehiveCombPartFocusActionComponent 변경
+
+`UBeehiveCombPartFocusActionComponent`를 소비장 drag 해석 owner로 확장한다.
+
+### Tuning property
+
+`UBeehiveCombPartFocusActionComponent` Details에서 조정 가능하게 둔다.
 
 ```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
-TObjectPtr<UBeekeeperFlashlightComponent> BeekeeperFlashlight;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "0.0"))
+float CombFlipDragThresholdPixels = 120.0f;
 
-UPROPERTY(EditDefaultsOnly, Category = "Inputs")
-TObjectPtr<UInputAction> FlashlightToggleAction;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "0.0"))
+float HorizontalDominanceRatio = 1.5f;
 
-void FlashlightToggleInput();
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "0.0"))
+float CombShakeStrokeThresholdPixels = 60.0f;
 
-UBeekeeperFlashlightComponent* GetBeekeeperFlashlight() const;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "1"))
+int32 RequiredShakeStrokeCount = 3;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+float ShakeBeeReductionRatio = 0.25f;
 ```
 
-동작:
+필요 시 vertical dominance도 추가한다.
 
-1. 생성자에서 `BeekeeperFlashlight = CreateDefaultSubobject<UBeekeeperFlashlightComponent>(TEXT("BeekeeperFlashlight"));`
-2. `BeginPlay()`에서 `BeekeeperFlashlight->InitializeFlashlightAttachment(FirstPersonCamera);`
-3. `SetupPlayerInputComponent()`에서 `FlashlightToggleAction`이 있으면 `ETriggerEvent::Started`로 `FlashlightToggleInput()`을 바인딩한다.
-4. `FlashlightToggleInput()`은 focus input lock 여부와 무관하게 `BeekeeperFlashlight->ToggleFlashlight()`를 호출한다.
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb Drag", meta = (ClampMin = "0.0"))
+float VerticalDominanceRatio = 1.25f;
+```
+
+### Drag mode
+
+권장 private enum:
+
+```cpp
+enum class EBeehiveCombDragMode : uint8
+{
+	None,
+	Flip,
+	Shake
+};
+```
+
+private state:
+
+```cpp
+EBeehiveCombDragMode ActiveDragMode = EBeehiveCombDragMode::None;
+float AccumulatedShakeDistanceInCurrentDirection = 0.0f;
+float LastShakeDirectionSign = 0.0f;
+int32 ShakeStrokeCount = 0;
+bool bFlipExecutedThisDrag = false;
+bool bShakeExecutedThisDrag = false;
+```
+
+### Drag lifecycle
+
+`CanBeginPartFocusDrag`:
+
+- owner가 `ABeehiveCombActor`인지 확인한다.
+- action이 이미 engaged인지 확인한다.
+- 소비장이 lifted 상태인지 확인한다.
+  - 현재 action engaged가 lifted 상태의 기준이면 `IsPartActionEngaged()`로 충분하다.
+  - `ABeehive` membership/lift 상태 확인이 필요하면 관련 API가 있는지 먼저 검색한다.
+  - 명확한 lifted 상태 API가 없고 action engaged만으로 부족하면 구현을 중단하고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+`BeginPartFocusDrag`:
+
+- drag state 초기화
+- base drag in progress 상태 설정
+- true 반환
+
+`UpdatePartFocusDrag`:
+
+- scope에서 press 기준 누적 delta와 frame delta를 가져온다.
+- mode가 `None`이면 flip 또는 shake mode 확정 조건을 검사한다.
+- flip 조건이 먼저 만족되면 mode를 `Flip`으로 lock하고 `ABeehiveCombActor::FlipCombFace()`를 1회 호출한다.
+- shake 조건이 먼저 만족되면 mode를 `Shake`로 lock한다.
+- shake mode에서는 Y 방향 stroke count를 갱신한다.
+- `RequiredShakeStrokeCount`에 도달하면 `ABeehiveCombActor::ApplyCombShakeByRatio(ShakeBeeReductionRatio)`를 1회 호출한다.
+- 한 drag session에서 flip과 shake를 동시에 실행하지 않는다.
+- mode가 끝까지 확정되지 않으면 no-op이다.
+
+`EndPartFocusDrag`:
+
+- drag state 초기화
+- click 실행 금지
+- true 반환
+
+## ABeehive / descriptor 등록 주의
+
+현재 `ABeehiveCombActor`는 `PartFocusAction`을 기본 `UCursorPartFocusActionComponent`로 생성하고 있을 수 있다.
+
+구현 방식 선택:
+
+- 권장: `ABeehiveCombActor`의 `PartFocusAction` default subobject class를 `UBeehiveCombPartFocusActionComponent`로 변경한다. subobject 이름 `PartFocusAction`과 UPROPERTY 이름은 유지한다.
+- 대안: `ABeehive`가 active comb actor descriptor 등록 시 `UBeehiveCombPartFocusActionComponent`가 있는 경우 우선 사용하고, 없으면 기존 generic action을 유지한다.
+
+주의:
+
+- UPROPERTY 이름, component 이름, UCLASS 이름을 rename하지 않는다.
+- Blueprint native parent에서 default subobject class 변경 영향이 있으면 최종 보고에 Blueprint compile/save 필요성을 명시한다.
+- class 변경이 기존 Blueprint serialized component와 충돌하면 구현을 중단하고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
 ## Blueprint/API 영향
 
-- 새 component property와 새 input action property를 추가한다.
-- 기존 Blueprint API rename/delete는 하지 않는다.
-- 기존 component 이름은 변경하지 않는다.
-- UCLASS/USTRUCT/UENUM rename이 없으므로 Core Redirect는 필요하지 않아야 한다.
-- `BP_BeekeeperCharacter`에서 새 `FlashlightToggleAction` property 할당이 필요하다.
-
-## Editor 수동 작업
-
-구현 후 Unreal Editor에서 아래 작업이 필요하다.
-
-1. `IA_FlashlightToggle` Input Action asset을 만든다.
-2. 기존 player Mapping Context에 `IA_FlashlightToggle`을 추가한다.
-3. 키를 `T`로 지정한다.
-4. `BP_BeekeeperCharacter`의 `FlashlightToggleAction`에 `IA_FlashlightToggle`을 할당한다.
-5. `BP_BeekeeperCharacter`에서 `BeekeeperFlashlight`의 intensity/radius/cone/shadow 값을 조정한다.
-6. Blueprint compile/save를 수행한다.
-
-Content asset은 구현 에이전트가 직접 수정하지 않는다. 위 작업은 사용자 또는 Unreal Editor 작업 프롬프트로 넘긴다.
+- 기존 UFUNCTION/UPROPERTY 삭제/rename 금지.
+- 새 UFUNCTION/UPROPERTY/UENUM 추가는 허용.
+- UCLASS rename 없음.
+- Core Redirect는 필요하지 않아야 한다.
+- `Content/` asset 직접 수정 금지.
+- BP 애니메이션 이벤트를 추가한 경우 Editor에서 Blueprint 구현/compile/save가 필요하다.
 
 ## 문서 반영
 
 구현 후 갱신:
 
-- `.md/Architecture/CharacterSystem.md`
-  - `UBeekeeperFlashlightComponent`를 Scope/Key Classes/Runtime Flow/Design Notes/Manual Review Points에 추가한다.
-  - 손전등은 Character local input + camera-attached local visual component라고 기록한다.
-- `.md/USER_UNREAL.md`
-  - `IA_FlashlightToggle` 생성, Mapping Context에 `T` 추가, `BP_BeekeeperCharacter` property 할당 절차를 기록한다.
+- `.md/Architecture/FocusSystem.md`
+  - PartFocus drag lifecycle API
+  - scope가 drag delta를 제공하는 계약
+  - no-op 허용 정책
+- `.md/Architecture/WorldActorsSystem.md`
+  - `ABeehiveCombActor`의 `CombPivotRoot`
+  - visible face state
+  - comb flip/shake API
+  - `UBeehiveCombPartFocusActionComponent`의 drag gesture 해석 책임
+  - shake 효과가 `TargetBeeCount` 감소만 수행하는 1차 구현임을 기록
 
 필요 시 갱신:
 
 - `.md/0_ARCHITECTURE.md`
-  - Character source 파일 수 또는 Source 구조 설명이 실제 파일 수와 맞지 않게 되면 갱신한다.
+  - 전체 시스템 책임 흐름이나 Source 파일 수 기준이 바뀌는 경우
+- `.md/QNA_IMPLEMENTATION.md`
+  - lifted 상태 판정, component class 변경 충돌, asset 축 문제 등 구현 중 애매한 점이 생긴 경우
 
 ## 검증 기준
 
@@ -229,46 +395,45 @@ Content asset은 구현 에이전트가 직접 수정하지 않는다. 위 작�
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-Live Coding이 활성화되어 빌드가 실패하면 Editor를 종료하거나 Live Coding을 끄고 다시 빌드한다.
+### 코드 검색 검증
 
-### 코드 검증
+- 기존 `UCursorPartFocusActionComponent` begin/cancel/abort API가 삭제되지 않았는지 확인한다.
+- `UBeehiveCombPartFocusActionComponent`가 drag lifecycle을 override하는지 확인한다.
+- `ABeehiveCombActor`에 `CombPivotRoot` 또는 동등한 pivot root가 추가되었는지 확인한다.
+- `ABeehiveCombActor`가 visible face state와 flip/shake API를 제공하는지 확인한다.
+- shake 성공 시 `ReduceTargetBeeCountByRatio` 경로를 사용하는지 확인한다.
+- flip/shake 둘 다 확정되지 않은 drag release에서 fallback 실행이 없는지 확인한다.
 
-- `ABeekeeperCharacter`에 `BeekeeperFlashlight` component가 생성되어야 한다.
-- `ABeekeeperCharacter`에 `FlashlightToggleAction`이 추가되어야 한다.
-- `SetupPlayerInputComponent()`에서 `FlashlightToggleAction` null check 후 `Started` 이벤트에 바인딩되어야 한다.
-- `FlashlightToggleInput()`은 `bIsFocusInteractionInputLocked`로 차단되면 안 된다.
-- `UBeekeeperFlashlightComponent`는 `USpotLightComponent`를 소유해야 한다.
-- 손전등 spotlight는 `FirstPersonCamera`에 attach되어야 한다.
-- `SetFlashlightEnabled(false)` 상태에서 spotlight visibility가 꺼져야 한다.
-- `SetFlashlightEnabled(true)` 상태에서 spotlight visibility가 켜져야 한다.
-- replication 코드를 추가하지 않아야 한다.
+### PIE 수동 검증
 
-### 수동 검증
-
-Editor/PIE에서 확인:
-
-1. `T`를 누르면 손전등이 켜진다.
-2. 다시 `T`를 누르면 손전등이 꺼진다.
-3. 마우스로 시점을 움직이면 손전등 방향이 카메라 방향을 따라간다.
-4. FocusEngaged 또는 focus input lock 상태에서도 `T` 토글이 동작한다.
-5. 이동/점프/스프린트/focus/hotbar 입력이 기존처럼 동작한다.
-6. `BeekeeperFlashlight` Details 값 변경으로 밝기, 거리, 콘 각도, 그림자 여부를 조절할 수 있다.
+1. 벌통 FocusEngaged 진입 후 lid open 상태에서 소비장을 들어 올린다.
+2. 들어 올린 소비장 위에서 좌우 drag를 명확히 수행하면 소비장이 180도 뒤집힌다.
+3. 대각선/애매한 drag는 flip/shake를 실행하지 않는다.
+4. 들어 올린 소비장 위에서 상하 drag를 `RequiredShakeStrokeCount`만큼 반복하면 소비장 털기가 실행된다.
+5. 털기 성공 시 해당 소비장의 `TargetBeeCount`가 감소하고 Niagara target bee count가 갱신된다.
+6. 한 drag session에서 flip과 shake가 동시에 실행되지 않는다.
+7. drag 불가능 상태에서는 threshold 초과 시 click만 취소되고 no-op이다.
+8. 기존 PartFocus click begin/cancel, lid open/close, comb lift/restore 동작이 유지된다.
+9. item-use-area hold-use가 선택 아이템 상태에서 기존처럼 동작한다.
 
 ## QnA 중단 조건
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- 기존 프로젝트에 이미 손전등 또는 torch 관련 컴포넌트/입력 구조가 존재한다.
-- `T` 키가 기존 필수 gameplay 입력과 충돌하는 것으로 확인된다.
-- `USpotLightComponent` 생성/소유 위치가 Blueprint native parent와 충돌한다.
-- 손전등을 다른 플레이어에게도 보여야 하는 multiplayer 요구가 확인된다.
-- 손전등이 AI 감지, 벌 행동, 밤낮 gameplay 같은 domain logic에 영향을 줘야 하는 요구가 확인된다.
-- 기존 Blueprint asset compile/save 없이는 C++ property 추가가 안정적으로 반영되지 않는 문제가 발생한다.
+- 소비장이 lifted 상태인지 판정할 신뢰 가능한 C++ 기준이 없는 경우
+- `ABeehiveCombActor` default subobject class를 `UBeehiveCombPartFocusActionComponent`로 바꾸는 과정에서 Blueprint serialized component 충돌 가능성이 확인되는 경우
+- 소비장 asset 축 때문에 local yaw 180도가 실제 flip과 맞지 않는 것이 확인된 경우
+- `CombPivotRoot` 추가가 기존 Blueprint component hierarchy나 serialized override를 깨뜨릴 가능성이 큰 경우
+- shake 효과가 벌 수 감소 외에 꿀/위생/수확/Inventory 변경을 요구하는 것으로 확인되는 경우
+- drag lifecycle API를 BlueprintCallable virtual로 둘지 BlueprintImplementableEvent로 둘지 기존 BP 사용과 충돌하는 경우
+- Public API 삭제/rename 없이는 구현이 불가능한 경우
+- Content asset compile/save 없이는 안정적으로 반영되지 않는 문제가 발생하는 경우
 
 ## 주의사항
 
-- 이번 작업은 손전등 토글 기능만 수행한다.
-- DynamicSky, TimeOfDay, Environment 시스템은 변경하지 않는다.
-- 기존 입력 property, component property, UCLASS 이름은 rename하지 않는다.
-- Content asset은 직접 수정하지 않는다.
-- Config는 수정하지 않는다.
+- 이번 작업은 소비장 flip/shake drag 조작만 수행한다.
+- 실제 화분떡/소독약 item-use effect 구현은 범위 밖이다.
+- 소비장 lift movement의 slot transform 계산은 변경하지 않는다.
+- `ABeehiveCombLiftComponent`의 들기/내리기 보간 책임을 침범하지 않는다.
+- `ABeehive`의 queen 위치 bucket, colony population, honey production 로직을 변경하지 않는다.
+- Config/Core Redirect 작업은 하지 않는다.

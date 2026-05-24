@@ -1,80 +1,74 @@
-# 구현 수정 프롬프트: DynamicSky / GameTimeOfDay 분리 리뷰 Findings
+# 구현 수정 프롬프트: Focus LMB Click/Drag Release-Confirm 리뷰 Findings
 
 ## 우선순위
 
-1. High: provider 선택 정책에서 `AGameTimeOfDayActor`를 canonical source of truth로 우선 고정
-2. Medium: `ADynamicSky` legacy provider 구독 경로 보완
-3. Medium: 아키텍처 문서 본문을 split 이후 구조와 일치하도록 갱신
+1. High: release 시점에 최종 pointer 이동거리를 재계산해 threshold 초과 click/drag 판정을 보장
+2. Medium: engaged confirm press 경로가 release-confirm 정책을 우회하지 않도록 정리
+3. Low: PartFocus drag 상태 API를 실제 scope/action 상태와 일치시키거나 노출 범위를 정리
 
 ## 발견 문제
 
-### 1. 기존 `AEnvironmentTimeOfDayActor`가 신규 시간 소유자를 덮어쓸 수 있음
+### 1. release handler가 최종 pointer 위치를 반영하지 않아 같은 프레임 drag/click 취소가 누락됨
 
 - 대상 파일:
-  - `Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp`
-  - `Source/BeekeepingSim/Private/Environment/GameTimeBucketSubsystem.cpp`
-  - `Source/BeekeepingSim/Private/Character/BeekeeperController.cpp`
-  - `Source/BeekeepingSim/Private/Environment/DynamicSky.cpp`
+  - `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
+  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - 원인:
-  - `AEnvironmentTimeOfDayActor::BeginPlay()`가 항상 `SetTimeOfDayProvider(this)`를 호출한다.
-  - `UGameTimeBucketSubsystem::BindTimeProviderActor()`는 기존 provider가 `AGameTimeOfDayActor`인지 확인하지 않고 새 provider로 교체한다.
-  - controller / dynamic sky / subsystem auto-find가 `TActorIterator<AActor>` 첫 번째 `ITimeOfDayProvider`를 사용한다.
+  - `UBeekeeperFocusComponent::HandleFocusPrimaryReleasedInput()`는 `bFocusClickCanceledByMovement`를 release 직전 값으로 캡처하고 바로 reset한다.
+  - `UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased()`도 `bPartClickCanceledByMovement`와 `bPartDragInProgress`를 release 직전 값으로 캡처하고 바로 reset한다.
+  - 두 값은 Tick에서만 갱신되므로 press/release가 같은 프레임 안에서 발생하거나 마지막 Tick 이후 pointer가 threshold를 넘으면 release 위치가 판정에 포함되지 않는다.
 - 영향:
-  - 레벨에 legacy `AEnvironmentTimeOfDayActor`와 신규 `AGameTimeOfDayActor`가 공존하면 BeginPlay 순서 또는 iterator 순서에 따라 bucket, clock, sky가 legacy actor를 시간 기준으로 사용할 수 있다.
-  - `AGameTimeOfDayActor`를 source of truth로 분리한다는 핵심 설계가 런타임에서 보장되지 않는다.
+  - 빠른 flick click에서 threshold를 초과해도 Focus confirm 또는 PartFocus click이 실행될 수 있다.
+  - drag 가능 파츠는 release 전에 threshold를 넘었어도 drag begin/end 경로를 타지 못한다.
+  - edge cancel도 threshold 조건을 실제 press-release 거리 기준으로 보장하지 못한다.
 - 수정 방향:
-  - provider resolve는 2-pass 또는 helper 함수로 통일한다.
-  - 1순위: valid `AGameTimeOfDayActor`
-  - 2순위: legacy `AEnvironmentTimeOfDayActor`
-  - `UGameTimeBucketSubsystem::SetTimeOfDayProvider()`는 기존 bound provider가 `AGameTimeOfDayActor`이면 legacy provider가 덮어쓰지 못하게 한다.
-  - `AEnvironmentTimeOfDayActor::BeginPlay()`는 compatibility wrapper 등록을 유지하더라도, 신규 game time actor가 이미 존재하거나 bound 된 경우 override하지 않게 한다.
+  - release 처리 시작 시 현재 pointer 위치를 읽고 `Max*MoveDistanceSincePress`를 갱신한다.
+  - threshold 초과 여부를 release handler 내부에서 다시 계산한 뒤 click/edge cancel/drag end 여부를 결정한다.
+  - PartFocus는 release 시점에 threshold 초과이고 drag가 아직 시작되지 않았으면 `TryBeginPartDrag()`를 한 번 시도한 뒤, 시작 성공 시 `EndPartDrag(false)`만 실행하고 click은 실행하지 않는다. 시작 실패 시 click만 취소한다.
 
-### 2. `ADynamicSky` legacy transition path가 현재 시간만 1회 적용하고 이후 갱신을 받지 않음
+### 2. engaged confirm press 경로가 여전히 Started에서 action confirm hook을 호출함
 
 - 대상 파일:
-  - `Source/BeekeepingSim/Public/Environment/DynamicSky.h`
-  - `Source/BeekeepingSim/Private/Environment/DynamicSky.cpp`
+  - `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
 - 원인:
-  - `ResolveAndBindTimeSource()`는 `AGameTimeOfDayActor::OnGameTimeOfDayChanged`에만 bind한다.
-  - legacy `AEnvironmentTimeOfDayActor`는 `ApplySkyState(LegacyActor->GetCurrentHour24())`만 호출하고 `OnTimeOfDayChanged` 또는 `OnGameTimeOfDayChanged`를 구독하지 않는다.
+  - `HandleFocusPrimaryPressedInput()`는 `bIsFocusEngaged`일 때 `EngagedFocusAction->HandleConfirmInputWhileEngaged()`를 즉시 호출한다.
 - 영향:
-  - transition level에서 legacy provider로 `ADynamicSky`를 구동하면 BeginPlay 시각만 반영되고 시간 진행에 따른 sky visual update가 멈춘다.
+  - 현재 C++ override인 `UAnchoredFocusCursorActionComponent`는 true만 반환해 실질 동작은 없지만, Focus action 확장 시 LMB down 즉시 confirm hook이 실행될 수 있다.
+  - 이번 변경의 "Started에서 즉시 begin/cancel/confirm 미실행" 기준과 어긋나는 우회 경로로 남는다.
 - 수정 방향:
-  - legacy actor용 transient pointer를 추가하고 `OnTimeOfDayChanged` 또는 새 `OnGameTimeOfDayChanged`에 bind/unbind한다.
-  - handler는 visual-only 원칙에 맞게 `HandleProviderHour(Hour24)`만 호출한다.
-  - 가능하면 legacy도 provider priority fallback에만 사용한다.
+  - engaged 상태의 `FocusConfirmAction Started`는 gesture 후보 저장 또는 consume-only로 제한한다.
+  - 실제 confirm hook 호출이 필요하면 release 확정 경로로 이동하거나, anchored cursor 전용 consume 정책을 명시적으로 분리한다.
 
-### 3. 문서 본문이 split 이후 구조와 충돌함
+### 3. `UCursorPartFocusActionComponent::IsPartFocusDragInProgress()`가 실제 drag 상태와 동기화되지 않음
 
 - 대상 파일:
-  - `.md/0_ARCHITECTURE.md`
-  - `.md/Architecture/EnvironmentSystem.md`
-  - `.md/Architecture/CharacterSystem.md`
-  - `.md/Architecture/UISystem.md`
+  - `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
+  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - 원인:
-  - 기존 본문은 여전히 `AEnvironmentTimeOfDayActor`가 시간 source of truth이고 controller/bucket이 `OnTimeOfDayChanged`를 직접 구독한다고 설명한다.
-  - 하단 update 섹션만 신규 구조를 설명해 동일 문서 안에서 기준이 충돌한다.
+  - action component에 `bIsPartFocusDragInProgress`가 추가되었지만 begin/end drag 경로에서 갱신하지 않는다.
+  - 실제 drag 상태는 scope의 `bPartDragInProgress`만 갱신된다.
 - 영향:
-  - 이후 구현/리뷰 agent가 오래된 본문을 정본으로 읽으면 신규 provider 기반 설계와 반대 결론을 낼 수 있다.
+  - Blueprint/C++에서 action의 `IsPartFocusDragInProgress()`를 읽으면 항상 false가 될 수 있다.
 - 수정 방향:
-  - Environment key classes/runtime flow/time model/bucket model/time clock integration을 `AGameTimeOfDayActor` + `ITimeOfDayProvider` + `ADynamicSky` 기준으로 갱신한다.
-  - Character/UI clock flow는 provider 기반 resolve와 `AGameTimeOfDayActor` 우선 구독을 본문에 반영한다.
-  - legacy `AEnvironmentTimeOfDayActor`는 compatibility/transition 경로로 명시한다.
+  - action-level 상태 노출이 필요하면 scope가 begin/end 성공 시 action 상태를 갱신할 수 있는 setter/internal API를 둔다.
+  - 아니면 action의 상태 필드와 getter를 제거하고 scope의 `IsPartFocusDragInProgress()`만 공개 상태로 유지한다.
 
 ## 검증 방법
 
 - UBT:
   - `BeekeepingSimEditor Win64 Development`
-- 검색:
-  - `rg "ITimeOfDayProvider|OnGameTimeOfDayChanged|SetTimeOfDayProvider|AGameTimeOfDayActor|ADynamicSky" Source/BeekeepingSim/Public Source/BeekeepingSim/Private -n`
-  - `rg "#include \"Public/" Source/BeekeepingSim/Public Source/BeekeepingSim/Private -n`
-  - `rg "AEnvironmentTimeOfDayActor.*source of truth|OnTimeOfDayChanged.*clock|SetTimeOfDayActor\\(" .md/0_ARCHITECTURE.md .md/Architecture -n`
-- PIE:
-  - 신규 레벨 구성: `AGameTimeOfDayActor` 1개 + `ADynamicSky` 1개에서 sky, clock, bucket listener가 같은 hour를 따르는지 확인
-  - 공존 구성: legacy `AEnvironmentTimeOfDayActor`가 남아 있어도 `AGameTimeOfDayActor`가 bucket/clock/sky 기준으로 우선되는지 확인
-  - legacy-only 구성: `AEnvironmentTimeOfDayActor`만 있을 때 기존 clock/bucket 호환 경로가 유지되는지 확인
+- PIE 수동 시나리오:
+  - 1. 일반 PreviewFocus 대상 위에서 LMB press 후 같은 프레임/짧은 시간 안에 threshold 이상 이동하고 release: confirm 미실행 확인
+  - 2. 일반 PreviewFocus 대상 A에서 press 후 대상 B로 이동해 release: confirm 미실행 확인
+  - 3. PartFocus 대상에서 press 후 threshold 이하 release: begin/cancel 1회 실행 확인
+  - 4. PartFocus drag 불가 대상에서 threshold 초과 후 release: click 미실행, 추가 동작 없음 확인
+  - 5. PartFocus drag 가능 테스트 subclass에서 threshold 초과: drag begin 후 release 시 drag end만 실행되고 click 미실행 확인
+  - 6. edge cancel 영역에서 press/release 모두 edge이고 threshold 이하: cancel cascade 또는 host cancel 확인
+  - 7. edge에서 press 후 threshold 초과 release: edge cancel 미실행 확인
+  - 8. item-use-area 활성 + 선택 아이템 상태에서 LMB press/release: item-use가 소비하고 PartFocus click/drag 미시작 확인
 
 ## 문서 반영 필요 여부
 
-- 필요.
-- 시간 소유자 분리는 아키텍처 source of truth 변경이므로 `.md/0_ARCHITECTURE.md`와 관련 system 문서 본문까지 갱신해야 한다.
+- 수정이 release 판정 구현 보완이면 기존 `.md/Architecture/FocusSystem.md`의 정책과 일치시키는 작업이라 추가 문서 반영은 불필요하다.
+- engaged confirm press 정책을 명시적으로 바꾸면 `.md/Architecture/FocusSystem.md` Input Notes에 consume-only/release-confirm 기준을 보강한다.

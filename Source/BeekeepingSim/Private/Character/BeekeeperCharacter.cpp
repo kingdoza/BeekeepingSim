@@ -137,7 +137,8 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 
 		if (FocusConfirmAction)
 		{
-			EnhancedInputComponent->BindAction(FocusConfirmAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusConfirmInput);
+			EnhancedInputComponent->BindAction(FocusConfirmAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusPrimaryPressedInput);
+			EnhancedInputComponent->BindAction(FocusConfirmAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::FocusPrimaryReleasedInput);
 		}
 
 		if (FocusCancelAction)
@@ -157,8 +158,8 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 
 		if (PartFocusClickAction)
 		{
-			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusClickInput);
-			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::PartFocusClickReleaseInput);
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusPointerPressedInput);
+			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Completed, this, &ABeekeeperCharacter::PartFocusPointerReleasedInput);
 		}
 
 		if (PartFocusRAction)
@@ -210,14 +211,29 @@ void ABeekeeperCharacter::SprintReleaseInput()
 	BeekeeperMovement->StopSprinting();
 }
 
-void ABeekeeperCharacter::FocusConfirmInput()
+void ABeekeeperCharacter::FocusPrimaryPressedInput()
 {
 	if (!BeekeeperFocus)
 	{
 		return;
 	}
 
-	BeekeeperFocus->ConfirmFocus();
+	BeekeeperFocus->HandleFocusPrimaryPressedInput();
+}
+
+void ABeekeeperCharacter::FocusPrimaryReleasedInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandleFocusPrimaryReleasedInput();
+}
+
+void ABeekeeperCharacter::FocusConfirmInput()
+{
+	FocusPrimaryPressedInput();
 }
 
 void ABeekeeperCharacter::FocusCancelInput()
@@ -232,22 +248,32 @@ void ABeekeeperCharacter::FocusCancelInput()
 
 void ABeekeeperCharacter::PartFocusClickInput()
 {
-	if (!BeekeeperFocus)
-	{
-		return;
-	}
-
-	BeekeeperFocus->HandlePartFocusClickInput();
+	PartFocusPointerPressedInput();
 }
 
-void ABeekeeperCharacter::PartFocusClickReleaseInput()
+void ABeekeeperCharacter::PartFocusPointerPressedInput()
 {
 	if (!BeekeeperFocus)
 	{
 		return;
 	}
 
-	BeekeeperFocus->HandlePartFocusClickReleasedInput();
+	BeekeeperFocus->HandlePartFocusPointerPressedInput();
+}
+
+void ABeekeeperCharacter::PartFocusPointerReleasedInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandlePartFocusPointerReleasedInput();
+}
+
+void ABeekeeperCharacter::PartFocusClickReleaseInput()
+{
+	PartFocusPointerReleasedInput();
 }
 
 void ABeekeeperCharacter::PartFocusRInput()

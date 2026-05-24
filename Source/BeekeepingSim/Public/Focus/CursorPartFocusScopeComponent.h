@@ -86,6 +86,15 @@ public:
 	bool HandlePartFocusClickInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
+	bool HandlePartFocusPointerPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
+	bool HandlePartFocusPointerReleased();
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus")
+	bool IsPartFocusDragInProgress() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	bool HandlePreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
@@ -138,7 +147,15 @@ private:
 	bool CancelActionCascade(UCursorPartFocusActionComponent* Action, bool bAbort, TSet<TObjectPtr<UCursorPartFocusActionComponent>>& Visited);
 	void RemoveInactiveActions();
 	bool BeginPartActionForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor);
+	bool ExecutePartClickForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor);
+	void ResetPartPointerGestureState();
+	bool TryGetMouseScreenPosition(FVector2D& OutPosition) const;
+	void UpdatePartPointerGestureState(float DeltaTime);
+	bool TryBeginPartDrag();
+	void UpdatePartDrag(float DeltaTime);
+	void EndPartDrag(bool bCanceled);
 	bool HandleEdgeCancelClick() const;
+	bool IsMouseInEdgeCancelRegion(const FVector2D& ScreenPosition) const;
 	void RequestHostFocusCancel() const;
 
 	UPROPERTY(Transient)
@@ -152,6 +169,18 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UCursorPartFocusActionComponent>> ActivePartActions;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCursorPartFocusActionComponent> PressedPartAction;
+
+	FName PressedPartId = NAME_None;
+	int32 PressedPartIndex = INDEX_NONE;
+	FVector2D PressedPartScreenPosition = FVector2D::ZeroVector;
+	float MaxPartPointerMoveDistanceSincePress = 0.0f;
+	bool bIsPartPrimaryPointerDown = false;
+	bool bPartClickCanceledByMovement = false;
+	bool bPartDragInProgress = false;
+	bool bPressedInEdgeCancelRegion = false;
 
 	int32 HoveredPartIndex = INDEX_NONE;
 	bool bIsScopeActive = false;

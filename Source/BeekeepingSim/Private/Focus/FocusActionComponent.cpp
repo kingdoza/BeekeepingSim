@@ -47,10 +47,20 @@ bool UFocusActionComponent::HandleCancelInputWhileEngaged(ABeekeeperCharacter* I
 
 bool UFocusActionComponent::HandlePartFocusClickInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
 {
-	return false;
+	return HandlePartFocusPointerPressedInputWhileEngaged(InteractingCharacter);
 }
 
 bool UFocusActionComponent::HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return HandlePartFocusPointerReleasedInputWhileEngaged(InteractingCharacter);
+}
+
+bool UFocusActionComponent::HandlePartFocusPointerPressedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
+bool UFocusActionComponent::HandlePartFocusPointerReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
 {
 	return false;
 }

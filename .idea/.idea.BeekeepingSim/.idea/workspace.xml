@@ -14,8 +14,30 @@
   <component name="ChangeListManager">
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Material/M_ItemUseArea.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Material/M_ItemUseArea.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Material/M_ItemUseArea_Green.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Material/M_ItemUseArea_Green.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Material/M_Outline.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Material/M_Outline.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Materials/Sky/M_DynamicSkySphere.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Materials/Sky/M_DynamicSkySphere.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/9/5H/ACLF1RE2FE3DA18SN8XPCZ.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/9/5H/ACLF1RE2FE3DA18SN8XPCZ.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeeperFocusComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeeperFocusComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/FocusActionComponent.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,24 +90,24 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;Beehive__SwarmSpline&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;editor.preferences.completion&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "git-widget-placeholder": "Beehive",
+    "ignore.virus.scanning.warn.message": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "editor.preferences.completion",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecapSpentCounter">
     <option name="endsOfQuotaMs" value="1779237467327" />
     <option name="spentUsd" value="0.19140026" />
@@ -240,6 +262,7 @@
       <workItem from="1778250525842" duration="2747000" />
       <workItem from="1779574093144" duration="210000" />
       <workItem from="1779574373656" duration="6253000" />
+      <workItem from="1779641175504" duration="2102000" />
     </task>
     <servers />
   </component>

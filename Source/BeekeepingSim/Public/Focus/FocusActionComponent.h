@@ -40,6 +40,12 @@ public:
 	virtual bool HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandlePartFocusPointerPressedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandlePartFocusPointerReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
 	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Focus Action")

@@ -111,6 +111,10 @@ protected:
 	
 	void SprintReleaseInput();
 
+	void FocusPrimaryPressedInput();
+
+	void FocusPrimaryReleasedInput();
+
 	void FocusConfirmInput();
 
 	void FocusCancelInput();
@@ -120,6 +124,10 @@ protected:
 	void HotbarWheelInput(const FInputActionValue& Value);
 
 	void PartFocusClickInput();
+
+	void PartFocusPointerPressedInput();
+
+	void PartFocusPointerReleasedInput();
 
 	void PartFocusClickReleaseInput();
 

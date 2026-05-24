@@ -4,6 +4,7 @@
 #include "Focus/BeekeeperFocusComponent.h"
 
 #include "Camera/CameraComponent.h"
+#include "Focus/BeekeepingSimFocusSettings.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Character/BeekeeperCharacter.h"
@@ -58,16 +59,35 @@ void UBeekeeperFocusComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	if (bIsFocusEngaged)
 	{
 		UpdateEngagedFocusState();
-		return;
 	}
 
-	if (CurrentFocusTarget && !IsValid(CurrentFocusTarget))
+	if (bIsFocusPrimaryPointerDown)
 	{
-		CurrentFocusTarget = nullptr;
-		BroadcastPreviewPromptState();
+		FVector2D CurrentMousePosition = FVector2D::ZeroVector;
+		if (TryGetMouseScreenPosition(CurrentMousePosition))
+		{
+			const float MoveDistance = FVector2D::Distance(CurrentMousePosition, PressedFocusScreenPosition);
+			MaxFocusPointerMoveDistanceSincePress = FMath::Max(MaxFocusPointerMoveDistanceSincePress, MoveDistance);
+		}
+
+		const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+		const float Threshold = FocusSettings ? FMath::Max(0.0f, FocusSettings->ClickCancelThresholdPixels) : 12.0f;
+		if (MaxFocusPointerMoveDistanceSincePress > Threshold)
+		{
+			bFocusClickCanceledByMovement = true;
+		}
 	}
 
-	RefreshFocusTarget();
+	if (!bIsFocusEngaged)
+	{
+		if (CurrentFocusTarget && !IsValid(CurrentFocusTarget))
+		{
+			CurrentFocusTarget = nullptr;
+			BroadcastPreviewPromptState();
+		}
+
+		RefreshFocusTarget();
+	}
 }
 
 void UBeekeeperFocusComponent::ConfirmFocus()
@@ -156,24 +176,84 @@ void UBeekeeperFocusComponent::CancelFocus()
 	RefreshCrosshairVisibilityFromCurrentAction();
 }
 
-bool UBeekeeperFocusComponent::HandlePartFocusClickInput()
+void UBeekeeperFocusComponent::HandleFocusPrimaryPressedInput()
 {
-	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
+	ResetFocusPrimaryGestureState();
+
+	if (bIsFocusEngaged)
 	{
-		return false;
+		// Engaged confirm stays release-driven for LMB gesture consistency.
+		return;
 	}
 
-	return EngagedFocusAction->HandlePartFocusClickInputWhileEngaged(OwnerCharacter);
+	bIsFocusPrimaryPointerDown = true;
+	PressedFocusTarget = IsValid(CurrentFocusTarget) ? CurrentFocusTarget : nullptr;
+	TryGetMouseScreenPosition(PressedFocusScreenPosition);
+}
+
+void UBeekeeperFocusComponent::HandleFocusPrimaryReleasedInput()
+{
+	const bool bWasPointerDown = bIsFocusPrimaryPointerDown;
+	const TObjectPtr<UFocusTargetComponent> PressedTarget = PressedFocusTarget;
+	float MaxMoveDistance = MaxFocusPointerMoveDistanceSincePress;
+	FVector2D ReleaseMousePosition = FVector2D::ZeroVector;
+	if (bWasPointerDown && TryGetMouseScreenPosition(ReleaseMousePosition))
+	{
+		const float ReleaseMoveDistance = FVector2D::Distance(ReleaseMousePosition, PressedFocusScreenPosition);
+		MaxMoveDistance = FMath::Max(MaxMoveDistance, ReleaseMoveDistance);
+	}
+
+	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
+	const float Threshold = FocusSettings ? FMath::Max(0.0f, FocusSettings->ClickCancelThresholdPixels) : 12.0f;
+	const bool bCanceledByMovement = bFocusClickCanceledByMovement || (MaxMoveDistance > Threshold);
+	ResetFocusPrimaryGestureState();
+
+	if (!bWasPointerDown || bCanceledByMovement || bIsFocusEngaged)
+	{
+		return;
+	}
+
+	if (!IsValid(PressedTarget) || !IsValid(CurrentFocusTarget))
+	{
+		return;
+	}
+
+	if (PressedTarget != CurrentFocusTarget)
+	{
+		return;
+	}
+
+	ConfirmFocus();
+}
+
+bool UBeekeeperFocusComponent::HandlePartFocusClickInput()
+{
+	return HandlePartFocusPointerPressedInput();
 }
 
 bool UBeekeeperFocusComponent::HandlePartFocusClickReleasedInput()
 {
+	return HandlePartFocusPointerReleasedInput();
+}
+
+bool UBeekeeperFocusComponent::HandlePartFocusPointerPressedInput()
+{
 	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
 	{
 		return false;
 	}
 
-	return EngagedFocusAction->HandlePartFocusClickReleasedInputWhileEngaged(OwnerCharacter);
+	return EngagedFocusAction->HandlePartFocusPointerPressedInputWhileEngaged(OwnerCharacter);
+}
+
+bool UBeekeeperFocusComponent::HandlePartFocusPointerReleasedInput()
+{
+	if (!bIsFocusEngaged || !EngagedFocusAction || !OwnerCharacter)
+	{
+		return false;
+	}
+
+	return EngagedFocusAction->HandlePartFocusPointerReleasedInputWhileEngaged(OwnerCharacter);
 }
 
 bool UBeekeeperFocusComponent::HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key)
@@ -324,6 +404,8 @@ void UBeekeeperFocusComponent::ClearPreviewFocus(bool bNotifyCancel)
 
 void UBeekeeperFocusComponent::ClearEngagedFocus()
 {
+	ResetFocusPrimaryGestureState();
+
 	if (EngagedFocusAction && OwnerCharacter)
 	{
 		EngagedFocusAction->AbortFocusAction(OwnerCharacter);
@@ -407,4 +489,37 @@ bool UBeekeeperFocusComponent::ShouldDisableTickForNonLocal() const
 
 	const APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
 	return !PlayerController || !PlayerController->IsLocalController();
+}
+
+bool UBeekeeperFocusComponent::TryGetMouseScreenPosition(FVector2D& OutPosition) const
+{
+	if (!OwnerCharacter)
+	{
+		return false;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
+	if (!PlayerController || !PlayerController->IsLocalController())
+	{
+		return false;
+	}
+
+	float ScreenX = 0.0f;
+	float ScreenY = 0.0f;
+	if (!PlayerController->GetMousePosition(ScreenX, ScreenY))
+	{
+		return false;
+	}
+
+	OutPosition = FVector2D(ScreenX, ScreenY);
+	return true;
+}
+
+void UBeekeeperFocusComponent::ResetFocusPrimaryGestureState()
+{
+	PressedFocusTarget = nullptr;
+	PressedFocusScreenPosition = FVector2D::ZeroVector;
+	MaxFocusPointerMoveDistanceSincePress = 0.0f;
+	bIsFocusPrimaryPointerDown = false;
+	bFocusClickCanceledByMovement = false;
 }

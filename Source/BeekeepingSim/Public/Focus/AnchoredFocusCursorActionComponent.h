@@ -31,6 +31,10 @@ public:
 
 	virtual bool HandlePartFocusClickReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
 
+	virtual bool HandlePartFocusPointerPressedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
+	virtual bool HandlePartFocusPointerReleasedInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
 	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key) override;
 
 protected:

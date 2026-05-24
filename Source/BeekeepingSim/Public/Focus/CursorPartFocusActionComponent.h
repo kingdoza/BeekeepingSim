@@ -73,6 +73,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	bool HandlePreviewKeyAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key);
 
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+	virtual bool CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+	virtual bool BeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+	virtual void UpdatePartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
+	virtual bool EndPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, bool bCanceled);
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+	bool IsPartFocusDragInProgress() const { return bIsPartFocusDragInProgress; }
+
+	void SetPartFocusDragInProgress(bool bInProgress) { bIsPartFocusDragInProgress = bInProgress; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Cursor Part Focus|Events")
 	FCursorPartFocusActionSignature OnPartFocusBegin;
 
@@ -117,6 +134,7 @@ protected:
 	bool bEnableCPreviewAction = false;
 
 	bool bIsPartActionEngaged = false;
+	bool bIsPartFocusDragInProgress = false;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Cursor Part Focus", meta = (DisplayName = "Receive Part Focus Begin"))
 	void ReceivePartFocusBegin(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
