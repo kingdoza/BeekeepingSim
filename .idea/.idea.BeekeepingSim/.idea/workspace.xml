@@ -14,18 +14,8 @@
   <component name="ChangeListManager">
     <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/CharacterSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/USER_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/USER_UNREAL.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/BP_BeekeeperCharacter.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Beekeeper/IMC_Beekeeper.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Environment/BP_DynamicSky.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Environment/BP_DynamicSky.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/9/5H/ACLF1RE2FE3DA18SN8XPCZ.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/9/5H/ACLF1RE2FE3DA18SN8XPCZ.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Character/BeekeeperCharacter.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeOfDayActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/GameTimeOfDayActor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Character/BeekeeperCharacter.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -249,7 +239,7 @@
       <workItem from="1778170678250" duration="2593000" />
       <workItem from="1778250525842" duration="2747000" />
       <workItem from="1779574093144" duration="210000" />
-      <workItem from="1779574373656" duration="4469000" />
+      <workItem from="1779574373656" duration="6253000" />
     </task>
     <servers />
   </component>
