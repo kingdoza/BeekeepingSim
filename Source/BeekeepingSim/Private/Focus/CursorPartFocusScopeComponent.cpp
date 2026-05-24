@@ -117,6 +117,10 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusPointerPressed()
 		bPressedInEdgeCancelRegion = false;
 		if (TryGetMouseScreenPosition(PressedPartScreenPosition))
 		{
+			CurrentPartScreenPosition = PressedPartScreenPosition;
+			PreviousPartScreenPosition = PressedPartScreenPosition;
+			CachedPartDragDeltaFromPress = FVector2D::ZeroVector;
+			CachedPartDragDeltaSinceLastUpdate = FVector2D::ZeroVector;
 			bPressedInEdgeCancelRegion = IsMouseInEdgeCancelRegion(PressedPartScreenPosition);
 		}
 		return true;
@@ -124,6 +128,10 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusPointerPressed()
 
 	bIsPartPrimaryPointerDown = true;
 	TryGetMouseScreenPosition(PressedPartScreenPosition);
+	CurrentPartScreenPosition = PressedPartScreenPosition;
+	PreviousPartScreenPosition = PressedPartScreenPosition;
+	CachedPartDragDeltaFromPress = FVector2D::ZeroVector;
+	CachedPartDragDeltaSinceLastUpdate = FVector2D::ZeroVector;
 	bPressedInEdgeCancelRegion = IsMouseInEdgeCancelRegion(PressedPartScreenPosition);
 	return true;
 }
@@ -152,6 +160,11 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased()
 	const bool bHasReleaseMousePosition = TryGetMouseScreenPosition(ReleaseScreenPosition);
 	if (bHasReleaseMousePosition)
 	{
+		PreviousPartScreenPosition = CurrentPartScreenPosition;
+		CurrentPartScreenPosition = ReleaseScreenPosition;
+		CachedPartDragDeltaFromPress = CurrentPartScreenPosition - PressedPartScreenPosition;
+		CachedPartDragDeltaSinceLastUpdate = CurrentPartScreenPosition - PreviousPartScreenPosition;
+
 		const float ReleaseMoveDistance = FVector2D::Distance(ReleaseScreenPosition, PressedPartScreenPosition);
 		MaxMoveDistance = FMath::Max(MaxMoveDistance, ReleaseMoveDistance);
 	}
@@ -172,6 +185,11 @@ bool UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased()
 
 	if (bDragWasInProgress)
 	{
+		if (PressedPartAction && OwnerCharacter)
+		{
+			PressedPartAction->UpdatePartFocusDrag(this, OwnerCharacter, 0.0f);
+		}
+
 		EndPartDrag(false);
 		ResetPartPointerGestureState();
 		return true;
@@ -695,6 +713,10 @@ void UCursorPartFocusScopeComponent::ResetPartPointerGestureState()
 	PressedPartIndex = INDEX_NONE;
 	PressedPartAction = nullptr;
 	PressedPartScreenPosition = FVector2D::ZeroVector;
+	CurrentPartScreenPosition = FVector2D::ZeroVector;
+	PreviousPartScreenPosition = FVector2D::ZeroVector;
+	CachedPartDragDeltaFromPress = FVector2D::ZeroVector;
+	CachedPartDragDeltaSinceLastUpdate = FVector2D::ZeroVector;
 	MaxPartPointerMoveDistanceSincePress = 0.0f;
 	bIsPartPrimaryPointerDown = false;
 	bPartClickCanceledByMovement = false;
@@ -728,7 +750,7 @@ bool UCursorPartFocusScopeComponent::TryGetMouseScreenPosition(FVector2D& OutPos
 
 void UCursorPartFocusScopeComponent::UpdatePartPointerGestureState(float DeltaTime)
 {
-	if (!bIsPartPrimaryPointerDown || bPartDragInProgress)
+	if (!bIsPartPrimaryPointerDown)
 	{
 		return;
 	}
@@ -736,13 +758,18 @@ void UCursorPartFocusScopeComponent::UpdatePartPointerGestureState(float DeltaTi
 	FVector2D CurrentMousePosition = FVector2D::ZeroVector;
 	if (TryGetMouseScreenPosition(CurrentMousePosition))
 	{
+		PreviousPartScreenPosition = CurrentPartScreenPosition;
+		CurrentPartScreenPosition = CurrentMousePosition;
+		CachedPartDragDeltaFromPress = CurrentPartScreenPosition - PressedPartScreenPosition;
+		CachedPartDragDeltaSinceLastUpdate = CurrentPartScreenPosition - PreviousPartScreenPosition;
+
 		const float MoveDistance = FVector2D::Distance(CurrentMousePosition, PressedPartScreenPosition);
 		MaxPartPointerMoveDistanceSincePress = FMath::Max(MaxPartPointerMoveDistanceSincePress, MoveDistance);
 	}
 
 	const UBeekeepingSimFocusSettings* FocusSettings = GetDefault<UBeekeepingSimFocusSettings>();
 	const float Threshold = FocusSettings ? FMath::Max(0.0f, FocusSettings->ClickCancelThresholdPixels) : 12.0f;
-	if (MaxPartPointerMoveDistanceSincePress <= Threshold)
+	if (bPartDragInProgress || MaxPartPointerMoveDistanceSincePress <= Threshold)
 	{
 		return;
 	}
@@ -800,6 +827,16 @@ void UCursorPartFocusScopeComponent::EndPartDrag(bool bCanceled)
 bool UCursorPartFocusScopeComponent::IsPartFocusDragInProgress() const
 {
 	return bPartDragInProgress;
+}
+
+FVector2D UCursorPartFocusScopeComponent::GetPartFocusDragDeltaFromPress() const
+{
+	return CachedPartDragDeltaFromPress;
+}
+
+FVector2D UCursorPartFocusScopeComponent::GetPartFocusDragDeltaSinceLastUpdate() const
+{
+	return CachedPartDragDeltaSinceLastUpdate;
 }
 
 bool UCursorPartFocusScopeComponent::IsMouseInEdgeCancelRegion(const FVector2D& ScreenPosition) const

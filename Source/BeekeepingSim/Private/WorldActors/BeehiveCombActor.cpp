@@ -6,6 +6,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
+#include "WorldActors/BeehiveCombPartFocusActionComponent.h"
 
 namespace BeehiveCombActorNames
 {
@@ -21,16 +22,19 @@ ABeehiveCombActor::ABeehiveCombActor()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
+	CombPivotRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CombPivotRoot"));
+	CombPivotRoot->SetupAttachment(Root);
+
 	CombMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CombMesh"));
-	CombMesh->SetupAttachment(Root);
+	CombMesh->SetupAttachment(CombPivotRoot);
 
 	FrontFaceBeeNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FrontFaceBeeNiagara"));
-	FrontFaceBeeNiagara->SetupAttachment(Root);
+	FrontFaceBeeNiagara->SetupAttachment(CombPivotRoot);
 
 	BackFaceBeeNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("BackFaceBeeNiagara"));
-	BackFaceBeeNiagara->SetupAttachment(Root);
+	BackFaceBeeNiagara->SetupAttachment(CombPivotRoot);
 
-	PartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("PartFocusAction"));
+	PartFocusAction = CreateDefaultSubobject<UBeehiveCombPartFocusActionComponent>(TEXT("PartFocusAction"));
 	if (PartFocusAction)
 	{
 		PartFocusAction->SetEngageMode(ECursorPartFocusEngageMode::PersistentAction);
@@ -251,6 +255,38 @@ void ABeehiveCombActor::ApplyHoneyVisualState()
 	{
 		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
 	}
+}
+
+void ABeehiveCombActor::FlipCombFace()
+{
+	FlipCombFaceWithDirection(EBeehiveCombFlipDirection::Right);
+}
+
+void ABeehiveCombActor::FlipCombFaceWithDirection(EBeehiveCombFlipDirection FlipDirection)
+{
+	const EBeehiveCombVisibleFace NewFace = (VisibleCombFace == EBeehiveCombVisibleFace::Front)
+		? EBeehiveCombVisibleFace::Back
+		: EBeehiveCombVisibleFace::Front;
+	SetVisibleCombFace(NewFace);
+	ReceiveCombFlipped(VisibleCombFace);
+	ReceiveCombFlippedWithDirection(VisibleCombFace, FlipDirection);
+}
+
+void ABeehiveCombActor::SetVisibleCombFace(EBeehiveCombVisibleFace NewFace)
+{
+	VisibleCombFace = NewFace;
+}
+
+void ABeehiveCombActor::ApplyCombShakeByRatio(float ReductionRatio)
+{
+	ApplyCombShakeByRatioWithStrokeCount(ReductionRatio, 0);
+}
+
+void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount)
+{
+	const float ClampedRatio = FMath::Clamp(ReductionRatio, 0.0f, 1.0f);
+	ReduceTargetBeeCountByRatio(ClampedRatio);
+	ReceiveCombShaken(FMath::Max(0, StrokeCount), ClampedRatio);
 }
 
 #if WITH_EDITOR

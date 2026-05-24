@@ -1,74 +1,73 @@
-# 구현 수정 프롬프트: Focus LMB Click/Drag Release-Confirm 리뷰 Findings
+# 구현 수정 프롬프트: Beehive Comb Drag Flip/Shake 리뷰 Findings
 
 ## 우선순위
 
-1. High: release 시점에 최종 pointer 이동거리를 재계산해 threshold 초과 click/drag 판정을 보장
-2. Medium: engaged confirm press 경로가 release-confirm 정책을 우회하지 않도록 정리
-3. Low: PartFocus drag 상태 API를 실제 scope/action 상태와 일치시키거나 노출 범위를 정리
+1. High: drag 진행 중에도 매 Tick pointer delta cache를 갱신하고 action update 전에 최신 delta를 제공
+2. High: release 시점에 새로 시작된 drag session도 final delta로 한 번 해석한 뒤 end 처리
+3. Medium: 초기화/명시 set 경로에서 flip BP event가 불필요하게 발동하지 않도록 flip event와 state apply를 분리
 
 ## 발견 문제
 
-### 1. release handler가 최종 pointer 위치를 반영하지 않아 같은 프레임 drag/click 취소가 누락됨
+### 1. drag 시작 후 delta cache가 멈춰 comb flip/shake threshold를 정상 감지하지 못함
 
 - 대상 파일:
-  - `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
+  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
+  - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+- 원인:
+  - `UpdatePartPointerGestureState()`가 `bPartDragInProgress`이면 즉시 return한다.
+  - delta cache(`CachedPartDragDeltaFromPress`, `CachedPartDragDeltaSinceLastUpdate`) 갱신도 이 함수 안에만 있다.
+  - Tick 순서는 `UpdatePartPointerGestureState()` 후 `UpdatePartDrag()`인데, drag 시작 이후에는 action update 전에 최신 mouse delta가 들어가지 않는다.
+- 영향:
+  - drag는 click cancel threshold(기본 12px)를 넘는 순간 시작되지만, comb flip threshold(기본 120px)까지 이동해도 delta가 12px 근처 값에 고정될 수 있다.
+  - 일반적인 느린 좌우 drag에서는 `UBeehiveCombPartFocusActionComponent`가 flip 조건을 감지하지 못한다.
+  - shake도 실제 Y 방향 반전이 delta에 반영되지 않아 stroke count가 정상 증가하지 않는다.
+- 수정 방향:
+  - pointer down 상태에서는 drag 진행 여부와 무관하게 mouse position과 delta cache를 갱신한다.
+  - click cancel/drag begin 시도만 `!bPartDragInProgress` 조건으로 제한한다.
+  - `UpdatePartDrag()` 호출 직전에 항상 최신 `CachedPartDragDeltaFromPress` / `CachedPartDragDeltaSinceLastUpdate`가 준비되도록 helper를 분리한다.
+
+### 2. release에서 처음 threshold를 넘긴 drag는 update 없이 바로 end되어 flip/shake가 실행되지 않음
+
+- 대상 파일:
   - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - 원인:
-  - `UBeekeeperFocusComponent::HandleFocusPrimaryReleasedInput()`는 `bFocusClickCanceledByMovement`를 release 직전 값으로 캡처하고 바로 reset한다.
-  - `UCursorPartFocusScopeComponent::HandlePartFocusPointerReleased()`도 `bPartClickCanceledByMovement`와 `bPartDragInProgress`를 release 직전 값으로 캡처하고 바로 reset한다.
-  - 두 값은 Tick에서만 갱신되므로 press/release가 같은 프레임 안에서 발생하거나 마지막 Tick 이후 pointer가 threshold를 넘으면 release 위치가 판정에 포함되지 않는다.
+  - `HandlePartFocusPointerReleased()`는 release 위치를 반영한 뒤 `TryBeginPartDrag()`가 성공하면 `bDragWasInProgress = true`로 만들고 바로 `EndPartDrag(false)`를 호출한다.
+  - 이 경로에서는 `UpdatePartDrag()`가 한 번도 호출되지 않는다.
 - 영향:
-  - 빠른 flick click에서 threshold를 초과해도 Focus confirm 또는 PartFocus click이 실행될 수 있다.
-  - drag 가능 파츠는 release 전에 threshold를 넘었어도 drag begin/end 경로를 타지 못한다.
-  - edge cancel도 threshold 조건을 실제 press-release 거리 기준으로 보장하지 못한다.
+  - 빠른 drag-release 또는 같은 프레임 release에서 `DeltaFromPress`가 flip threshold를 만족해도 comb action이 해석할 기회가 없다.
+  - 요구된 release-confirm/drag 충돌 방지 정책은 만족하지만 실제 flip/shake 동작이 누락된다.
 - 수정 방향:
-  - release 처리 시작 시 현재 pointer 위치를 읽고 `Max*MoveDistanceSincePress`를 갱신한다.
-  - threshold 초과 여부를 release handler 내부에서 다시 계산한 뒤 click/edge cancel/drag end 여부를 결정한다.
-  - PartFocus는 release 시점에 threshold 초과이고 drag가 아직 시작되지 않았으면 `TryBeginPartDrag()`를 한 번 시도한 뒤, 시작 성공 시 `EndPartDrag(false)`만 실행하고 click은 실행하지 않는다. 시작 실패 시 click만 취소한다.
+  - release에서 `TryBeginPartDrag()`가 새로 성공한 경우, final delta cache로 `UpdatePartDrag(0.0f)`를 1회 호출한 뒤 `EndPartDrag(false)`를 호출한다.
+  - 이미 drag 중인 경우도 release final delta를 반영한 후 마지막 `UpdatePartDrag(0.0f)`를 호출할지 정책을 명시하고, comb shake 마지막 반전 누락 여부를 PIE로 검증한다.
 
-### 2. engaged confirm press 경로가 여전히 Started에서 action confirm hook을 호출함
+### 3. `SetVisibleCombFace()`와 construction path가 `ReceiveCombFlipped`를 호출해 load/construction 때 flip 연출이 발동할 수 있음
 
 - 대상 파일:
-  - `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
+  - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
 - 원인:
-  - `HandleFocusPrimaryPressedInput()`는 `bIsFocusEngaged`일 때 `EngagedFocusAction->HandleConfirmInputWhileEngaged()`를 즉시 호출한다.
+  - `OnConstruction()`, `BeginPlay()`, `PostEditChangeProperty()`가 `SetVisibleCombFace(VisibleCombFace)`를 호출한다.
+  - `SetVisibleCombFace()`는 상태 적용과 동시에 `ReceiveCombFlipped(VisibleCombFace)`를 호출한다.
 - 영향:
-  - 현재 C++ override인 `UAnchoredFocusCursorActionComponent`는 true만 반환해 실질 동작은 없지만, Focus action 확장 시 LMB down 즉시 confirm hook이 실행될 수 있다.
-  - 이번 변경의 "Started에서 즉시 begin/cancel/confirm 미실행" 기준과 어긋나는 우회 경로로 남는다.
+  - Blueprint에서 `Receive Comb Flipped`를 flip 애니메이션/사운드 트리거로 구현하면 actor construction, BeginPlay, property edit 때도 연출이 실행될 수 있다.
+  - 기존 `ReceiveCombFlipped(NewVisibleFace)` 호환 경로가 "실제 flip 발생" 이벤트라는 의미를 잃을 수 있다.
 - 수정 방향:
-  - engaged 상태의 `FocusConfirmAction Started`는 gesture 후보 저장 또는 consume-only로 제한한다.
-  - 실제 confirm hook 호출이 필요하면 release 확정 경로로 이동하거나, anchored cursor 전용 consume 정책을 명시적으로 분리한다.
-
-### 3. `UCursorPartFocusActionComponent::IsPartFocusDragInProgress()`가 실제 drag 상태와 동기화되지 않음
-
-- 대상 파일:
-  - `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
-  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
-  - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
-- 원인:
-  - action component에 `bIsPartFocusDragInProgress`가 추가되었지만 begin/end drag 경로에서 갱신하지 않는다.
-  - 실제 drag 상태는 scope의 `bPartDragInProgress`만 갱신된다.
-- 영향:
-  - Blueprint/C++에서 action의 `IsPartFocusDragInProgress()`를 읽으면 항상 false가 될 수 있다.
-- 수정 방향:
-  - action-level 상태 노출이 필요하면 scope가 begin/end 성공 시 action 상태를 갱신할 수 있는 setter/internal API를 둔다.
-  - 아니면 action의 상태 필드와 getter를 제거하고 scope의 `IsPartFocusDragInProgress()`만 공개 상태로 유지한다.
+  - 내부 helper 예: `ApplyVisibleCombFaceTransform()`을 분리해 construction/BeginPlay/PostEdit에서는 transform만 적용한다.
+  - `FlipCombFaceWithDirection()`은 state toggle 후 기존 `ReceiveCombFlipped(NewVisibleFace)`와 신규 `ReceiveCombFlippedWithDirection(NewVisibleFace, Direction)`을 호출한다.
+  - `SetVisibleCombFace()`가 public API로 이벤트를 발생시킬지 여부를 명확히 정한다. 호환 안정성을 우선하면 explicit set은 transform/state만 적용하고 flip wrapper만 event를 발생시키는 쪽이 안전하다.
 
 ## 검증 방법
 
 - UBT:
   - `BeekeepingSimEditor Win64 Development`
 - PIE 수동 시나리오:
-  - 1. 일반 PreviewFocus 대상 위에서 LMB press 후 같은 프레임/짧은 시간 안에 threshold 이상 이동하고 release: confirm 미실행 확인
-  - 2. 일반 PreviewFocus 대상 A에서 press 후 대상 B로 이동해 release: confirm 미실행 확인
-  - 3. PartFocus 대상에서 press 후 threshold 이하 release: begin/cancel 1회 실행 확인
-  - 4. PartFocus drag 불가 대상에서 threshold 초과 후 release: click 미실행, 추가 동작 없음 확인
-  - 5. PartFocus drag 가능 테스트 subclass에서 threshold 초과: drag begin 후 release 시 drag end만 실행되고 click 미실행 확인
-  - 6. edge cancel 영역에서 press/release 모두 edge이고 threshold 이하: cancel cascade 또는 host cancel 확인
-  - 7. edge에서 press 후 threshold 초과 release: edge cancel 미실행 확인
-  - 8. item-use-area 활성 + 선택 아이템 상태에서 LMB press/release: item-use가 소비하고 PartFocus click/drag 미시작 확인
+  - 1. lifted comb에서 천천히 오른쪽으로 120px 이상 drag: `Right` flip 1회 발생 확인
+  - 2. lifted comb에서 천천히 왼쪽으로 120px 이상 drag: `Left` flip 1회 발생 확인
+  - 3. press 후 빠르게 120px 이상 이동하고 즉시 release: flip 1회 발생 확인
+  - 4. 상하 반복 drag에서 실제 방향 반전마다 stroke count가 증가하고 required count 도달 시 bee count가 1회 감소하는지 확인
+  - 5. drag 시작 후 마우스를 멈춘 상태에서 shake stroke count가 임의 증가하지 않는지 확인
+  - 6. actor load/BeginPlay/property edit 시 `ReceiveCombFlipped` 기반 flip 연출이 자동 발동하지 않는지 확인
 
 ## 문서 반영 필요 여부
 
-- 수정이 release 판정 구현 보완이면 기존 `.md/Architecture/FocusSystem.md`의 정책과 일치시키는 작업이라 추가 문서 반영은 불필요하다.
-- engaged confirm press 정책을 명시적으로 바꾸면 `.md/Architecture/FocusSystem.md` Input Notes에 consume-only/release-confirm 기준을 보강한다.
+- delta 갱신/release final update 보완은 기존 `.md/Architecture/FocusSystem.md`의 drag delta contract를 구현과 일치시키는 수정이므로 추가 문서 반영은 불필요하다.
+- `SetVisibleCombFace()` 이벤트 정책을 바꾸면 `.md/Architecture/WorldActorsSystem.md`의 flip API 설명에 "state apply"와 "flip event" 차이를 명시한다.

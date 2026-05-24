@@ -94,6 +94,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus")
 	bool IsPartFocusDragInProgress() const;
 
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+	FVector2D GetPartFocusDragDeltaFromPress() const;
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
+	FVector2D GetPartFocusDragDeltaSinceLastUpdate() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	bool HandlePreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
 
@@ -176,6 +182,10 @@ private:
 	FName PressedPartId = NAME_None;
 	int32 PressedPartIndex = INDEX_NONE;
 	FVector2D PressedPartScreenPosition = FVector2D::ZeroVector;
+	FVector2D CurrentPartScreenPosition = FVector2D::ZeroVector;
+	FVector2D PreviousPartScreenPosition = FVector2D::ZeroVector;
+	FVector2D CachedPartDragDeltaFromPress = FVector2D::ZeroVector;
+	FVector2D CachedPartDragDeltaSinceLastUpdate = FVector2D::ZeroVector;
 	float MaxPartPointerMoveDistanceSincePress = 0.0f;
 	bool bIsPartPrimaryPointerDown = false;
 	bool bPartClickCanceledByMovement = false;

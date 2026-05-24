@@ -10,6 +10,20 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UCursorPartFocusActionComponent;
 
+UENUM(BlueprintType)
+enum class EBeehiveCombVisibleFace : uint8
+{
+	Front,
+	Back
+};
+
+UENUM(BlueprintType)
+enum class EBeehiveCombFlipDirection : uint8
+{
+	Left,
+	Right
+};
+
 UCLASS(Blueprintable)
 class BEEKEEPINGSIM_API ABeehiveCombActor : public AActor
 {
@@ -76,9 +90,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
 	float GetHoneyFillRatio() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void FlipCombFace();
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void FlipCombFaceWithDirection(EBeehiveCombFlipDirection FlipDirection);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void SetVisibleCombFace(EBeehiveCombVisibleFace NewFace);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	EBeehiveCombVisibleFace GetVisibleCombFace() const { return VisibleCombFace; }
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ApplyCombShakeByRatio(float ReductionRatio);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> CombPivotRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> CombMesh;
@@ -103,6 +138,15 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped"))
+	void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped With Direction"))
+	void ReceiveCombFlippedWithDirection(EBeehiveCombVisibleFace NewVisibleFace, EBeehiveCombFlipDirection FlipDirection);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Shaken"))
+	void ReceiveCombShaken(int32 StrokeCount, float ReductionRatio);
 
 private:
 	void ApplyNiagaraUserParameters();
@@ -147,4 +191,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BackHoneyMaterialInstance;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
+	EBeehiveCombVisibleFace VisibleCombFace = EBeehiveCombVisibleFace::Front;
 };

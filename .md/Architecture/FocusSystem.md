@@ -141,9 +141,14 @@
 - threshold 초과 시 click은 즉시 취소된다.
   - drag 불가 대상: click만 취소, 추가 동작 없음
   - drag 가능 대상: click 취소 후 drag begin 시도
-  - drag 시작 후 release: drag end만 실행, click 미실행
+- drag 시작 후 release: drag end만 실행, click 미실행
+- mode 미확정/조건 미충족 drag session은 release 시 no-op 허용 (fallback 실행 없음)
 - Focus pending click state owner: `UBeekeeperFocusComponent`
 - PartFocus pending click/drag state owner: `UCursorPartFocusScopeComponent`
+- drag delta contract (`UCursorPartFocusScopeComponent`):
+  - `GetPartFocusDragDeltaFromPress()`
+  - `GetPartFocusDragDeltaSinceLastUpdate()`
+  - drag update 전에 scope가 screen delta를 갱신한 뒤 action lifecycle에 전달
 - `UAnchoredFocusCursorActionComponent`는 engaged 입력 라우터로 유지된다.
 - item-use-area hold-use는 기존 press begin/release end를 유지하며, 입력 소비 시 PartFocus gesture를 시작하지 않는다.
 - edge cancel click은 release 확정 시점에서만 판정한다(press/release 모두 edge cancel 영역 + threshold 이하).

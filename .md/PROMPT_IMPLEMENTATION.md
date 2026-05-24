@@ -238,8 +238,8 @@ void ReceiveCombShaken(int32 StrokeCount, float ReductionRatio);
 동작:
 
 - `FlipCombFace()`는 visible face 상태를 토글한다.
-- `SetVisibleCombFace()`는 상태를 저장하고 `CombPivotRoot` local rotation을 적용한다.
-- 기본 rotation은 front = identity, back = local yaw 180도. 실제 asset 축이 다르면 BP event에서 보정할 수 있게 한다.
+- `SetVisibleCombFace()`는 visible face 상태만 저장한다.
+- C++은 `CombPivotRoot` yaw/rotation을 즉시 적용하지 않는다. 실제 flip 회전 연출은 Blueprint event에서 구현한다.
 - `ApplyCombShakeByRatio()`는 `ReduceTargetBeeCountByRatio(ReductionRatio)`를 호출하고 `ReceiveCombShaken(...)` 이벤트를 발생시킨다.
 
 front/back 의미:
@@ -422,7 +422,7 @@ bool bShakeExecutedThisDrag = false;
 
 - 소비장이 lifted 상태인지 판정할 신뢰 가능한 C++ 기준이 없는 경우
 - `ABeehiveCombActor` default subobject class를 `UBeehiveCombPartFocusActionComponent`로 바꾸는 과정에서 Blueprint serialized component 충돌 가능성이 확인되는 경우
-- 소비장 asset 축 때문에 local yaw 180도가 실제 flip과 맞지 않는 것이 확인된 경우
+- C++에서 즉시 yaw/rotation 적용이 다시 필요하다는 요구가 확인되는 경우
 - `CombPivotRoot` 추가가 기존 Blueprint component hierarchy나 serialized override를 깨뜨릴 가능성이 큰 경우
 - shake 효과가 벌 수 감소 외에 꿀/위생/수확/Inventory 변경을 요구하는 것으로 확인되는 경우
 - drag lifecycle API를 BlueprintCallable virtual로 둘지 BlueprintImplementableEvent로 둘지 기존 BP 사용과 충돌하는 경우
@@ -437,3 +437,144 @@ bool bShakeExecutedThisDrag = false;
 - `ABeehiveCombLiftComponent`의 들기/내리기 보간 책임을 침범하지 않는다.
 - `ABeehive`의 queen 위치 bucket, colony population, honey production 로직을 변경하지 않는다.
 - Config/Core Redirect 작업은 하지 않는다.
+
+## 추가 구현 프롬프트: flip 방향 전달
+
+### 전제
+
+위 `Beehive Comb Drag Flip/Shake 구현 프롬프트` 내용은 이미 현재 Source에 구현되어 있다고 가정한다.
+
+이번 추가 작업은 기존 소비장 flip/shake 구현을 유지한 상태에서, 좌우 drag 방향을 flip API와 Blueprint animation event까지 전달하도록 확장한다.
+
+### 목표
+
+소비장 flip은 여전히 front/back visible face를 toggle한다.
+
+추가로, flip을 유발한 drag 방향을 함께 전달해 Blueprint animation이 입력 방향과 일치하는 회전 연출을 선택할 수 있게 한다.
+
+### 확정 요구사항
+
+- flip 방향은 screen-space drag X 방향을 따른다.
+  - 누적 X가 양수이면 right drag 방향 flip
+  - 누적 X가 음수이면 left drag 방향 flip
+- 최종 visible face는 기존처럼 front/back toggle이다.
+- front/back 데이터 swap은 하지 않는다.
+- shake gesture에는 flip direction을 적용하지 않는다.
+- 기존 `FlipCombFace()` 호출 경로가 있으면 호환 wrapper로 유지한다.
+- 기존 `ReceiveCombFlipped(NewVisibleFace)` Blueprint event가 이미 노출되어 있으면 삭제/rename하지 않는다. 새 event 또는 overload 호환 경로를 추가한다.
+
+### 구현 범위
+
+주 수정 대상:
+
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+
+필요 시 문서 갱신:
+
+- `.md/Architecture/WorldActorsSystem.md`
+- 필요 시 `.md/QNA_IMPLEMENTATION.md`
+
+### 권장 API
+
+`ABeehiveCombActor`에 flip direction enum을 추가한다.
+
+```cpp
+UENUM(BlueprintType)
+enum class EBeehiveCombFlipDirection : uint8
+{
+	Left,
+	Right
+};
+```
+
+`ABeehiveCombActor` flip API를 확장한다.
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void FlipCombFaceWithDirection(EBeehiveCombFlipDirection FlipDirection);
+```
+
+기존 API가 이미 있다면 유지한다.
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void FlipCombFace();
+```
+
+권장 동작:
+
+- `FlipCombFace()`는 `FlipCombFaceWithDirection(EBeehiveCombFlipDirection::Right)` 또는 기존 기본 방향을 호출하는 wrapper로 둔다.
+- `FlipCombFaceWithDirection(...)`은 visible face를 toggle하고, 방향 포함 Blueprint event를 호출한다.
+
+Blueprint event는 기존 event 삭제 없이 새 이름으로 추가한다.
+
+```cpp
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb")
+void ReceiveCombFlippedWithDirection(EBeehiveCombVisibleFace NewVisibleFace, EBeehiveCombFlipDirection FlipDirection);
+```
+
+기존 event가 있다면 유지한다.
+
+```cpp
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb")
+void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);
+```
+
+권장 호출 순서:
+
+1. visible face 상태 toggle/apply
+2. 기존 `ReceiveCombFlipped(NewVisibleFace)` 호출
+3. 새 `ReceiveCombFlippedWithDirection(NewVisibleFace, FlipDirection)` 호출
+
+이렇게 하면 기존 Blueprint 구현을 깨지 않고, 새 Blueprint에서는 방향 포함 event를 사용할 수 있다.
+
+### `UBeehiveCombPartFocusActionComponent` 변경
+
+flip mode 확정 시 누적 drag X 부호로 direction을 결정한다.
+
+```cpp
+const EBeehiveCombFlipDirection FlipDirection =
+	DragDeltaFromPress.X >= 0.0f
+		? EBeehiveCombFlipDirection::Right
+		: EBeehiveCombFlipDirection::Left;
+```
+
+이후 기존 `ABeehiveCombActor::FlipCombFace()` 호출을 direction 포함 API로 교체한다.
+
+```cpp
+CombActor->FlipCombFaceWithDirection(FlipDirection);
+```
+
+주의:
+
+- flip 판정 조건 자체는 바꾸지 않는다.
+- `CombFlipDragThresholdPixels`, `HorizontalDominanceRatio`, no-op 정책은 유지한다.
+- 한 drag session에서 flip은 여전히 최대 1회만 실행한다.
+
+### 검증 기준
+
+코드 검색:
+
+- `EBeehiveCombFlipDirection`이 추가되어야 한다.
+- 기존 `FlipCombFace()`가 삭제되지 않아야 한다.
+- 방향 포함 API 또는 event가 추가되어야 한다.
+- `UBeehiveCombPartFocusActionComponent`가 누적 drag X 부호로 left/right를 결정해야 한다.
+
+PIE/Blueprint 수동 검증:
+
+1. 들어 올린 소비장에서 오른쪽 drag로 flip하면 `ReceiveCombFlippedWithDirection(..., Right)`가 호출된다.
+2. 왼쪽 drag로 flip하면 `ReceiveCombFlippedWithDirection(..., Left)`가 호출된다.
+3. visible face toggle 결과는 기존 flip 구현과 동일하다.
+4. 기존 `ReceiveCombFlipped(NewVisibleFace)` 기반 Blueprint가 깨지지 않는다.
+5. shake 동작과 no-op 정책은 기존과 동일하다.
+
+### QnA 중단 조건
+
+아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+- 기존 구현에서 `ReceiveCombFlipped(NewVisibleFace)`가 이미 Blueprint에서 핵심 애니메이션을 수행 중이고, 새 event 동시 호출이 중복 애니메이션을 유발할 가능성이 큰 경우
+- 기존 `FlipCombFace()` 시그니처를 변경하지 않고는 방향 전달이 어렵다고 판단되는 경우
+- drag delta 기준이 screen-space가 아닌 world/local-space로 이미 구현되어 있어 방향 해석 기준이 불명확한 경우

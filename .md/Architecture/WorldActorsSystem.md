@@ -41,7 +41,7 @@
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
-- `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`)
+- `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
 - `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
@@ -99,7 +99,7 @@
   - active comb actor parts (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`)
   - preview-only component parts (prompt 없음, LMB click no-op)
   - preview key 입력(`R/F/C`)은 hover preview 대상의 action handler에서 선택적으로 처리
-- 현재 native `ABeehive`와 `ABeehiveCombActor` 기본 subobject는 공통 `UCursorPartFocusActionComponent`를 생성한 뒤 위 policy를 C++에서 설정한다. `UBeehiveLidPartFocusActionComponent`와 `UBeehiveCombPartFocusActionComponent`는 같은 policy를 캡슐화한 reusable preset이다.
+- 현재 native `ABeehive` 기본 subobject(`LidPartFocusAction`)는 공통 `UCursorPartFocusActionComponent`를 사용하고, `ABeehiveCombActor` 기본 subobject(`PartFocusAction`)는 `UBeehiveCombPartFocusActionComponent`를 사용한다.
 - Beehive/Comb의 실제 lid open-close, comb lift-restore는 action component의 owner-actor delegate(`OnPartFocusBegin/Cancel/Abort`) 또는 component 이벤트 구현 경로에서 처리한다.
 - `ABeehive`는 `IItemUseAreaProvider`를 구현해 lid/comb descriptor(`FItemUseAreaDescriptor`)를 제공한다.
 - descriptor 기본 tag:
@@ -131,11 +131,19 @@
 ### `ABeehiveCombActor`
 
 - `USceneComponent` root
+- `USceneComponent` `CombPivotRoot` (소비장 내부 visual pivot)
 - `UStaticMeshComponent` comb mesh
 - `UNiagaraComponent` 2개 (`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)
-- `UCursorPartFocusActionComponent` 1개 (`PartFocusAction`)
+- `UBeehiveCombPartFocusActionComponent` 1개 (`PartFocusAction`)
 - `USceneComponent` 2개 (`QueenFrontAttachPoint`, `QueenBackAttachPoint`)
 - `UStaticMeshComponent` 2개 (`FrontHoneyPlane`, `BackHoneyPlane`)
+- visible face 상태: `EBeehiveCombVisibleFace` (`Front`/`Back`)
+- flip API: `FlipCombFace`, `SetVisibleCombFace`, `GetVisibleCombFace`
+- 방향 포함 flip API: `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
+- 방향 포함 BP 이벤트: `ReceiveCombFlippedWithDirection(NewVisibleFace, FlipDirection)`
+- `SetVisibleCombFace(...)`는 visible face state만 저장한다. 실제 yaw/flip 회전 연출은 Blueprint event에서 구현한다.
+- shake API: `ApplyCombShakeByRatio` (`ReduceTargetBeeCountByRatio`만 수행)
+- flip/shake 시각 애니메이션은 C++ 보간 대신 Blueprint event(`ReceiveCombFlipped`, `ReceiveCombShaken`) 위임
 - 상태:
   - `SpawnAmount`는 `0` 이상 clamp
   - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
