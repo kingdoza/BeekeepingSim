@@ -1,157 +1,157 @@
-# 리뷰 프롬프트: Generic ItemPlacementSlotActor + Mesh/Transform 확장
+# 리뷰 프롬프트: PartFocus 등록 + RMB Placed Item 회수
 
-## 리뷰 대상
+## 리뷰 목적
 
-이번 리뷰는 `AItemPlacementSlotActor` 기반 generic item placement 시스템과, 추가된 아래 속성까지 포함한다.
+이번 리뷰는 아래 기능의 **정합성/회귀/경계 위반 여부**를 검증한다.
 
-- `SlotMeshMaterial`
-- `SlotMeshRelativeTransform`
-- `AttachMeshRelativeTransform`
+- `APlacedItemActor`
+- `UCursorPartFocusRegistrationComponent`
+- `UChildCursorPartFocusProviderComponent`
+- `UFocusSecondaryActionComponent` 관련 경로(구경로 잔존 포함)
+- FocusEngaged 상태 RMB(secondary)로 배치 아이템 회수하는 경로
 
-리뷰 범위에는 다음이 포함된다.
-
-- `IItemPlacementSlot` 인터페이스
-- `AItemPlacementSlotActor` 구현
-- `UItemPlacementUseAction` / `UPollenPattyUseAction` 경로
-- `UCursorItemUseAreaScopeComponent` stack delta 실패 rollback 경로
-- `ABeehive`에서 pollen 직접 소유 로직 제거 상태
-- 관련 아키텍처/사용자 문서 반영 상태
+중요: 이번 워크트리에는 여러 에이전트의 변경이 섞여 있을 수 있다.  
+리뷰는 "최종 코드 상태 기준"으로 수행하고, 변경 주체를 가정하지 않는다.
 
 ---
 
-## 우선순위
+## 핵심 검증 질문
 
-1. High: SlotMesh/Attach transform 적용 시점과 attach 안정성
-2. High: placement 성공 후 stack delta 실패 rollback의 정확성
-3. Medium: use-area descriptor 활성/비활성 조건의 일관성
-4. Medium: SlotMeshMaterial 적용 방식의 런타임/에디터 안정성
-5. Low: 문서/에디터 작업 절차와 실제 코드 계약 정합성
-
----
-
-## 검토 포인트
-
-### 1) ItemPlacementSlotActor 구조/책임 검증
-
-- `AItemPlacementSlotActor`가 아래 구조를 실제로 만족하는지 확인
-  - `Root`
-  - `SlotMeshComponent` (hit + visual 겸용)
-  - `AttachComponent`
-- `HitBox`, 별도 `HitComponent` UPROPERTY, 별도 `VisualComponents` UPROPERTY가 남아있지 않은지 확인
-- `SlotMeshAsset` 미지정 시 기존 BP 기본 mesh를 보존하는지 확인
-- `SlotMeshMaterial` 적용 시 material slot index/동적 머티리얼 충돌 가능성 점검
-
-### 2) Transform 적용 정책 검증
-
-- `SlotMeshRelativeTransform`이 `SlotMeshComponent`에 정확히 적용되는지
-- `AttachMeshRelativeTransform`이 `AttachComponent`에 정확히 적용되는지
-- 적용 시점이 `OnConstruction`/초기화 경로에서 일관적인지
-- PIE 재시작, BP compile 후 transform 드리프트/중복 누적이 없는지
-- ChildActor instance override 시 class default와 instance override 우선순위가 의도대로 동작하는지
-
-### 3) Descriptor 생성 조건 검증
-
-`GetItemUseAreaDescriptors_Implementation()`에서 아래 조건이 정확한지 확인
-
-- `PlacedActor == nullptr`
-- `AreaId` 유효
-- `SlotMeshComponent` 유효
-- `SlotMeshComponent->GetStaticMesh()` 유효
-
-descriptor 값 검증
-
-- `HitComponent = SlotMeshComponent`
-- `VisualComponents.Add(SlotMeshComponent)`
-- `EffectTargetObject = this`
-
-### 4) Placement / Occupied / Clear 검증
-
-- `TryPlaceItem()`:
-  - occupied/invalid class/invalid attach/world null 실패 처리
-  - spawn 후 attach 실패 시 destroy cleanup
-  - 성공 시 `PlacedActor` 저장
-- `IsPlacementOccupied()`:
-  - `PlacedActor != nullptr` 기준 유지
-- `ClearPlacedItem()`:
-  - destroy + nullptr 복귀
-- `AttachSocketName` 유효 시 socket attach 경로 정상 여부
-
-### 5) Action 경로 검증
-
-- `UItemPlacementUseAction::ApplyUseEffect()`가 `IItemPlacementSlot` 인터페이스만 통해 배치하는지
-- 성공 시 `bSucceeded=true`, `bConsumedItem=true`, `StackDelta=-1`
-- `UPollenPattyUseAction`이 남아 있어도 `ABeehive::TryInstallPollenPatty` 같은 제거된 API를 참조하지 않는지
-
-### 6) Rollback 경로 검증
-
-`UCursorItemUseAreaScopeComponent`에서
-
-- placement 성공 + stack delta 적용 실패 시
-  - `IItemPlacementSlot::ClearPlacedItem()` rollback 호출 여부
-  - active descriptor refresh 여부
-- stack delta 적용 성공 시 occupied slot descriptor가 즉시 사라지는지
-
-### 7) Beehive 분리 검증
-
-아래가 완전히 제거되었는지 확인
-
-- `FPollenPattyInstallSlot`
-- `PollenPattyInstallSlots`
-- `PollenPattyActorClass` (Beehive 소유)
-- `TryInstallPollenPatty`
-- `IsPollenPattySlotOccupied`
-- beehive 내부 pollen descriptor 생성 루프
-
-그리고 소독약 descriptor(lid/comb + `Item.UseArea.Beehive.Disinfectant`)는 유지되는지 확인
+1. PartFocus descriptor 공급/등록이 provider 기반으로 일관되게 동작하는가?
+2. placed item이 global focus target이 아니라 host 내부 PartFocus part로만 취급되는가?
+3. RMB secondary 입력이 FocusEngaged -> PartFocus hovered action handler로 정확히 라우팅되는가?
+4. 회수 성공 판정(`TryAcquireItem(ItemDefinition, 1)` + `AddedQuantity == 1`)이 정확한가?
+5. 회수 실패 시 actor/slot 상태 유지, 성공 시 slot clear/descriptor 전환이 보장되는가?
+6. 기존/구경로(`UFocusSecondaryActionComponent`, `PlacedItemRetrieveFocusActionComponent`)가 충돌 없이 정리되었는가?
 
 ---
 
-## 코드 검색 체크리스트
+## 리뷰 범위 (우선 파일)
 
-- 없어야 함:
-  - `FPollenPattyInstallSlot`
-  - `TryInstallPollenPatty`
-  - `IsPollenPattySlotOccupied`
-  - `HitBox` (ItemPlacementSlotActor 내부)
-  - ItemPlacementSlotActor의 `VisualComponents` UPROPERTY
-- 있어야 함:
-  - `SlotMeshComponent`
-  - `SlotMeshAsset`
-  - `SlotMeshMaterial`
-  - `SlotMeshRelativeTransform`
-  - `AttachMeshRelativeTransform`
-  - descriptor에서 `HitComponent = SlotMeshComponent`
-  - descriptor에서 `VisualComponents.Add(SlotMeshComponent)`
+### Focus
+- `Public/Focus/CursorPartFocusProvider.h`
+- `Public/Focus/CursorPartFocusRegistrationComponent.h`
+- `Private/Focus/CursorPartFocusRegistrationComponent.cpp`
+- `Public/Focus/ChildCursorPartFocusProviderComponent.h`
+- `Private/Focus/ChildCursorPartFocusProviderComponent.cpp`
+- `Public/Focus/CursorPartFocusScopeComponent.h`
+- `Private/Focus/CursorPartFocusScopeComponent.cpp`
+- `Public/Focus/CursorPartFocusActionComponent.h`
+- `Private/Focus/CursorPartFocusActionComponent.cpp`
+- `Public/Focus/FocusActionComponent.h`
+- `Private/Focus/FocusActionComponent.cpp`
+- `Public/Focus/AnchoredFocusCursorActionComponent.h`
+- `Private/Focus/AnchoredFocusCursorActionComponent.cpp`
+- `Private/Focus/BeekeeperFocusComponent.cpp`
+
+### WorldActors
+- `Public/WorldActors/PlacedItemActor.h`
+- `Private/WorldActors/PlacedItemActor.cpp`
+- `Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h`
+- `Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp`
+- `Public/WorldActors/ItemPlacementSlotActor.h`
+- `Private/WorldActors/ItemPlacementSlotActor.cpp`
+- `Public/WorldActors/Beehive.h`
+- `Private/WorldActors/Beehive.cpp`
+
+### Character / Inventory
+- `Public/Character/BeekeeperCharacter.h`
+- `Private/Character/BeekeeperCharacter.cpp`
+- `Public/Inventory/BeekeeperHotbarComponent.h`
+- `Private/Inventory/BeekeeperHotbarComponent.cpp`
 
 ---
 
-## 빌드/실행 검증
+## 상세 체크리스트
 
-### 빌드
-- `BeekeepingSimEditor Win64 Development`
+### 1) Provider/Registration 구조
+- `ICursorPartFocusProvider::GetCursorPartFocusDescriptors` 계약이 명확한지
+- `UCursorPartFocusRegistrationComponent`의 gather 순서(actor -> components)가 의도대로인지
+- beehive의 기존 직접 등록(lid/comb) + registration append가 clear 타이밍 충돌 없이 동작하는지
+- child provider tag/class 필터가 누락/과수집을 유발하지 않는지
 
-### PIE 수동 시나리오
-1. 슬롯 mesh에 use-area 표시가 정상 표시/hover 전환되는지
-2. 슬롯별 `SlotMeshAsset` 차이에 따라 영역 모양이 달라지는지
-3. `SlotMeshRelativeTransform` 조정이 즉시 반영되는지
-4. `AttachMeshRelativeTransform` 조정 후 배치 actor 부착 위치가 의도대로인지
-5. 배치 성공 시 stack 1 감소
-6. 배치 직후 descriptor 비활성화(재사용 불가)
-7. stack delta 실패를 유도했을 때 placed actor rollback
-8. 소독약 기존 경로 정상 동작
+### 2) Slot 상태별 descriptor 정책
+- empty slot: `ItemUseArea`만 제공
+- occupied slot: `PartFocus`만 제공
+- `SanitizeAndCheckOccupied()`를 통한 invalid placed actor 정리 후 descriptor 일관성 유지 여부
+
+### 3) PlacedItemActor 책임
+- global focus 컴포넌트(`UFocusTargetComponent`) 의존 제거 여부
+- PartFocus hit/action getter가 descriptor 작성에 충분한지
+- `InitializePlacedItem`에서 `ItemDefinition->WorldMesh` 있을 때만 mesh override하는지
+
+### 4) Secondary 입력 라우팅
+- `ABeekeeperCharacter::FocusSecondaryInput` -> `UBeekeeperFocusComponent::HandleSecondaryInput`
+- engaged일 때만 `EngagedFocusAction->HandleSecondaryInputWhileEngaged` 호출
+- anchored action이 scope `HandleSecondaryInput()`으로 전달하는지
+- scope가 hovered descriptor/action 유효성, required state 조건을 올바르게 체크하는지
+
+### 5) 회수 로직 정확성
+- `UPlacedItemRetrievePartFocusActionComponent`에서
+  - owner/type/character/hotbar/item definition 검증
+  - `TryAcquireItem(ItemDefinition, 1)`
+  - `!bSuccess || AddedQuantity != 1` 실패 처리
+  - 성공 시 slot interface clear 호출
+- 실패 시 destroy 금지, 성공 시 slot 점유 해제/descriptor 재전환 여부
+
+### 6) 구경로/중복 경로 위험
+- `UFocusSecondaryActionComponent`, `UPlacedItemRetrieveFocusActionComponent`가 남아있다면
+  - 현재 호출 경로와 충돌 가능성
+  - dead code 여부
+  - 향후 제거 필요성
+- multi-agent 변경으로 생긴 이중 처리(같은 입력을 두 경로가 소비) 가능성
+
+### 7) Blueprint/API/Redirect 안전성
+- `APollenPattyActor` rename/UCLASS rename/file rename 없음
+- `Config/DefaultEngine.ini` CoreRedirect 추가/변경 없음
+- BP native parent/serialized component 이름 변경으로 인한 파손 위험 지점
+
+---
+
+## 코드 검색 기준
+
+### 있어야 함
+- `ICursorPartFocusProvider`
+- `UCursorPartFocusRegistrationComponent`
+- `UChildCursorPartFocusProviderComponent`
+- `GetCursorPartFocusDescriptors`
+- `HandleSecondaryPartFocusAction`
+- `HandleSecondaryInputWhileEngaged`
+- `UPlacedItemRetrievePartFocusActionComponent`
+- `APlacedItemActor::GetPartFocusHitComponent`
+- `TryAcquireItem(ItemDefinition, 1)`
+- `AddedQuantity != 1`
+
+### 없어야 함 (또는 영향 분석 필수)
+- `APlacedItemActor`의 `UFocusTargetComponent` 기본 subobject
+- placed item 회수의 global preview secondary 의존
+- `APollenPattyActor` rename
+- `CoreRedirect` 신규 추가
+- UI 위젯 직접 회수 mutation
+
+---
+
+## 검증 방법
+
+1. 코드 리뷰 + 검색 결과 제시
+2. 빌드 확인
+   - `BeekeepingSimEditor Win64 Development`
+3. 가능하면 PIE 시나리오 기반 논리 검증
+   - empty/occupied 전환 시 descriptor 전환
+   - hover RMB 회수 성공/실패 분기
+   - 다른 파트(lid/comb) RMB 무동작
 
 ---
 
 ## 리뷰 결과 출력 형식
 
-- Findings를 **심각도 순(High → Medium → Low)** 으로 제시
-- 각 항목에 반드시 포함:
-  - 파일 경로
-  - 원인
-  - 영향
-  - 수정 방향
-- 마지막에
-  - 회귀 위험
-  - 추가 테스트 필요 항목
-  - 문서 보강 필요 여부
-  를 요약
+- Findings를 **High -> Medium -> Low** 순으로 제시
+- 각 Finding에 포함:
+  - 파일/라인
+  - 문제 원인
+  - 실제 영향
+  - 수정 제안
+- Findings 이후:
+  - 불확실성/가정(특히 multi-agent 변경으로 인한 추정 지점)
+  - 추가 검증 필요 항목
+  - 문서 동기화 누락 여부

@@ -341,3 +341,18 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - occupied slot: item-use-area 표시는 사라지고 placed item이 PartFocus hover/outline 대상이어야 한다.
 - placed item hover + RMB: hotbar 1개 반환 + slot empty 복귀
 - hotbar 공간 없음: 회수 실패 + placed actor/slot 유지
+
+## Hotbar Middle Click Selection Toggle (2026-05-27)
+
+1. 입력 액션/매핑
+- `IA_HotbarToggleSelection` input action asset을 생성한다.
+- Value Type은 Digital(Boolean) 계열로 설정한다.
+- Player 입력 매핑 컨텍스트에 `IA_HotbarToggleSelection`을 추가하고 `Middle Mouse Button`(Wheel Click)에 매핑한다.
+
+2. 캐릭터 BP 할당
+- `BP_BeekeeperCharacter`에서 `HotbarToggleSelectionAction` 프로퍼티에 `IA_HotbarToggleSelection`을 할당한다.
+
+3. PIE 검증
+- 슬롯 선택 상태에서 middle click 시 전체 미선택으로 전환되는지 확인한다.
+- 미선택 상태에서 middle click 시 마지막 선택 슬롯(기본 1번 슬롯)이 재선택되는지 확인한다.
+- FocusEngaged에서 hotbar slot input block 상태일 때 middle click이 무시되는지 확인한다.

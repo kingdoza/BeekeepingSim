@@ -78,6 +78,9 @@ protected:
 	TObjectPtr<UInputAction> HotbarWheelAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
+	TObjectPtr<UInputAction> HotbarToggleSelectionAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> PartFocusClickAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
@@ -127,6 +130,8 @@ protected:
 	void HotbarSlotInput(const FInputActionValue& Value);
 
 	void HotbarWheelInput(const FInputActionValue& Value);
+
+	void HotbarToggleSelectionInput();
 
 	void PartFocusClickInput();
 

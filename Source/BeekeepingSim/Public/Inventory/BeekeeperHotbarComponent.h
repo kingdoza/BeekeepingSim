@@ -81,6 +81,9 @@ public:
 	void ClearSelection();
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	void ToggleSelectionFromLastSelectedSlot();
+
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	void ApplyFocusRule(bool bEngaged, const FFocusItemRule& Rule);
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
@@ -97,6 +100,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
 	int32 GetSelectedIndex() const { return SelectedIndex; }
+
+	UFUNCTION(BlueprintPure, Category = "Hotbar")
+	int32 GetLastSelectedIndex() const { return LastSelectedIndex; }
 
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
 	UObject* GetSelectedItem() const;
@@ -155,6 +161,8 @@ protected:
 	bool ReevaluateSlotsInternal();
 
 	int32 FindFirstEmptySlot() const;
+	void RememberSelectedIndex();
+	int32 ResolveToggleFallbackSelectionIndex() const;
 
 	UItemInstance* CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount);
 
@@ -176,6 +184,7 @@ private:
 	TObjectPtr<UFocusActionComponent> ActiveFocusAction;
 
 	int32 SelectedIndex = INDEX_NONE;
+	int32 LastSelectedIndex = 0;
 
 	bool bIsEngagedFocusActive = false;
 

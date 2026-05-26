@@ -21,6 +21,10 @@ APlacedItemActor::APlacedItemActor()
 	ItemMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 
 	RetrieveAction = CreateDefaultSubobject<UPlacedItemRetrievePartFocusActionComponent>(TEXT("RetrieveAction"));
+	if (RetrieveAction)
+	{
+		RetrieveAction->SetEngageMode(ECursorPartFocusEngageMode::PreviewOnly);
+	}
 }
 
 void APlacedItemActor::InitializePlacedItem(UItemInstance* SourceItemInstance, AActor* InOwningPlacementSlotActor)

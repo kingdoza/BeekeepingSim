@@ -161,6 +161,11 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EnhancedInputComponent->BindAction(HotbarWheelAction, ETriggerEvent::Triggered, this, &ABeekeeperCharacter::HotbarWheelInput);
 		}
 
+		if (HotbarToggleSelectionAction)
+		{
+			EnhancedInputComponent->BindAction(HotbarToggleSelectionAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::HotbarToggleSelectionInput);
+		}
+
 		if (PartFocusClickAction)
 		{
 			EnhancedInputComponent->BindAction(PartFocusClickAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::PartFocusPointerPressedInput);
@@ -370,6 +375,16 @@ void ABeekeeperCharacter::HotbarWheelInput(const FInputActionValue& Value)
 	}
 
 	BeekeeperHotbar->HandleWheelInput(WheelValue > 0.0f);
+}
+
+void ABeekeeperCharacter::HotbarToggleSelectionInput()
+{
+	if (!BeekeeperHotbar)
+	{
+		return;
+	}
+
+	BeekeeperHotbar->ToggleSelectionFromLastSelectedSlot();
 }
 
 void ABeekeeperCharacter::DoJumpStart()

@@ -34,6 +34,11 @@ void UBeekeeperHotbarComponent::InitializeSlots()
 		SelectedIndex = INDEX_NONE;
 	}
 
+	if (!IsIndexValid(LastSelectedIndex))
+	{
+		LastSelectedIndex = 0;
+	}
+
 	if (ReevaluateSlotsInternal())
 	{
 		BroadcastHotbarChanged();
@@ -108,6 +113,7 @@ void UBeekeeperHotbarComponent::SelectSlot(int32 Index)
 	}
 
 	SelectedIndex = Index;
+	LastSelectedIndex = Index;
 	BroadcastHotbarChanged();
 }
 
@@ -118,8 +124,30 @@ void UBeekeeperHotbarComponent::ClearSelection()
 		return;
 	}
 
+	RememberSelectedIndex();
 	SelectedIndex = INDEX_NONE;
 	BroadcastHotbarChanged();
+}
+
+void UBeekeeperHotbarComponent::ToggleSelectionFromLastSelectedSlot()
+{
+	if (bIsEngagedFocusActive && ActiveFocusAction && ActiveFocusAction->ShouldBlockHotbarSlotInputWhileEngaged())
+	{
+		return;
+	}
+
+	if (SelectedIndex != INDEX_NONE)
+	{
+		RememberSelectedIndex();
+		ClearSelection();
+		return;
+	}
+
+	const int32 TargetIndex = ResolveToggleFallbackSelectionIndex();
+	if (TargetIndex != INDEX_NONE)
+	{
+		SelectSlot(TargetIndex);
+	}
 }
 
 void UBeekeeperHotbarComponent::ApplyFocusRule(bool bEngaged, const FFocusItemRule& Rule)
@@ -134,6 +162,7 @@ void UBeekeeperHotbarComponent::ApplyFocusRule(bool bEngaged, const FFocusItemRu
 	bool bSelectionChanged = false;
 	if (!bWasEngaged && bIsEngagedFocusActive && bShouldClearSelectionOnEngage && SelectedIndex != INDEX_NONE)
 	{
+		RememberSelectedIndex();
 		SelectedIndex = INDEX_NONE;
 		bSelectionChanged = true;
 	}
@@ -282,6 +311,7 @@ bool UBeekeeperHotbarComponent::ReevaluateSlotsInternal()
 
 	if (ShouldClearSelectedSlot())
 	{
+		RememberSelectedIndex();
 		SelectedIndex = INDEX_NONE;
 		bHasChanged = true;
 	}
@@ -484,6 +514,7 @@ bool UBeekeeperHotbarComponent::ApplySelectedItemStackDelta(int32 StackDelta)
 	SelectedItem->SetStackCount(PreviousCount + StackDelta);
 	if (SelectedItem->GetStackCount() <= 0)
 	{
+		RememberSelectedIndex();
 		Slots[SelectedIndex].ItemInstance = nullptr;
 		SelectedIndex = INDEX_NONE;
 	}
@@ -604,6 +635,37 @@ int32 UBeekeeperHotbarComponent::FindFirstEmptySlot() const
 	for (int32 Index = 0; Index < Slots.Num(); ++Index)
 	{
 		if (!Slots[Index].ItemInstance)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+void UBeekeeperHotbarComponent::RememberSelectedIndex()
+{
+	if (IsIndexValid(SelectedIndex))
+	{
+		LastSelectedIndex = SelectedIndex;
+	}
+}
+
+int32 UBeekeeperHotbarComponent::ResolveToggleFallbackSelectionIndex() const
+{
+	if (IsIndexValid(LastSelectedIndex) && IsSlotEnabled(LastSelectedIndex))
+	{
+		return LastSelectedIndex;
+	}
+
+	if (IsIndexValid(0) && IsSlotEnabled(0))
+	{
+		return 0;
+	}
+
+	for (int32 Index = 0; Index < Slots.Num(); ++Index)
+	{
+		if (IsSlotEnabled(Index))
 		{
 			return Index;
 		}

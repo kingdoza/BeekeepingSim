@@ -181,3 +181,13 @@
 
 - placed item 회수 실행 주체는 global focus action이 아니라 PartFocus secondary action component다.
 - inventory mutation 규칙은 동일하게 hotbar authority API(`TryAcquireItem`)를 사용한다.
+
+## Update 2026-05-27 (Hotbar Middle Click Toggle)
+
+- `UBeekeeperHotbarComponent`가 runtime selection memory(`LastSelectedIndex`)를 소유한다. 기본값은 `0`이다.
+- middle click 토글 API:
+  - `ToggleSelectionFromLastSelectedSlot()`
+  - 슬롯 선택 중이면 선택 해제 전 현재 index를 기억한다.
+  - 미선택 상태면 `LastSelectedIndex` -> `0` -> 첫 enabled 슬롯 순서로 fallback 재선택한다.
+- focus rule 또는 stack 소모로 선택이 강제 해제될 때도 마지막 선택 슬롯을 기억한다.
+- FocusEngaged에서 hotbar slot input block 정책이 활성화된 경우 middle click 토글도 차단한다.

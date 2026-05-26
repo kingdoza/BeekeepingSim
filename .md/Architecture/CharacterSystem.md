@@ -100,3 +100,8 @@
 
 - `FocusSecondaryAction` 입력의 의미를 FocusEngaged host 내부 PartFocus secondary 입력으로 사용한다.
 - non-engaged preview secondary 동작은 기본 false이며, engaged action이 secondary 처리 경로를 소유한다.
+
+## Update 2026-05-27 (Hotbar Toggle Selection)
+
+- `ABeekeeperCharacter`에 `HotbarToggleSelectionAction` 입력 바인딩(`Started`)을 추가했다.
+- 입력 핸들러 `HotbarToggleSelectionInput()`은 도메인 로직 없이 `UBeekeeperHotbarComponent::ToggleSelectionFromLastSelectedSlot()` 호출만 수행한다.
