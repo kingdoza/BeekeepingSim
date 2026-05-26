@@ -169,3 +169,15 @@
 - `UItemInstance::RebuildActions()` 후 action outer와 transient lifetime이 item instance 기준으로 유지되는지 확인
 - action result의 item 소비/stack delta를 실제 호출 경로가 해석하는지 확인
 - hold-use action을 Blueprint에서 구현해야 하는 요구가 생기면 현재 BlueprintCallable virtual 계약으로 충분한지 먼저 확인
+
+## Update 2026-05-27
+
+- 배치 아이템 회수 성공 판정 규칙:
+  - `UBeekeeperHotbarComponent::TryAcquireItem(ItemDefinition, 1)` 호출
+  - `bSuccess == true` 이고 `AddedQuantity == 1`일 때만 회수 성공으로 본다.
+- 회수 실패(공간 부족 포함) 시 월드 배치 actor와 slot 점유 상태는 유지한다.
+
+## Update 2026-05-27 (PartFocus Retrieve)
+
+- placed item 회수 실행 주체는 global focus action이 아니라 PartFocus secondary action component다.
+- inventory mutation 규칙은 동일하게 hotbar authority API(`TryAcquireItem`)를 사용한다.

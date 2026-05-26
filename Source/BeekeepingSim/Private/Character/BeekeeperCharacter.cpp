@@ -146,6 +146,11 @@ void ABeekeeperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EnhancedInputComponent->BindAction(FocusCancelAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusCancelInput);
 		}
 
+		if (FocusSecondaryAction)
+		{
+			EnhancedInputComponent->BindAction(FocusSecondaryAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::FocusSecondaryInput);
+		}
+
 		if (HotbarSlotAction)
 		{
 			EnhancedInputComponent->BindAction(HotbarSlotAction, ETriggerEvent::Started, this, &ABeekeeperCharacter::HotbarSlotInput);
@@ -244,6 +249,16 @@ void ABeekeeperCharacter::FocusCancelInput()
 	}
 
 	BeekeeperFocus->CancelFocus();
+}
+
+void ABeekeeperCharacter::FocusSecondaryInput()
+{
+	if (!BeekeeperFocus)
+	{
+		return;
+	}
+
+	BeekeeperFocus->HandleSecondaryInput();
 }
 
 void ABeekeeperCharacter::PartFocusClickInput()

@@ -37,6 +37,8 @@ public:
 
 	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key) override;
 
+	virtual bool HandleSecondaryInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter) override;
+
 protected:
 	virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
 

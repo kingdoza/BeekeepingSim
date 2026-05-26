@@ -146,3 +146,27 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `UGameTimeBucketSubsystem` now supports provider binding via `SetTimeOfDayProvider(AActor*)` and keeps `SetTimeOfDayActor(...)` as compatibility wrapper.
 - `ABeekeeperController` clock binding resolves `ITimeOfDayProvider` first (prefers `AGameTimeOfDayActor` delegate path).
 - `AEnvironmentTimeOfDayActor` remains for compatibility/transition and now also exposes `OnGameTimeOfDayChanged(float)`.
+
+## Update 2026-05-27
+
+- Focus preview target secondary input 경로를 추가했다.
+  - `ABeekeeperCharacter::FocusSecondaryAction` 입력(`Started`) -> `FocusSecondaryInput()` -> `UBeekeeperFocusComponent::HandleSecondaryInput()`
+  - Focus는 preview target owner의 `UFocusSecondaryActionComponent` 실행만 위임한다.
+- WorldActors에 generic placed item 회수 흐름을 추가했다.
+  - `AItemPlacementSlotActor`가 spawn한 `APlacedItemActor`를 `InitializePlacedItem(SourceItemInstance, this)`로 초기화한다.
+  - hover + secondary input 시 `UPlacedItemRetrieveFocusActionComponent`가 `TryAcquireItem(ItemDefinition, 1)` 수행
+  - `bSuccess && AddedQuantity == 1`일 때만 성공
+  - 성공 시 `IItemPlacementSlot::Execute_ClearPlacedItem`로 slot 점유를 해제한다.
+
+## Update 2026-05-27 (PartFocus Provider)
+
+- placed item 회수 경로를 global preview focus가 아니라 FocusEngaged host 내부 PartFocus로 전환했다.
+- 새 흐름:
+  - `FocusSecondaryAction` 입력 -> `UBeekeeperFocusComponent::HandleSecondaryInput()`
+  - engaged action(`UAnchoredFocusCursorActionComponent`) -> `UCursorPartFocusScopeComponent::HandleSecondaryInput()`
+  - hovered part action의 `HandleSecondaryPartFocusAction(...)` 실행
+- PartFocus descriptor 공급/등록:
+  - 공급: `ICursorPartFocusProvider`
+  - host 등록: `UCursorPartFocusRegistrationComponent`
+  - child 수집: `UChildCursorPartFocusProviderComponent`
+- `APlacedItemActor`는 global `UFocusTargetComponent` 대상이 아니며 host 내부 PartFocus part로만 취급한다.

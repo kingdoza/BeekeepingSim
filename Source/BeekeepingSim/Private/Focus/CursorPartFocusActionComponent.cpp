@@ -88,6 +88,16 @@ bool UCursorPartFocusActionComponent::HandlePreviewKeyAction(UCursorPartFocusSco
 	return true;
 }
 
+bool UCursorPartFocusActionComponent::CanHandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
+{
+	return false;
+}
+
+bool UCursorPartFocusActionComponent::HandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
 bool UCursorPartFocusActionComponent::CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
 {
 	return false;

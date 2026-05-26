@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Focus/CursorPartFocusProvider.h"
 #include "Focus/ItemUseAreaProvider.h"
 #include "GameFramework/Actor.h"
 #include "WorldActors/ItemPlacementSlot.h"
@@ -12,7 +13,7 @@ class UMaterialInterface;
 class USceneComponent;
 
 UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API AItemPlacementSlotActor : public AActor, public IItemUseAreaProvider, public IItemPlacementSlot
+class BEEKEEPINGSIM_API AItemPlacementSlotActor : public AActor, public IItemUseAreaProvider, public IItemPlacementSlot, public ICursorPartFocusProvider
 {
 	GENERATED_BODY()
 
@@ -21,9 +22,13 @@ public:
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	virtual void GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const override;
+	virtual void GetCursorPartFocusDescriptors_Implementation(TArray<FCursorPartFocusPartDescriptor>& OutDescriptors) const override;
 	virtual bool TryPlaceItem_Implementation(TSubclassOf<AActor> PlacedActorClass, UItemInstance* SourceItemInstance, ABeekeeperCharacter* InteractingCharacter) override;
 	virtual bool IsPlacementOccupied_Implementation() const override;
 	virtual void ClearPlacedItem_Implementation() override;
+
+	UFUNCTION(BlueprintPure, Category = "Item Placement Slot")
+	AActor* GetPlacedActor() const { return PlacedActor; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -66,4 +71,6 @@ private:
 	UStaticMesh* ResolveClassDefaultSlotMesh() const;
 	void ApplySlotAuthoringSettings();
 	void RefreshSlotVisualState();
+	void RequestHostPartFocusRebuild() const;
+	void RequestHostItemUseAreaRebuild() const;
 };

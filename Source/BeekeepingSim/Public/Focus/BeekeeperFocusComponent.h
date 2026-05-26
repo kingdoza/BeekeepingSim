@@ -53,6 +53,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Focus")
 	bool HandlePartFocusPreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
 
+	UFUNCTION(BlueprintCallable, Category = "Focus")
+	bool HandleSecondaryInput();
+
 	UFUNCTION(BlueprintPure, Category = "Focus")
 	UFocusTargetComponent* GetCurrentFocusTarget() const { return CurrentFocusTarget; }
 

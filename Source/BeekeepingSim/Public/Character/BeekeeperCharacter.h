@@ -68,6 +68,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> FocusCancelAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> FocusSecondaryAction;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Inputs")
 	TObjectPtr<UInputAction> HotbarSlotAction;
 
@@ -118,6 +121,8 @@ protected:
 	void FocusConfirmInput();
 
 	void FocusCancelInput();
+
+	void FocusSecondaryInput();
 
 	void HotbarSlotInput(const FInputActionValue& Value);
 

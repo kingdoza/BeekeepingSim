@@ -295,3 +295,30 @@
 
 - WorldActors bucket listener integration now consumes provider-backed bucket events (`UGameTimeBucketSubsystem` bound to `ITimeOfDayProvider`).
 - No direct `AGameTimeOfDayActor` dependency is introduced in WorldActors gameplay actors.
+
+## Update 2026-05-27
+
+- `APlacedItemActor`를 추가했다.
+  - 배치 아이템 1개를 대표하는 generic world actor
+  - `InitializePlacedItem(UItemInstance*, AActor*)`로 source item definition과 owning placement slot owner를 초기화한다.
+  - 기본 구성: `Root`, `ItemMesh`, `FocusTarget`, `UPlacedItemRetrieveFocusActionComponent`
+- `UPlacedItemRetrieveFocusActionComponent`를 추가했다.
+  - preview hover + secondary input에서 회수를 수행한다.
+  - hotbar `TryAcquireItem(ItemDefinition, 1)`이 완전 성공(`AddedQuantity == 1`)일 때만 회수 성공 처리한다.
+  - 성공 시 owning slot이 `IItemPlacementSlot`이면 `Execute_ClearPlacedItem`으로 slot/actor 제거를 위임한다.
+  - slot 정보가 없으면 fallback으로 placed actor만 destroy한다.
+- `AItemPlacementSlotActor::TryPlaceItem_Implementation`은 spawn/attach 성공 후, spawned actor가 `APlacedItemActor`일 때 `InitializePlacedItem(SourceItemInstance, this)`를 호출한다.
+- `APollenPattyActor` native class/file/UCLASS rename은 수행하지 않는다.
+
+## Update 2026-05-27 (PartFocus Retrieve)
+
+- `AItemPlacementSlotActor`는 `ICursorPartFocusProvider`를 구현한다.
+  - empty 상태: item-use-area descriptor만 제공
+  - occupied 상태: item-use-area descriptor는 제공하지 않고 placed item PartFocus descriptor를 제공
+- placed item descriptor는 `APlacedItemActor`의 hit component/action component를 사용한다.
+- `APlacedItemActor`는 host 내부 PartFocus 대상 actor이며 global focus target이 아니다.
+  - 기본 구성: `Root`, `ItemMesh`, `UPlacedItemRetrievePartFocusActionComponent`
+- `UPlacedItemRetrievePartFocusActionComponent`는 secondary PartFocus action으로 회수를 처리한다.
+  - `TryAcquireItem(ItemDefinition, 1)` 완전 성공 + `AddedQuantity == 1`일 때만 성공
+  - 성공 시 slot `ClearPlacedItem` 호출, 실패 시 actor/slot 유지
+- `ABeehive::RebuildCursorPartFocusDescriptors()`는 기존 lid/comb 등록 후 `CursorPartFocusRegistration` append를 호출해 provider 기반 part를 추가 등록한다.

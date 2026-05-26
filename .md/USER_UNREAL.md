@@ -300,3 +300,44 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
   - Verify toggle still works while focus interaction input is locked.
 - Save/compile:
   - Compile/save `BP_BeekeeperCharacter` and related input assets.
+
+## Placed Item Retrieve + Focus Secondary Input (2026-05-27)
+
+1. 입력 액션/매핑
+- `IA_FocusSecondaryAction` input action asset을 생성한다.
+- Player 입력 매핑 컨텍스트에 `IA_FocusSecondaryAction`을 추가하고 `RMB`에 매핑한다.
+- `BP_BeekeeperCharacter`에서 `FocusSecondaryAction` 프로퍼티에 `IA_FocusSecondaryAction`을 할당한다.
+
+2. Generic placed item BP 생성
+- `APlacedItemActor` 기반 BP를 생성한다. (예: `BP_PlacedItem_Generic`)
+- 필요 시 `ReceivePlacedItemInitialized`에서 추가 시각 설정을 구현한다.
+
+3. 화분떡 배치 class 교체
+- 화분떡 placement action(`UItemPlacementUseAction`/`UPollenPattyUseAction`)의 `PlacedActorClass`를 `APlacedItemActor` 기반 BP로 지정한다.
+- 기존 `APollenPattyActor` native class rename은 하지 않는다.
+
+4. PIE 검증
+- 배치 성공 시 hotbar stack이 1 감소하고 slot이 occupied 상태가 되는지 확인한다.
+- 배치된 actor hover 중 RMB 입력 시 hotbar에 아이템 1개가 추가되고 actor/slot 점유가 해제되는지 확인한다.
+- hotbar 공간이 없을 때 RMB 회수가 실패하고 placed actor/slot 점유가 유지되는지 확인한다.
+
+## PartFocus Provider 기반 Placed Item Retrieve (2026-05-27)
+
+1. 벌통 child slot 수집 태그
+- 벌통의 placement slot용 `ChildActorComponent`에 `ItemUseAreaChild` 태그를 유지한다.
+- 같은 component에 `PartFocusChild` 태그를 추가한다. (child part provider 수집용)
+
+2. Placed item BP authoring
+- `APlacedItemActor` 기반 BP를 생성한다.
+- 기본 mesh authoring은 BP에서 가능하며, item definition의 `WorldMesh`가 있으면 runtime 초기화 시 해당 mesh로 override된다.
+- 필요 시 `ReceivePlacedItemInitialized` 이벤트로 추가 표시 연출을 구현한다.
+
+3. 입력 매핑
+- `IA_FocusSecondaryAction`을 생성해 `RMB`에 매핑한다.
+- `BP_BeekeeperCharacter.FocusSecondaryAction`에 `IA_FocusSecondaryAction`을 할당한다.
+
+4. 검증 포인트
+- empty slot: item-use-area 표시가 보이고 PartFocus target은 없어야 한다.
+- occupied slot: item-use-area 표시는 사라지고 placed item이 PartFocus hover/outline 대상이어야 한다.
+- placed item hover + RMB: hotbar 1개 반환 + slot empty 복귀
+- hotbar 공간 없음: 회수 실패 + placed actor/slot 유지

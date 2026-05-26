@@ -134,6 +134,21 @@ bool UAnchoredFocusCursorActionComponent::HandlePartFocusPreviewKeyInputWhileEng
 	return false;
 }
 
+bool UAnchoredFocusCursorActionComponent::HandleSecondaryInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	if (!GetOwner())
+	{
+		return false;
+	}
+
+	if (UCursorPartFocusScopeComponent* ScopeComponent = GetOwner()->FindComponentByClass<UCursorPartFocusScopeComponent>())
+	{
+		return ScopeComponent->HandleSecondaryInput();
+	}
+
+	return false;
+}
+
 void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter)
 {
 	Super::OnFocusEngagedStarted(InteractingCharacter);

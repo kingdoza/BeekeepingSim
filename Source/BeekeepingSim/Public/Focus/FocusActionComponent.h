@@ -49,6 +49,9 @@ public:
 	virtual bool HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Focus Action")
+	virtual bool HandleSecondaryInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action")
 	virtual void AbortFocusAction(ABeekeeperCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintPure, Category = "Focus Action")

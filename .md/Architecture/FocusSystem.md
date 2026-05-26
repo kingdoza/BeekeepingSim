@@ -221,3 +221,29 @@
 - cancel/abort 시 crosshair, cursor, input mode, hotbar rule 복구 순서
 - `ScreenEdgeCancelRegionThickness`가 project settings와 runtime scope 판정에서 같은 값으로 적용되는지 확인
 - FocusTargetComponent가 배치된 Blueprint/level 로드 시 missing property 경고 재발 여부
+
+## Update 2026-05-27
+
+- PreviewFocus 상태에서 secondary input(RMB 등)을 별도 라우팅하는 `UFocusSecondaryActionComponent` 기반 경로를 추가했다.
+- `UBeekeeperFocusComponent::HandleSecondaryInput()`은 다음 정책을 따른다.
+  - FocusEngaged 상태에서는 실행하지 않는다.
+  - 현재 preview target owner에서 `UFocusSecondaryActionComponent`를 찾는다.
+  - `CanExecuteSecondaryFocusAction` 통과 시 `ExecuteSecondaryFocusAction`을 호출한다.
+- Focus는 secondary action의 실제 inventory/world mutation을 직접 수행하지 않고 실행 위임만 담당한다.
+
+## Update 2026-05-27 (PartFocus Provider)
+
+- FocusEngaged secondary 입력 경로를 PartFocus scope 기반으로 전환했다.
+  - `UBeekeeperFocusComponent::HandleSecondaryInput()`은 engaged action의 `HandleSecondaryInputWhileEngaged()`를 호출한다.
+  - `UAnchoredFocusCursorActionComponent::HandleSecondaryInputWhileEngaged()`는 owner의 `UCursorPartFocusScopeComponent::HandleSecondaryInput()`으로 위임한다.
+- `UCursorPartFocusActionComponent`에 optional secondary API를 추가했다.
+  - `CanHandleSecondaryPartFocusAction(...)`
+  - `HandleSecondaryPartFocusAction(...)`
+  - 기본 구현은 false/no-op
+- `ICursorPartFocusProvider`를 추가했다.
+  - provider가 `FCursorPartFocusPartDescriptor` 생성을 담당한다.
+- `UCursorPartFocusRegistrationComponent`를 추가했다.
+  - host의 scope 등록을 관리하며 provider(actor/component) descriptor를 수집해 scope에 등록한다.
+  - `RebuildCursorPartFocusDescriptors()`와 `AppendCursorPartFocusDescriptorsToScope()`를 제공한다.
+- `UChildCursorPartFocusProviderComponent`를 추가했다.
+  - child actor component tag/class 조건을 통해 child provider descriptor를 수집한다.

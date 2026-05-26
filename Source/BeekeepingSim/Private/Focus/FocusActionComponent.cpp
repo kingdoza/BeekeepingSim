@@ -70,6 +70,11 @@ bool UFocusActionComponent::HandlePartFocusPreviewKeyInputWhileEngaged(ABeekeepe
 	return false;
 }
 
+bool UFocusActionComponent::HandleSecondaryInputWhileEngaged(ABeekeeperCharacter* InteractingCharacter)
+{
+	return false;
+}
+
 void UFocusActionComponent::AbortFocusAction(ABeekeeperCharacter* InteractingCharacter)
 {
 	bIsActionEngaged = false;

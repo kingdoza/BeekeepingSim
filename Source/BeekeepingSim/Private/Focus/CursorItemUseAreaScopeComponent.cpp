@@ -115,6 +115,7 @@ void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
 {
 	ClearAllVisualState();
 	RestoreOriginalCollisionStates();
+	DynamicMaterials.Reset();
 	RegisteredDescriptors.Reset();
 	ActiveDescriptorIndices.Reset();
 	HoveredDescriptorIndex = INDEX_NONE;

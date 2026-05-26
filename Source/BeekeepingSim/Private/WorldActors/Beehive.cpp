@@ -13,7 +13,9 @@
 #include "Components/PrimitiveComponent.h"
 #include "Focus/CursorItemUseAreaScopeComponent.h"
 #include "Focus/ChildItemUseAreaProviderComponent.h"
+#include "Focus/ChildCursorPartFocusProviderComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
+#include "Focus/CursorPartFocusRegistrationComponent.h"
 #include "Focus/FocusTargetComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
@@ -106,6 +108,8 @@ ABeehive::ABeehive()
 
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
 	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
+	CursorPartFocusRegistration = CreateDefaultSubobject<UCursorPartFocusRegistrationComponent>(TEXT("CursorPartFocusRegistration"));
+	ChildCursorPartFocusProvider = CreateDefaultSubobject<UChildCursorPartFocusProviderComponent>(TEXT("ChildCursorPartFocusProvider"));
 	ItemUseAreaScope = CreateDefaultSubobject<UCursorItemUseAreaScopeComponent>(TEXT("ItemUseAreaScope"));
 	ChildItemUseAreaProvider = CreateDefaultSubobject<UChildItemUseAreaProviderComponent>(TEXT("ChildItemUseAreaProvider"));
 	if (LidPartFocusAction)
@@ -369,6 +373,11 @@ void ABeehive::RebuildCursorPartFocusDescriptors()
 			PreviewOnlyDescriptor.PromptData.bIsValid = false;
 			CursorPartFocusScope->RegisterPartDescriptor(PreviewOnlyDescriptor);
 		}
+	}
+
+	if (CursorPartFocusRegistration)
+	{
+		CursorPartFocusRegistration->AppendCursorPartFocusDescriptorsToScope();
 	}
 }
 

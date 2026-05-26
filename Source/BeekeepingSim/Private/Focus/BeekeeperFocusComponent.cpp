@@ -266,6 +266,21 @@ bool UBeekeeperFocusComponent::HandlePartFocusPreviewKeyInput(ECursorPartFocusPr
 	return EngagedFocusAction->HandlePartFocusPreviewKeyInputWhileEngaged(OwnerCharacter, Key);
 }
 
+bool UBeekeeperFocusComponent::HandleSecondaryInput()
+{
+	if (!OwnerCharacter)
+	{
+		return false;
+	}
+
+	if (!bIsFocusEngaged || !EngagedFocusAction)
+	{
+		return false;
+	}
+
+	return EngagedFocusAction->HandleSecondaryInputWhileEngaged(OwnerCharacter);
+}
+
 FFocusPromptData UBeekeeperFocusComponent::GetCurrentPromptData() const
 {
 	if (bIsFocusEngaged)

@@ -90,3 +90,13 @@
   - `FocusConfirmAction`: `Started -> FocusPrimaryPressedInput`, `Completed -> FocusPrimaryReleasedInput`
   - `PartFocusClickAction`: `Started -> PartFocusPointerPressedInput`, `Completed -> PartFocusPointerReleasedInput`
 - 기존 `FocusConfirmInput`, `PartFocusClickInput`, `PartFocusClickReleaseInput` 함수는 삭제하지 않고 새 pointer API wrapper로 유지한다.
+
+## Update 2026-05-27
+
+- `ABeekeeperCharacter`에 `FocusSecondaryAction`(`UInputAction`) 입력 바인딩 경로를 추가했다.
+- 입력 `Started` 시 `FocusSecondaryInput()`이 호출되고, 이는 `UBeekeeperFocusComponent::HandleSecondaryInput()`으로 위임된다.
+
+## Update 2026-05-27 (PartFocus Secondary)
+
+- `FocusSecondaryAction` 입력의 의미를 FocusEngaged host 내부 PartFocus secondary 입력으로 사용한다.
+- non-engaged preview secondary 동작은 기본 false이며, engaged action이 secondary 처리 경로를 소유한다.

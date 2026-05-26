@@ -27,6 +27,8 @@ class UCursorPartFocusActionComponent;
 class UBeehiveCombLiftComponent;
 class UCursorItemUseAreaScopeComponent;
 class UChildItemUseAreaProviderComponent;
+class UCursorPartFocusRegistrationComponent;
+class UChildCursorPartFocusProviderComponent;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IItemUseAreaProvider
@@ -190,6 +192,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
 	TObjectPtr<UCursorPartFocusActionComponent> LidPartFocusAction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	TObjectPtr<UCursorPartFocusRegistrationComponent> CursorPartFocusRegistration;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Part Focus")
+	TObjectPtr<UChildCursorPartFocusProviderComponent> ChildCursorPartFocusProvider;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
 	TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;

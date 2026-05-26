@@ -73,6 +73,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	bool HandlePreviewKeyAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, ECursorPartFocusPreviewInputKey Key);
 
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Secondary")
+	virtual bool CanHandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Secondary")
+	virtual bool HandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
 	virtual bool CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
 

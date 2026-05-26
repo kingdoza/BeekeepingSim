@@ -3,7 +3,9 @@
 #include "Character/BeekeeperCharacter.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Focus/CursorItemUseAreaScopeComponent.h"
 #include "Inventory/ItemInstance.h"
+#include "WorldActors/PlacedItemActor.h"
 
 AItemPlacementSlotActor::AItemPlacementSlotActor()
 {
@@ -57,6 +59,41 @@ void AItemPlacementSlotActor::GetItemUseAreaDescriptors_Implementation(TArray<FI
 	OutDescriptors.Add(MoveTemp(Descriptor));
 }
 
+void AItemPlacementSlotActor::GetCursorPartFocusDescriptors_Implementation(TArray<FCursorPartFocusPartDescriptor>& OutDescriptors) const
+{
+	const_cast<AItemPlacementSlotActor*>(this)->ApplySlotAuthoringSettings();
+	const_cast<AItemPlacementSlotActor*>(this)->RefreshSlotVisualState();
+
+	if (!SanitizeAndCheckOccupied())
+	{
+		return;
+	}
+
+	APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(PlacedActor);
+	if (!PlacedItemActor)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* HitComponent = PlacedItemActor->GetPartFocusHitComponent();
+	if (!HitComponent)
+	{
+		return;
+	}
+
+	FCursorPartFocusPartDescriptor Descriptor;
+	Descriptor.PartId = FName(*FString::Printf(TEXT("PlacedItem.%s"), *GetName()));
+	Descriptor.OwnerActor = PlacedItemActor;
+	Descriptor.HitComponent = HitComponent;
+	Descriptor.OutlineComponents.Add(HitComponent);
+	Descriptor.ActionHandler = PlacedItemActor->GetPartFocusActionComponent();
+	Descriptor.EngageMode = Descriptor.ActionHandler ? Descriptor.ActionHandler->GetEngageMode() : ECursorPartFocusEngageMode::PreviewOnly;
+	Descriptor.PromptData.bIsValid = true;
+	Descriptor.PromptData.DisplayName = PlacedItemActor->GetPlacedItemDisplayName();
+	Descriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("RMB"));
+	OutDescriptors.Add(MoveTemp(Descriptor));
+}
+
 bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> PlacedActorClass, UItemInstance* SourceItemInstance, ABeekeeperCharacter* InteractingCharacter)
 {
 	(void)SourceItemInstance;
@@ -91,7 +128,13 @@ bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> Pl
 	}
 
 	PlacedActor = SpawnedActor;
+	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(SpawnedActor))
+	{
+		PlacedItemActor->InitializePlacedItem(SourceItemInstance, this);
+	}
+
 	RefreshSlotVisualState();
+	RequestHostPartFocusRebuild();
 	return true;
 }
 
@@ -109,6 +152,31 @@ void AItemPlacementSlotActor::ClearPlacedItem_Implementation()
 
 	PlacedActor = nullptr;
 	RefreshSlotVisualState();
+	RequestHostPartFocusRebuild();
+	RequestHostItemUseAreaRebuild();
+}
+
+void AItemPlacementSlotActor::RequestHostPartFocusRebuild() const
+{
+	if (AActor* HostActor = GetAttachParentActor())
+	{
+		static const FName RebuildFuncName(TEXT("RebuildCursorPartFocusDescriptors"));
+		if (UFunction* RebuildFunction = HostActor->FindFunction(RebuildFuncName))
+		{
+			HostActor->ProcessEvent(RebuildFunction, nullptr);
+		}
+	}
+}
+
+void AItemPlacementSlotActor::RequestHostItemUseAreaRebuild() const
+{
+	if (AActor* HostActor = GetAttachParentActor())
+	{
+		if (UCursorItemUseAreaScopeComponent* ItemUseAreaScope = HostActor->FindComponentByClass<UCursorItemUseAreaScopeComponent>())
+		{
+			ItemUseAreaScope->RebuildItemUseAreaDescriptors();
+		}
+	}
 }
 
 void AItemPlacementSlotActor::ApplySlotAuthoringSettings()

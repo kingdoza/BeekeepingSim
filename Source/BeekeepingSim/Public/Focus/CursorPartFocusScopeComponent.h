@@ -104,6 +104,9 @@ public:
 	bool HandlePreviewKeyInput(ECursorPartFocusPreviewInputKey Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
+	bool HandleSecondaryInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	bool HandleCancelInput();
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")

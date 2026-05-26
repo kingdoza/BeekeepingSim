@@ -292,6 +292,39 @@ bool UCursorPartFocusScopeComponent::HandlePreviewKeyInput(ECursorPartFocusPrevi
 	return true;
 }
 
+bool UCursorPartFocusScopeComponent::HandleSecondaryInput()
+{
+	if (!bIsScopeActive)
+	{
+		return false;
+	}
+
+	UpdateHoveredPartFromCursor();
+	if (!RegisteredParts.IsValidIndex(HoveredPartIndex))
+	{
+		return false;
+	}
+
+	const FCursorPartFocusPartDescriptor& Descriptor = RegisteredParts[HoveredPartIndex];
+	if (!IsDescriptorPreviewAllowed(Descriptor))
+	{
+		return false;
+	}
+
+	UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
+	if (!Action || !OwnerCharacter)
+	{
+		return false;
+	}
+
+	if (!Action->CanHandleSecondaryPartFocusAction(this, OwnerCharacter))
+	{
+		return false;
+	}
+
+	return Action->HandleSecondaryPartFocusAction(this, OwnerCharacter);
+}
+
 void UCursorPartFocusScopeComponent::ClearRegisteredParts()
 {
 	SetHoveredPartIndex(INDEX_NONE);
