@@ -29,6 +29,42 @@ void AItemPresentationActor::InitializePresentation_Implementation(ABeekeeperCha
 	ItemInstance = InItemInstance;
 }
 
+void AItemPresentationActor::BeginItemUseActive()
+{
+	if (bIsItemUseActive)
+	{
+		return;
+	}
+
+	bIsItemUseActive = true;
+	ReceiveItemUseActiveStarted();
+}
+
+void AItemPresentationActor::EndItemUseActive(const bool bCanceled)
+{
+	if (!bIsItemUseActive)
+	{
+		return;
+	}
+
+	bIsItemUseActive = false;
+	ReceiveItemUseActiveEnded(bCanceled);
+}
+
+void AItemPresentationActor::ReceiveItemUseActiveStarted_Implementation()
+{
+}
+
+void AItemPresentationActor::ReceiveItemUseActiveEnded_Implementation(bool bCanceled)
+{
+}
+
+void AItemPresentationActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	EndItemUseActive(true);
+	Super::EndPlay(EndPlayReason);
+}
+
 void AItemPresentationActor::SetPresentationHidden(bool bInHidden)
 {
 	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);

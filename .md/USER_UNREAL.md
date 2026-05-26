@@ -1,5 +1,27 @@
 # Cursor Part Focus - Unreal Editor 작업 목록
 
+## AVfxItemPresentationActor 사용 절차 (2026-05-26)
+
+1. `AVfxItemPresentationActor` 기반 BP를 생성한다. (예: `BP_DisinfectantVfxPresentation`)
+2. BP의 `UseVfxComponent`에서 Niagara System Asset을 지정한다.
+3. `UseVfxComponent`의 상대 위치/회전/스케일을 아이템 노즐 위치에 맞춘다.
+4. `UseVfxComponent`의 `Auto Activate`는 false로 유지한다.
+5. 필요 시 actor 옵션:
+   - `bResetVfxOnStart`
+   - `bDeactivateImmediatelyOnEnd`
+6. 아이템 정의의 held presentation actor class를 해당 BP로 지정한다.
+7. 소독약 hold-use 시작/종료 시 VFX가 자동으로 시작/정지되는지 PIE에서 확인한다.
+
+## Held Disinfectant VFX Hookup (2026-05-26)
+
+- 소독약 held presentation BP의 부모를 `AItemPresentationActor` 기반으로 둔다.
+- BP에 분사 VFX/오디오 컴포넌트(예: Niagara, Audio)를 추가한다.
+- `ReceiveItemUseActiveStarted`에서 VFX 시작, `ReceiveItemUseActiveEnded(bool bCanceled)`에서 VFX 정지를 구현한다.
+- 소독약 아이템 정의에서 held presentation actor class를 위 BP로 지정한다.
+- 소독약 action class는 `UDisinfectantUseAction`(또는 서브클래스)로 유지한다.
+- 런타임 경로:
+  - `UDisinfectantUseAction` -> `UBeekeeperHeldItemVisualizerComponent` -> 현재 `AItemPresentationActor`
+
 이 문서는 Cursor Part Focus C++ 구현 후 Unreal Editor에서 수동으로 설정/확인해야 할 항목만 정리한다.
 
 ## 1. Input 설정

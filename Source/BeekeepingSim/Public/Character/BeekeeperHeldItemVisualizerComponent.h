@@ -21,6 +21,15 @@ class BEEKEEPINGSIM_API UBeekeeperHeldItemVisualizerComponent : public UActorCom
 public:
 	UBeekeeperHeldItemVisualizerComponent();
 
+	UFUNCTION(BlueprintCallable, Category = "Held Item|Use")
+	void BeginHeldItemUseActive();
+
+	UFUNCTION(BlueprintCallable, Category = "Held Item|Use")
+	void EndHeldItemUseActive(bool bCanceled);
+
+	UFUNCTION(BlueprintPure, Category = "Held Item|Use")
+	bool IsHeldItemUseActive() const { return bHeldItemUseActive; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -97,4 +106,5 @@ private:
 	TObjectPtr<UStaticMesh> CurrentFallbackMesh;
 
 	bool bWasRunningLocally = false;
+	bool bHeldItemUseActive = false;
 };

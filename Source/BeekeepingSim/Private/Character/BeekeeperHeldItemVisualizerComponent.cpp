@@ -16,6 +16,34 @@ UBeekeeperHeldItemVisualizerComponent::UBeekeeperHeldItemVisualizerComponent()
 	PrimaryComponentTick.TickInterval = 0.0f;
 }
 
+void UBeekeeperHeldItemVisualizerComponent::BeginHeldItemUseActive()
+{
+	if (bHeldItemUseActive)
+	{
+		return;
+	}
+
+	bHeldItemUseActive = true;
+	if (HeldPresentationActor)
+	{
+		HeldPresentationActor->BeginItemUseActive();
+	}
+}
+
+void UBeekeeperHeldItemVisualizerComponent::EndHeldItemUseActive(const bool bCanceled)
+{
+	if (!bHeldItemUseActive)
+	{
+		return;
+	}
+
+	bHeldItemUseActive = false;
+	if (HeldPresentationActor)
+	{
+		HeldPresentationActor->EndItemUseActive(bCanceled);
+	}
+}
+
 void UBeekeeperHeldItemVisualizerComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -67,6 +95,7 @@ void UBeekeeperHeldItemVisualizerComponent::EndPlay(const EEndPlayReason::Type E
 	HotbarComponent = nullptr;
 	OwnerCharacter = nullptr;
 	bWasRunningLocally = false;
+	bHeldItemUseActive = false;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -265,12 +294,14 @@ void UBeekeeperHeldItemVisualizerComponent::UpdateVisibilityAndTransform()
 	const EHotbarPresentationMode PresentationMode = HotbarComponent->GetPresentationMode();
 	if (!CurrentVisualizedItem || PresentationMode == EHotbarPresentationMode::None)
 	{
+		EndHeldItemUseActive(true);
 		HeldPresentationActor->SetPresentationHidden(true);
 		return;
 	}
 
 	if (!CurrentPresentationClass && !CurrentFallbackMesh)
 	{
+		EndHeldItemUseActive(true);
 		HeldPresentationActor->SetPresentationHidden(true);
 		return;
 	}
@@ -342,6 +373,7 @@ void UBeekeeperHeldItemVisualizerComponent::DestroyPresentationActor()
 {
 	if (HeldPresentationActor)
 	{
+		EndHeldItemUseActive(true);
 		HeldPresentationActor->Destroy();
 		HeldPresentationActor = nullptr;
 	}

@@ -1,5 +1,7 @@
 #include "Inventory/DisinfectantUseAction.h"
 
+#include "Character/BeekeeperCharacter.h"
+#include "Character/BeekeeperHeldItemVisualizerComponent.h"
 #include "WorldActors/Beehive.h"
 #include "GameplayTagContainer.h"
 
@@ -21,12 +23,28 @@ bool UDisinfectantUseAction::BeginUse(const FItemActionContext& Context)
 		return false;
 	}
 
+	if (ABeekeeperCharacter* Character = Context.Character)
+	{
+		if (UBeekeeperHeldItemVisualizerComponent* HeldItemVisualizer = Character->GetBeekeeperHeldItemVisualizer())
+		{
+			HeldItemVisualizer->BeginHeldItemUseActive();
+		}
+	}
+
 	ReceiveDisinfectantUseStarted(Context);
 	return true;
 }
 
 void UDisinfectantUseAction::EndUse(const FItemActionContext& Context, bool bWasCanceled)
 {
+	if (ABeekeeperCharacter* Character = Context.Character)
+	{
+		if (UBeekeeperHeldItemVisualizerComponent* HeldItemVisualizer = Character->GetBeekeeperHeldItemVisualizer())
+		{
+			HeldItemVisualizer->EndHeldItemUseActive(bWasCanceled);
+		}
+	}
+
 	ReceiveDisinfectantUseEnded(Context, bWasCanceled);
 	Super::EndUse(Context, bWasCanceled);
 }

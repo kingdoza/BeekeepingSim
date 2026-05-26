@@ -1,5 +1,25 @@
 # Inventory System
 
+## VFX Presentation Actor (2026-05-26)
+
+- Added `AVfxItemPresentationActor` as a reusable held-item VFX presentation subclass of `AItemPresentationActor`.
+- It owns one Niagara component (`UseVfxComponent`) and toggles VFX from active lifecycle callbacks:
+  - `ReceiveItemUseActiveStarted_Implementation` -> optional reset + `Activate(true)`
+  - `ReceiveItemUseActiveEnded_Implementation` -> `Deactivate()` or `DeactivateImmediate()`
+- VFX asset/transform/renderer parameters are authored on the Niagara component in BP/Details, not duplicated as separate C++ asset/transform properties.
+
+## Held Presentation Active Lifecycle (2026-05-26)
+
+- `UDisinfectantUseAction` routes hold-use start/end to `UBeekeeperHeldItemVisualizerComponent` only.
+- `UBeekeeperHeldItemVisualizerComponent` forwards active start/end to current `AItemPresentationActor` through base APIs:
+  - `BeginItemUseActive()`
+  - `EndItemUseActive(bool bCanceled)`
+- `AItemPresentationActor` owns only generic active state/events:
+  - `bIsItemUseActive`
+  - `ReceiveItemUseActiveStarted`
+  - `ReceiveItemUseActiveEnded`
+- VFX ownership stays in disinfectant presentation subclass/BP; action and visualizer do not access Niagara/audio components directly.
+
 ## Scope
 
 - `Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h`

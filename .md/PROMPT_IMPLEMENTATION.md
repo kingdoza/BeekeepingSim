@@ -1,298 +1,195 @@
-# Child ItemUseArea Provider Component 구현 프롬프트
+# VFX Item Presentation Actor 구현 프롬프트
+
+## 전제
+
+기존 held item active lifecycle 구현은 이미 완료된 상태로 본다.
+
+이미 존재한다고 가정하는 경로:
+
+- `AItemPresentationActor::BeginItemUseActive()`
+- `AItemPresentationActor::EndItemUseActive(bool bCanceled)`
+- `AItemPresentationActor::ReceiveItemUseActiveStarted`
+- `AItemPresentationActor::ReceiveItemUseActiveEnded`
+- `UBeekeeperHeldItemVisualizerComponent`가 held presentation actor에 active 시작/종료를 전달
+- `UDisinfectantUseAction`은 presentation actor/VFX를 직접 모르고 held item visualizer에 active 시작/종료만 알림
+
+이번 작업은 `AItemPresentationActor`의 재사용 가능한 VFX subclass를 추가하는 것이다.
 
 ## 목표
 
-여러 FocusEngaged host actor가 owner의 child actor slot을 `ItemUseArea`로 노출할 수 있는 generic provider component를 구현한다.
+여러 held item presentation actor가 공통으로 사용할 수 있는 generic VFX presentation actor를 구현한다.
 
-확정 방향:
+클래스 역할:
 
-- 신규 컴포넌트 이름은 `UChildItemUseAreaProviderComponent`
-- 실제 ItemUseArea 등록 주체는 계속 `UCursorItemUseAreaScopeComponent`
-- `UChildItemUseAreaProviderComponent`는 descriptor를 제공하는 중간 provider
-- owner actor의 직접 `UChildActorComponent` 중 `Component Tags` 조건을 만족하는 child actor만 scan
-- child actor가 `IItemUseAreaProvider`를 구현하면 `GetItemUseAreaDescriptors` 결과를 그대로 append
-- `ABeehive`에는 이 컴포넌트를 native default subobject로 추가
-- 기존 `ABeehive` 전용 `PlacementSlotComponents` 방식은 전부 삭제
+- C++에서 Niagara component를 생성하고 소유한다.
+- active 시작 시 Niagara VFX를 재생한다.
+- active 종료 시 Niagara VFX를 정지한다.
+- Niagara System asset, transform, renderer/parameter 세팅은 BP의 Niagara component Details에서 설정한다.
 
-`BP_ItemPlacementSlotActor`가 ItemUseArea로 들어가는 경로는 `GetItemUseAreaDescriptors`뿐이다. 생성자/OnConstruction/BeginPlay는 mesh/material/transform 준비만 수행하고 등록을 하지 않는다.
+## 클래스 이름
+
+권장:
+
+```cpp
+AVfxItemPresentationActor : public AItemPresentationActor
+```
+
+권장 파일:
+
+- `Source/BeekeepingSim/Public/Inventory/VfxItemPresentationActor.h`
+- `Source/BeekeepingSim/Private/Inventory/VfxItemPresentationActor.cpp`
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
 - `.md/Architecture/InventorySystem.md`
-- `.md/QNA_ARCHITECTURE.md`
-- `.md/QNA_IMPLEMENTATION.md`
 - `.md/USER_UNREAL.md`
+- `.md/QNA_IMPLEMENTATION.md`
 
-## 런타임 흐름
+## 설계 원칙
 
-```text
-FocusEngaged 진입
-→ UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
-→ host actor provider 호출
-→ host actor의 provider component 호출
-→ UChildItemUseAreaProviderComponent::GetItemUseAreaDescriptors()
-→ owner의 직접 UChildActorComponent scan
-→ Component Tags에 RequiredChildActorComponentTag가 있는 것만 통과
-→ child actor가 IItemUseAreaProvider면 descriptor 요청
-→ UCursorItemUseAreaScopeComponent::RegisterItemUseAreaDescriptor()
-→ 선택 아이템 action UseAreaTagQuery와 AreaTags 매칭
-→ active descriptor만 표시/hover/use 가능
-```
+`AVfxItemPresentationActor`에는 NiagaraComponent 자체가 이미 가진 설정과 중복되는 UPROPERTY를 만들지 않는다.
 
-## 폐기할 로직
+만들지 말 것:
 
-아래는 반드시 제거한다.
+- `UNiagaraSystem* UseVfxSystem`
+- `NiagaraSystemAsset`
+- `UseVfxRelativeTransform`
+- `UseVfxAttachSocketName`
+- 별도 `bAutoActivate` property
 
-- `ABeehive`의 `PlacementSlotComponents` UPROPERTY
-- `ABeehive::GetItemUseAreaDescriptors_Implementation()` 안에서 `PlacementSlotComponents`를 순회해 child slot descriptor를 append하는 코드
-- `UChildActorItemUseAreaProviderComponent`
-- `UItemUseAreaProviderChildActorComponent`
-- `FComponentReference` 기반 `ProviderChildActorComponents` 설계
-- scope 내부 `GetAttachedActors(...)` 자동 순회
-- scope 내부 모든 `UChildActorComponent` 자동 순회
+이유:
 
-유지해야 하는 것:
+- Niagara asset은 `UNiagaraComponent`의 Details에서 직접 설정한다.
+- transform은 `UseVfxComponent` 자체 transform으로 조정한다.
+- attach/socket은 BP component hierarchy에서 처리한다.
+- auto activate는 NiagaraComponent 기본 property이며, C++ constructor에서 false 기본값만 지정한다.
 
-- `ABeehive`의 lid/comb item-use-area descriptor
-- 소독약용 `Item.UseArea.Beehive.Disinfectant` tag
-- sanitation state/API
-- `AItemPlacementSlotActor`, `IItemPlacementSlot`, `UItemPlacementUseAction`
-
-## 신규 타입
-
-### `UChildItemUseAreaProviderComponent`
-
-권장 위치:
-
-- `Source/BeekeepingSim/Public/Focus/ChildItemUseAreaProviderComponent.h`
-- `Source/BeekeepingSim/Private/Focus/ChildItemUseAreaProviderComponent.cpp`
-
-상속/구현:
-
-- `UActorComponent`
-- `IItemUseAreaProvider`
-
-UCLASS:
+클래스에 둘 것:
 
 ```cpp
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class BEEKEEPINGSIM_API UChildItemUseAreaProviderComponent
-	: public UActorComponent
-	, public IItemUseAreaProvider
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+TObjectPtr<UNiagaraComponent> UseVfxComponent;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Presentation|VFX")
+bool bResetVfxOnStart = true;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Presentation|VFX")
+bool bDeactivateImmediatelyOnEnd = false;
+```
+
+`bResetVfxOnStart`, `bDeactivateImmediatelyOnEnd`는 NiagaraComponent asset/transform 설정이 아니라 active lifecycle 정책이므로 subclass property로 허용한다.
+
+## 구현 요구
+
+### 생성자
+
+- `UseVfxComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("UseVfxComponent"))`
+- 기존 `AItemPresentationActor`의 root/component 구조를 확인해 적절한 parent에 attach한다.
+  - root component가 있으면 root에 attach
+  - item mesh/fallback mesh에 attach하는 기존 패턴이 있으면 그 패턴을 따른다.
+- `UseVfxComponent->SetAutoActivate(false)`
+- tick/collision 설정은 Niagara 기본값을 유지한다.
+
+### active 시작
+
+`ReceiveItemUseActiveStarted_Implementation()` override:
+
+```cpp
+void AVfxItemPresentationActor::ReceiveItemUseActiveStarted_Implementation()
 {
-	GENERATED_BODY()
-};
+	Super::ReceiveItemUseActiveStarted_Implementation();
+
+	if (!UseVfxComponent)
+	{
+		return;
+	}
+
+	if (bResetVfxOnStart)
+	{
+		UseVfxComponent->ResetSystem();
+	}
+
+	UseVfxComponent->Activate(true);
+}
 ```
 
-UPROPERTY:
+### active 종료
+
+`ReceiveItemUseActiveEnded_Implementation(bool bCanceled)` override:
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-FName RequiredChildActorComponentTag = TEXT("ItemUseAreaChild");
+void AVfxItemPresentationActor::ReceiveItemUseActiveEnded_Implementation(bool bCanceled)
+{
+	Super::ReceiveItemUseActiveEnded_Implementation(bCanceled);
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-TSubclassOf<AActor> RequiredChildActorClass = nullptr;
+	if (!UseVfxComponent)
+	{
+		return;
+	}
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-bool bLogSkippedChildren = false;
+	if (bDeactivateImmediatelyOnEnd)
+	{
+		UseVfxComponent->DeactivateImmediate();
+	}
+	else
+	{
+		UseVfxComponent->Deactivate();
+	}
+}
 ```
 
-결정사항:
+### EndPlay 안전 정리
 
-- `RequiredChildActorComponentTag` 기본값은 `ItemUseAreaChild`
-- `RequiredChildActorComponentTag`가 `None`이면 tag 필터 없이 모든 provider child actor 허용
-- `RequiredChildActorClass` 기본값은 `nullptr`
-- `RequiredChildActorClass`가 null이면 class 필터 없음
-- owner actor에 직접 붙은 `UChildActorComponent`만 scan
-- attached actor 재귀 scan 없음
-- child actor 내부 child actor 재귀 scan 없음
-- child provider가 반환한 descriptor는 변조하지 않고 그대로 append
-- skip 로그는 기본 off, 켜면 Verbose 수준으로 남김
+필요하면 `EndPlay(...)` override:
 
-구현 요구:
+- `UseVfxComponent`가 유효하면 `DeactivateImmediate()`
+- `Super::EndPlay(...)` 호출 순서는 기존 local pattern을 따른다.
 
-```cpp
-virtual void GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const override;
-```
-
-구현 절차:
-
-1. `AActor* Owner = GetOwner()`
-2. owner가 없으면 return
-3. `Owner->GetComponents<UChildActorComponent>(ChildActorComponents)`로 직접 component 조회
-4. 각 child actor component에 대해:
-   - component null이면 skip
-   - `RequiredChildActorComponentTag`가 None이 아니고 `ComponentHasTag(RequiredChildActorComponentTag)`가 false면 skip
-   - `AActor* ChildActor = ChildActorComponent->GetChildActor()`
-   - child actor null이면 skip
-   - `RequiredChildActorClass`가 있고 `!ChildActor->IsA(RequiredChildActorClass)`이면 skip
-   - child actor가 `UItemUseAreaProvider` interface를 구현하지 않으면 skip
-   - `IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(ChildActor, ChildDescriptors)` 호출
-   - `OutDescriptors.Append(MoveTemp(ChildDescriptors))`
-
-주의:
-
-- `Component Tags`는 child actor component의 tag다. child actor의 actor tag가 아니다.
-- `BP_ItemPlacementSlotActor`는 `AItemPlacementSlotActor::GetItemUseAreaDescriptors`에서 자기 descriptor를 반환한다.
-- 이 컴포넌트는 `RegisterItemUseAreaDescriptor`를 호출하지 않는다.
-
-## Scope 수정
-
-대상:
-
-- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
-
-`UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()` 흐름:
-
-```cpp
-RebuildDescriptorsFromProviderActor(HostActor);
-RebuildDescriptorsFromProviderComponents(HostActor);
-RebuildDescriptorsFromDirectComponentTags(HostActor);
-RefreshActiveUseAreas();
-```
-
-신규 helper:
-
-```cpp
-void RebuildDescriptorsFromProviderComponents(AActor* HostActor);
-```
-
-구현 요구:
-
-- `HostActor->GetComponents(...)`로 host actor에 직접 붙은 `UActorComponent`만 확인
-- component가 `this`이면 skip
-- component class가 `UItemUseAreaProvider` interface를 구현하면 `IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(Component, ProviderDescriptors)` 호출
-- 반환 descriptor는 `RegisterItemUseAreaDescriptor(...)`를 통해 등록
-- `GetAttachedActors(...)` 순회 금지
-- 모든 `UChildActorComponent` 자동 순회 금지
-
-## Beehive 수정
-
-대상:
-
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-
-추가:
-
-```cpp
-class UChildItemUseAreaProviderComponent;
-```
-
-UPROPERTY:
-
-```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
-TObjectPtr<UChildItemUseAreaProviderComponent> ChildItemUseAreaProvider;
-```
-
-생성자:
-
-```cpp
-ChildItemUseAreaProvider = CreateDefaultSubobject<UChildItemUseAreaProviderComponent>(TEXT("ChildItemUseAreaProvider"));
-```
-
-제거:
-
-- `PlacementSlotComponents` UPROPERTY
-- `GetItemUseAreaDescriptors_Implementation()` 안의 placement slot child actor provider 순회
-
-유지:
-
-- lid descriptor
-- comb descriptor
-- disinfectant tag 부여
-- sanitation API/state
-
-## 기존 slot actor/action 유지 기준
-
-`AItemPlacementSlotActor` 유지 요구:
-
-- `AActor`, `IItemUseAreaProvider`, `IItemPlacementSlot`
-- `SlotMeshComponent` 하나가 descriptor의 `HitComponent`와 `VisualComponents[0]`를 겸함
-- `SlotMeshAsset`, `SlotMeshMaterial`, `SlotMeshRelativeTransform`, `AttachRelativeTransform`, `AttachSocketName`
-- occupied 상태에서는 descriptor를 반환하지 않음
-- descriptor `EffectTargetObject`는 slot actor 자신
-
-`UItemPlacementUseAction` 유지 요구:
-
-- `Context.ItemUseEffectTargetObject`가 `IItemPlacementSlot`인지 확인
-- `TryPlaceItem(...)` 성공 시 `bSucceeded=true`, `bConsumedItem=true`, `StackDelta=-1`
-- stack delta 적용 실패 시 scope가 `ClearPlacedItem()` rollback
+단, `AItemPresentationActor` base가 이미 active 종료를 보장한다면 중복 정리를 피한다.
 
 ## BP/Editor 작업 문서화
 
-`.md/USER_UNREAL.md`에 다음 절차를 반영한다.
+`.md/USER_UNREAL.md`에 아래 절차를 추가한다.
 
-상위 actor 공통:
+소독약 VFX presentation BP:
 
-- host actor에 `UChildItemUseAreaProviderComponent`가 필요하다.
-- slot용 일반 `ChildActorComponent`를 추가한다.
-- Child Actor Class를 `BP_ItemPlacementSlotActor`로 지정한다.
-- 그 `ChildActorComponent`의 `Component Tags`에 `ItemUseAreaChild`를 추가한다.
-- child actor template에서 `AreaId`, `AreaTags`, `SlotMeshAsset`, `SlotMeshMaterial`, `SlotMeshRelativeTransform`, `AttachRelativeTransform`을 설정한다.
-- `Actor Tags`가 아니라 `Component Tags`를 사용한다.
+1. `AVfxItemPresentationActor` 기반 BP 생성
+2. `UseVfxComponent` 선택
+3. Niagara System Asset에 소독약 분사 Niagara system 지정
+4. `UseVfxComponent` 위치/회전/스케일 조정
+5. `Auto Activate`는 false 유지
+6. 필요하면 `bResetVfxOnStart`, `bDeactivateImmediatelyOnEnd` 조정
+7. 소독약 item definition의 held/presentation actor class를 이 BP로 설정
 
-벌통 예시:
+다른 VFX item:
 
-- `ABeehive`에는 native `ChildItemUseAreaProvider` component가 기본으로 존재한다.
-- `BP_Beehive`에서 화분떡 위치마다 일반 `ChildActorComponent`를 추가한다.
-- 각 component의 Child Actor Class는 `BP_ItemPlacementSlotActor`
-- 각 component의 Component Tags에 `ItemUseAreaChild` 추가
-- child actor template의 `AreaTags`는 `Item.UseArea.Beehive.PollenPatty`
-- 별도 등록 배열은 없다.
-
-## 문서 갱신
-
-구현 후 갱신 대상:
-
-- `.md/Architecture/FocusSystem.md`
-  - scope가 host provider component도 수집한다는 내용
-  - `UChildItemUseAreaProviderComponent` 역할
-  - child actor 자동 순회는 scope가 하지 않는다는 내용
-- `.md/Architecture/WorldActorsSystem.md`
-  - `ABeehive` 전용 `PlacementSlotComponents` 설명 제거
-  - `ABeehive`가 native `ChildItemUseAreaProvider` component를 가진다는 내용
-  - `AItemPlacementSlotActor`는 reusable slot actor로 유지
-- `.md/QNA_ARCHITECTURE.md`
-  - `PlacementSlotComponents`/`FComponentReference`/provider child actor component 답변을 폐기하고 `UChildItemUseAreaProviderComponent` 방식으로 정리
-- `.md/USER_UNREAL.md`
-  - 에디터 설정 절차를 `Component Tags = ItemUseAreaChild` 기준으로 갱신
+- 같은 `AVfxItemPresentationActor` 기반 BP를 만들고 `UseVfxComponent`의 Niagara System Asset만 다른 것으로 지정한다.
 
 ## 검증 기준
 
 ### 코드 검색
 
-아래가 없어야 한다.
-
-- `ABeehive`의 `PlacementSlotComponents`
-- `ABeehive::GetItemUseAreaDescriptors_Implementation()` 내부 placement slot child actor 순회
-- `UChildActorItemUseAreaProviderComponent`
-- `UItemUseAreaProviderChildActorComponent`
-- `ProviderChildActorComponents`
-- `FComponentReference` 기반 child slot 등록 설계
-- `UCursorItemUseAreaScopeComponent` 내부 `GetAttachedActors(...)` 순회
-- `UCursorItemUseAreaScopeComponent` 내부 모든 `UChildActorComponent` 자동 순회
-
 아래가 있어야 한다.
 
-- `UChildItemUseAreaProviderComponent`
-- `RequiredChildActorComponentTag`
-- 기본 tag 값 `ItemUseAreaChild`
-- `RequiredChildActorClass`
-- `ABeehive::ChildItemUseAreaProvider`
-- `UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderComponents(...)`
-- scope rebuild 순서:
-  - host actor provider
-  - host provider components
-  - direct component tag fallback
-- `AItemPlacementSlotActor` descriptor의 `HitComponent = SlotMeshComponent`
-- `AItemPlacementSlotActor` descriptor의 `VisualComponents.Add(SlotMeshComponent)`
+- `AVfxItemPresentationActor`
+- `UseVfxComponent`
+- `bResetVfxOnStart`
+- `bDeactivateImmediatelyOnEnd`
+- `ReceiveItemUseActiveStarted_Implementation`
+- `ReceiveItemUseActiveEnded_Implementation`
+- `UseVfxComponent->Activate`
+- `UseVfxComponent->Deactivate`
+
+아래가 없어야 한다.
+
+- `AVfxItemPresentationActor`의 `UNiagaraSystem* UseVfxSystem`
+- `AVfxItemPresentationActor`의 `NiagaraSystemAsset`
+- `AVfxItemPresentationActor`의 `UseVfxRelativeTransform`
+- `AVfxItemPresentationActor`의 `UseVfxAttachSocketName`
+- `UDisinfectantUseAction`이 Niagara/VFX component를 직접 참조하는 코드
+- `UBeekeeperHeldItemVisualizerComponent`가 소독약 전용 VFX component를 직접 참조하는 코드
 
 ### 빌드
 
@@ -304,23 +201,30 @@ ChildItemUseAreaProvider = CreateDefaultSubobject<UChildItemUseAreaProviderCompo
 
 ### PIE 수동 검증
 
-Content 직접 수정은 하지 말고 `.md/USER_UNREAL.md`에 절차를 남긴 뒤, 사용자가 설정 후 확인한다.
+1. `AVfxItemPresentationActor` 기반 소독약 presentation BP를 만든다.
+2. `UseVfxComponent`에 Niagara System Asset을 지정한다.
+3. 소독약 item definition의 presentation actor class를 해당 BP로 설정한다.
+4. 소독약 선택 후 벌통 FocusEngaged 상태에서 lid/comb use area 위 LMB hold
+5. hold 시작 시 Niagara VFX가 재생된다.
+6. hold release/cancel/focus exit/hotbar 변경 시 Niagara VFX가 정지된다.
+7. sanitation 증가 동작은 기존처럼 유지된다.
 
-확인 항목:
+## 문서 갱신
 
-1. `BP_Beehive`의 slot용 `ChildActorComponent`에 `Component Tags = ItemUseAreaChild`를 추가하면 화분떡 선택 시 slot use area가 표시된다.
-2. 같은 child actor class라도 component tag가 없는 slot은 표시되지 않는다.
-3. 다른 host actor BP에 `UChildItemUseAreaProviderComponent`를 붙이고 같은 tag를 쓰면 동일 방식으로 slot use area를 등록할 수 있다.
-4. 화분떡 배치 성공 시 hotbar stack이 1 감소한다.
-5. 배치된 slot은 occupied 상태가 되어 descriptor를 반환하지 않고 즉시 표시 대상에서 사라진다.
-6. 소독약 lid/comb 사용영역은 기존처럼 유지된다.
+구현 후 갱신:
+
+- `.md/Architecture/InventorySystem.md`
+  - `AVfxItemPresentationActor` 역할 추가
+  - VFX asset/transform은 NiagaraComponent Details에서 설정한다는 경계 기록
+- `.md/USER_UNREAL.md`
+  - `AVfxItemPresentationActor` 기반 BP 생성 및 NiagaraComponent 설정 절차 추가
 
 ## QnA 중단 조건
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- `IItemUseAreaProvider`가 `UActorComponent`에서 BlueprintNativeEvent 실행 경로로 호출되지 않는 경우
-- `ABeehive` Blueprint가 `PlacementSlotComponents`를 이미 저장해 Blueprint compile/save 또는 migration 없이는 제거가 위험한 경우
-- `UChildItemUseAreaProviderComponent` 추가가 모듈 의존 방향상 Focus에 둘 수 없는 경우
-- stack delta rollback 경로가 현재 scope/context와 맞지 않는 경우
+- `AItemPresentationActor`의 root/component 구조상 `UseVfxComponent` attach parent를 결정할 수 없는 경우
+- active lifecycle 함수/이벤트 이름이 현재 구현과 다르게 되어 있는 경우
+- Niagara module dependency가 Build.cs에 없고 추가 위치가 불명확한 경우
+- `EndPlay`/hidden lifecycle에서 base active 종료와 subclass VFX 정리가 중복 충돌하는 경우
 - Content asset 직접 수정 없이는 검증 가능한 BP 설정이 불가능한 경우
