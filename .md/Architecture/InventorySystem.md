@@ -14,6 +14,12 @@
 - `Source/BeekeepingSim/Private/Inventory/ItemAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/HoldItemUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/DisinfectantUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/DisinfectantUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/PollenPattyUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/ItemPlacementUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/ItemPlacementUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemActionContext.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemActionTypes.h`
 - `Source/BeekeepingSim/Public/Inventory/HotbarItemInterface.h`
@@ -39,6 +45,9 @@
 - `UItemInstance`: 런타임 아이템 상태와 action 소유 객체
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
+- `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
+- `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
+- `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
 - `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
 - `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
 - `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, 메시지를 담는 결과 DTO
@@ -68,8 +77,11 @@
   - `TickUse(Context, DeltaTime)`는 use session이 진행 중일 때 매 Tick 호출될 수 있다.
   - `CanApplyUseEffect(Context)`와 `ApplyUseEffect(Context, DeltaTime)`는 유효 item-use area target이 있을 때의 실질 효과 적용 경계다.
   - `EndUse(Context, bWasCanceled)`는 release/cancel/deactivate 경로에서 session 종료를 받는다.
-- `UHoldItemUseAction`의 현재 함수들은 C++ virtual + BlueprintCallable/Pure API다. Blueprint override 이벤트 계약은 아직 별도 문서/QnA 없이 확정하지 않는다.
+- `UHoldItemUseAction`는 C++ virtual API를 유지하면서 `BlueprintNativeEvent` hook(`ReceiveCanBeginUse`, `ReceiveBeginUse`, `ReceiveTickUse`, `ReceiveEndUse`, `ReceiveCanApplyUseEffect`, `ReceiveApplyUseEffect`)을 함께 제공한다.
 - `FItemActionExecutionResult::bConsumedItem`과 `StackDelta`는 action 결과 DTO다. 실제 stack 소비/증감 적용 주체는 호출 경로가 명시해야 하며 action base가 자동으로 inventory를 mutation하지 않는다.
+- Focus item-use-area 경로에서는 `UCursorItemUseAreaScopeComponent`가 `ApplyUseEffect` 결과를 해석하고, 실제 stack mutation은 `UBeekeeperHotbarComponent::ApplySelectedItemStackDelta` authority 경로를 사용한다.
+- placement action은 `IItemPlacementSlot::TryPlaceItem`을 통해 월드 슬롯 배치를 요청한다.
+- placement 성공 후 stack delta 적용이 실패하면 scope가 slot interface(`ClearPlacedItem`)로 rollback한다.
 
 ## Slot Mutation Model
 

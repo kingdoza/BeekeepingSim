@@ -11,7 +11,6 @@
 - `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_ARCHITECTURE.md`
-- `.md/PROMPT_IMPLEMENTATION.md`
 
 ## 현재 기능 방향
 

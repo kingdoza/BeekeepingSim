@@ -19,12 +19,17 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PollenPattyActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/PollenPattyActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
 - `Source/BeekeepingSim/Private/WorldActors/WorldItemPickup.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/StorageBox.h`
 - `Source/BeekeepingSim/Private/WorldActors/StorageBox.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlot.h`
+- `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp`
 
 ## Responsibilities
 
@@ -38,6 +43,7 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
+- `APollenPattyActor`: 벌통 slot에 부착되는 pollen patty 월드 표시 actor
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -47,6 +53,14 @@
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
 - `AStorageBox`: storage inventory와 storage UI interaction을 가진 actor
+- `IItemPlacementSlot`: item placement action이 concrete actor를 몰라도 배치를 요청할 수 있는 슬롯 계약
+- `AItemPlacementSlotActor`: `IItemUseAreaProvider` + `IItemPlacementSlot`를 구현하는 generic 배치 슬롯 actor
+  - 구성: `Root`, `SlotMeshComponent`, `AttachComponent`
+  - `SlotMeshComponent`는 hit + visual component를 겸용한다.
+  - `SlotMeshAsset`으로 슬롯 인스턴스별 영역 mesh를 지정할 수 있다.
+  - `SlotMeshMaterial`로 슬롯 인스턴스별 item-use-area 표시 material을 지정할 수 있다.
+  - `SlotMeshRelativeTransform`으로 hit/visual mesh의 local transform을 조정한다.
+  - `AttachRelativeTransform`으로 placed actor attach point의 local transform을 조정한다.
 - `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
 
 ## Composition
@@ -105,6 +119,13 @@
 - descriptor 기본 tag:
   - lid: `Beehive.UseArea.Lid`
   - comb: `Beehive.UseArea.Comb`
+- item-use 확장:
+  - sanitation 상태: `SanitationValue`, `MaxSanitationValue`, `IncreaseSanitation`, `SetSanitationValue`, `GetSanitationRatio`
+  - `ABeehive`는 pollen slot 상태를 직접 소유하지 않는다.
+  - pollen slot은 `AItemPlacementSlotActor` child actor로 authoring하며, occupied 상태는 slot actor의 `PlacedActor`가 소유한다.
+  - slot actor는 empty일 때만 pollen descriptor(`Item.UseArea.Beehive.PollenPatty`)를 provider로 반환한다.
+  - 벌통 포함 모든 host actor는 필요 시 `UChildItemUseAreaProviderComponent`를 붙여 child slot provider를 `Component Tags`/class 조건으로 노출한다.
+  - disinfectant descriptor(`Item.UseArea.Beehive.Disinfectant`)는 lid/comb에서 계속 제공
 
 ### `ABeehiveDualSwarmActor`
 
@@ -193,7 +214,7 @@
 - Actor 이름과 native parent 이름은 Blueprint 참조가 있으므로 rename 시 Core Redirect와 Blueprint migration이 필요하다.
 - Editor details customization은 editor-only 보조 기능이다. Runtime gameplay source of truth는 각 actor/component의 C++ parameter application 경로다.
 - FocusEngaged item-use area는 벌통 전용 기능이 아니라 generic host-provider 구조로 다룬다.
-- FocusEngaged host actor는 직접 하위 component tag scan과 child actor provider/interface 수집을 통해 `FItemUseAreaDescriptor`를 구성할 수 있다.
+- FocusEngaged host actor는 자신의 provider 구현 또는 host에 붙은 provider component를 통해 필요한 `FItemUseAreaDescriptor`를 구성한다.
 - `ABeehive`는 generic item-use-area 구조의 첫 구현 host로 본다.
 - 사용영역 mesh는 기존 gameplay mesh component, 반투명 가상 mesh component, child actor 내부 mesh component를 모두 허용하되 최종적으로 descriptor의 `HitComponent`, `VisualComponents`, `EffectTargetObject`로 정규화한다.
 - 벌떼 Niagara particle 이동 로직은 Niagara 시스템에서 처리하고 C++은 spline binding/parameter 주입만 담당한다.

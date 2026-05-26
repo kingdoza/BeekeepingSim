@@ -35,4 +35,22 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action|Use Area")
 	FGameplayTagQuery UseAreaTagQuery;
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	bool ReceiveCanBeginUse(const FItemActionContext& Context) const;
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	bool ReceiveBeginUse(const FItemActionContext& Context);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	void ReceiveTickUse(const FItemActionContext& Context, float DeltaTime);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	void ReceiveEndUse(const FItemActionContext& Context, bool bWasCanceled);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	bool ReceiveCanApplyUseEffect(const FItemActionContext& Context) const;
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
+	FItemActionExecutionResult ReceiveApplyUseEffect(const FItemActionContext& Context, float DeltaTime);
 };

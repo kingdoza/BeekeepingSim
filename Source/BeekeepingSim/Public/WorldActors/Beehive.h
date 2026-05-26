@@ -26,6 +26,7 @@ class UCursorPartFocusScopeComponent;
 class UCursorPartFocusActionComponent;
 class UBeehiveCombLiftComponent;
 class UCursorItemUseAreaScopeComponent;
+class UChildItemUseAreaProviderComponent;
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IItemUseAreaProvider
@@ -132,6 +133,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
 	float CalculateTotalHoneyIncreaseAmount() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Sanitation")
+	void IncreaseSanitation(float Delta);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Sanitation")
+	void SetSanitationValue(float NewValue);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation")
+	float GetSanitationValue() const { return SanitationValue; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation")
+	float GetSanitationRatio() const;
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -180,6 +193,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
 	TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
+	TObjectPtr<UChildItemUseAreaProviderComponent> ChildItemUseAreaProvider;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
@@ -246,6 +262,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HoneyDistributionDeviationRatio = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation", meta = (ClampMin = "0.0"))
+	float MaxSanitationValue = 100.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation", meta = (ClampMin = "0.0"))
+	float SanitationValue = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 MaxCombCount = 6;

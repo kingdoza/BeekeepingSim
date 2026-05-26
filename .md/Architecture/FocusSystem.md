@@ -21,6 +21,8 @@
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaTypes.h`
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h`
+- `Source/BeekeepingSim/Public/Focus/ChildItemUseAreaProviderComponent.h`
+- `Source/BeekeepingSim/Private/Focus/ChildItemUseAreaProviderComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
 
@@ -48,7 +50,8 @@
 - `UCursorPartFocusActionComponent`: 파츠별 begin/cancel/abort lifecycle + tag/group 정책
 - `ECursorPartFocusPreviewInputKey`: PartFocus hover preview key 입력(`R`, `F`, `C`) 구분 enum
 - `UCursorItemUseAreaScopeComponent`: FocusEngaged host 내부 item-use-area 수집/표시/hover/LMB hold-use scope
-- `IItemUseAreaProvider`: host/child actor가 `FItemUseAreaDescriptor`를 제공하는 인터페이스
+- `IItemUseAreaProvider`: FocusEngaged host actor 또는 host가 명시적으로 위임한 actor가 `FItemUseAreaDescriptor`를 제공하는 인터페이스
+- `UChildItemUseAreaProviderComponent`: owner의 직접 child actor component를 tag/class 조건으로 수집해 descriptor를 위임하는 component
 - `IFocusInteractable`: actor-level focus 이벤트 인터페이스
 
 ## State Model
@@ -88,6 +91,20 @@
   - `FItemUseAreaDescriptor`
   - `IItemUseAreaProvider` 또는 `UItemUseAreaProviderComponent`
 - `UCursorItemUseAreaScopeComponent`는 FocusEngaged host 내부에서 선택 아이템 기반 사용영역 표시, 커서 hover 판정, LMB hold item-use session, 실질 효과 routing을 담당한다.
+- item-use-area descriptor는 provider actor가 명시 슬롯 기반으로 제공할 수 있다(예: `AItemPlacementSlotActor`).
+- scope는 engaged host에서 아래만 수집한다.
+  - host actor provider
+  - host actor에 직접 붙은 provider component
+  - host actor primitive tag fallback
+- attached actor/child actor provider는 scope가 자동 순회하지 않는다.
+- child slot 수집은 `UChildItemUseAreaProviderComponent`가 owner의 직접 `UChildActorComponent` 중 `RequiredChildActorComponentTag`/`RequiredChildActorClass` 조건을 통과한 항목만 위임 수집한다.
+- placement action이 성공한 뒤 stack delta 반영이 실패하면, target이 `IItemPlacementSlot`일 때 `ClearPlacedItem` rollback을 수행한다.
+- item-use session 중 처리:
+  - `LMB Press`: `BeginUse(Context)`
+  - `Hold Tick`: `TickUse(Context, DeltaTime)`
+  - `active + valid hovered area`: `CanApplyUseEffect` 확인 후 `ApplyUseEffect(Context, DeltaTime)`
+  - `Release/Cancel/Deactivate`: `EndUse(Context, bWasCanceled)`
+- `ApplyUseEffect` 결과의 stack 변화(`bConsumedItem`, `StackDelta`)는 scope가 해석해 hotbar authority API로 반영한다.
 - FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리한다.
 - FocusEngaged host가 item-use-area를 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
 - Anchored cursor FocusEngaged 진입 시 hotbar 선택은 비워진다. item-use area는 engaged 이후 hotbar에서 대상 아이템을 다시 선택했을 때 활성화된다.

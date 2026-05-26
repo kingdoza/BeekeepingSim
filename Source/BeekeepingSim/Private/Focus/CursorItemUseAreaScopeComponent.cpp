@@ -1,7 +1,7 @@
 #include "Focus/CursorItemUseAreaScopeComponent.h"
 
 #include "Character/BeekeeperCharacter.h"
-#include "Components/ChildActorComponent.h"
+#include "Components/ActorComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "Focus/BeekeeperFocusComponent.h"
@@ -12,8 +12,10 @@
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemActionContext.h"
+#include "Inventory/ItemActionTypes.h"
 #include "Inventory/ItemInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "WorldActors/ItemPlacementSlot.h"
 
 UCursorItemUseAreaScopeComponent::UCursorItemUseAreaScopeComponent()
 {
@@ -54,7 +56,8 @@ void UCursorItemUseAreaScopeComponent::TickComponent(float DeltaTime, ELevelTick
 			const FItemActionContext EffectContext = BuildItemActionContext(HoveredDescriptorIndex);
 			if (CachedHoldAction->CanApplyUseEffect(EffectContext))
 			{
-				CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
+				const FItemActionExecutionResult Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
+				ApplyUseEffectResultToSelectedItem(Result);
 			}
 		}
 	}
@@ -124,26 +127,7 @@ void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
 	}
 
 	RebuildDescriptorsFromProviderActor(HostActor);
-
-	TArray<AActor*> AttachedActors;
-	HostActor->GetAttachedActors(AttachedActors, true);
-	for (AActor* ChildActor : AttachedActors)
-	{
-		RebuildDescriptorsFromProviderActor(ChildActor);
-	}
-
-	TArray<UChildActorComponent*> ChildActorComponents;
-	HostActor->GetComponents<UChildActorComponent>(ChildActorComponents);
-	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
-	{
-		if (!ChildActorComponent)
-		{
-			continue;
-		}
-
-		RebuildDescriptorsFromProviderActor(ChildActorComponent->GetChildActor());
-	}
-
+	RebuildDescriptorsFromProviderComponents(HostActor);
 	RebuildDescriptorsFromDirectComponentTags(HostActor);
 	RefreshActiveUseAreas();
 }
@@ -240,6 +224,36 @@ void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderActor(AActo
 	for (const FItemUseAreaDescriptor& Descriptor : ProviderDescriptors)
 	{
 		RegisterItemUseAreaDescriptor(Descriptor);
+	}
+}
+
+void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderComponents(AActor* HostActor)
+{
+	if (!HostActor)
+	{
+		return;
+	}
+
+	TArray<UActorComponent*> ActorComponents;
+	HostActor->GetComponents(ActorComponents);
+	for (UActorComponent* ActorComponent : ActorComponents)
+	{
+		if (!ActorComponent || ActorComponent == this)
+		{
+			continue;
+		}
+
+		if (!ActorComponent->GetClass()->ImplementsInterface(UItemUseAreaProvider::StaticClass()))
+		{
+			continue;
+		}
+
+		TArray<FItemUseAreaDescriptor> ProviderDescriptors;
+		IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(ActorComponent, ProviderDescriptors);
+		for (const FItemUseAreaDescriptor& Descriptor : ProviderDescriptors)
+		{
+			RegisterItemUseAreaDescriptor(Descriptor);
+		}
 	}
 }
 
@@ -581,6 +595,7 @@ FItemActionContext UCursorItemUseAreaScopeComponent::BuildItemActionContext(int3
 	Context.World = GetWorld();
 	Context.FocusEngagedHostActor = ActiveHostActor;
 	Context.FocusTarget = OwnerFocusComponent ? OwnerFocusComponent->GetEngagedFocusTarget() : nullptr;
+	Context.SourceItemInstance = CachedSelectedItemInstance;
 
 	if (RegisteredDescriptors.IsValidIndex(DescriptorIndex))
 	{
@@ -592,4 +607,32 @@ FItemActionContext UCursorItemUseAreaScopeComponent::BuildItemActionContext(int3
 	}
 
 	return Context;
+}
+
+void UCursorItemUseAreaScopeComponent::ApplyUseEffectResultToSelectedItem(const FItemActionExecutionResult& Result)
+{
+	if (!Result.bConsumedItem || !OwnerHotbarComponent)
+	{
+		return;
+	}
+
+	UObject* EffectTargetObject = nullptr;
+	if (RegisteredDescriptors.IsValidIndex(HoveredDescriptorIndex))
+	{
+		EffectTargetObject = RegisteredDescriptors[HoveredDescriptorIndex].EffectTargetObject;
+	}
+
+	const int32 EffectiveStackDelta = (Result.StackDelta != 0) ? Result.StackDelta : -1;
+	if (OwnerHotbarComponent->ApplySelectedItemStackDelta(EffectiveStackDelta))
+	{
+		RefreshSelectedItemAndAction();
+		RebuildItemUseAreaDescriptors();
+		return;
+	}
+
+	if (Result.bSucceeded && EffectTargetObject && EffectTargetObject->GetClass()->ImplementsInterface(UItemPlacementSlot::StaticClass()))
+	{
+		IItemPlacementSlot::Execute_ClearPlacedItem(EffectTargetObject);
+		RebuildItemUseAreaDescriptors();
+	}
 }

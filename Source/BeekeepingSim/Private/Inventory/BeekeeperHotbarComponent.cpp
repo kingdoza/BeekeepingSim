@@ -467,6 +467,32 @@ bool UBeekeeperHotbarComponent::IsSlotEnabled(int32 Index) const
 	return IsIndexValid(Index) && Slots[Index].bIsEnabled;
 }
 
+bool UBeekeeperHotbarComponent::ApplySelectedItemStackDelta(int32 StackDelta)
+{
+	if (StackDelta == 0 || !IsIndexValid(SelectedIndex))
+	{
+		return false;
+	}
+
+	UItemInstance* SelectedItem = Cast<UItemInstance>(Slots[SelectedIndex].ItemInstance.Get());
+	if (!SelectedItem)
+	{
+		return false;
+	}
+
+	const int32 PreviousCount = SelectedItem->GetStackCount();
+	SelectedItem->SetStackCount(PreviousCount + StackDelta);
+	if (SelectedItem->GetStackCount() <= 0)
+	{
+		Slots[SelectedIndex].ItemInstance = nullptr;
+		SelectedIndex = INDEX_NONE;
+	}
+
+	ReevaluateSlotsInternal();
+	BroadcastHotbarChanged();
+	return true;
+}
+
 void UBeekeeperHotbarComponent::BeginPlay()
 {
 	Super::BeginPlay();

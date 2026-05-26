@@ -128,6 +128,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
 	bool IsSlotEnabled(int32 Index) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	bool ApplySelectedItemStackDelta(int32 StackDelta);
+
 	UPROPERTY(BlueprintAssignable, Category = "Hotbar")
 	FBeekeeperHotbarChangedSignature OnHotbarChanged;
 

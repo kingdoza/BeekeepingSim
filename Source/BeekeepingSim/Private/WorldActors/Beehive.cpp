@@ -12,6 +12,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Focus/CursorItemUseAreaScopeComponent.h"
+#include "Focus/ChildItemUseAreaProviderComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/FocusTargetComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
@@ -106,6 +107,7 @@ ABeehive::ABeehive()
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
 	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
 	ItemUseAreaScope = CreateDefaultSubobject<UCursorItemUseAreaScopeComponent>(TEXT("ItemUseAreaScope"));
+	ChildItemUseAreaProvider = CreateDefaultSubobject<UChildItemUseAreaProviderComponent>(TEXT("ChildItemUseAreaProvider"));
 	if (LidPartFocusAction)
 	{
 		LidPartFocusAction->SetEngageMode(ECursorPartFocusEngageMode::PersistentAction);
@@ -269,6 +271,33 @@ float ABeehive::CalculateTotalHoneyIncreaseAmount() const
 	return static_cast<float>(SafeBeeCount) * SafeCoefficient;
 }
 
+void ABeehive::IncreaseSanitation(float Delta)
+{
+	if (Delta <= 0.0f)
+	{
+		return;
+	}
+
+	SetSanitationValue(SanitationValue + Delta);
+}
+
+void ABeehive::SetSanitationValue(float NewValue)
+{
+	const float SafeMax = FMath::Max(0.0f, MaxSanitationValue);
+	SanitationValue = FMath::Clamp(NewValue, 0.0f, SafeMax);
+}
+
+float ABeehive::GetSanitationRatio() const
+{
+	const float SafeMax = FMath::Max(0.0f, MaxSanitationValue);
+	if (SafeMax <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp(SanitationValue / SafeMax, 0.0f, 1.0f);
+}
+
 void ABeehive::RebuildCursorPartFocusDescriptors()
 {
 	if (!CursorPartFocusScope)
@@ -358,6 +387,7 @@ void ABeehive::GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescr
 {
 	const FGameplayTag LidUseAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.UseArea.Lid")), false);
 	const FGameplayTag CombUseAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.UseArea.Comb")), false);
+	const FGameplayTag DisinfectantUseAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Item.UseArea.Beehive.Disinfectant")), false);
 
 	UPrimitiveComponent* LidComponent = FindPrimitiveComponentByTag(LidPartComponentTag);
 	if (!LidComponent)
@@ -376,6 +406,10 @@ void ABeehive::GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescr
 		if (LidUseAreaTag.IsValid())
 		{
 			LidDescriptor.AreaTags.AddTag(LidUseAreaTag);
+		}
+		if (DisinfectantUseAreaTag.IsValid())
+		{
+			LidDescriptor.AreaTags.AddTag(DisinfectantUseAreaTag);
 		}
 		OutDescriptors.Add(MoveTemp(LidDescriptor));
 	}
@@ -402,15 +436,20 @@ void ABeehive::GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescr
 
 		FItemUseAreaDescriptor CombDescriptor;
 		CombDescriptor.AreaId = FName(*FString::Printf(TEXT("Comb_%d"), Index));
-		CombDescriptor.OwnerActor = CombActor;
+		CombDescriptor.OwnerActor = const_cast<ABeehive*>(this);
 		CombDescriptor.HitComponent = CombHitComponent;
 		CombDescriptor.VisualComponents.Add(CombHitComponent);
-		CombDescriptor.EffectTargetObject = CombActor;
+		CombDescriptor.EffectTargetObject = const_cast<ABeehive*>(this);
 		if (CombUseAreaTag.IsValid())
 		{
 			CombDescriptor.AreaTags.AddTag(CombUseAreaTag);
 		}
+		if (DisinfectantUseAreaTag.IsValid())
+		{
+			CombDescriptor.AreaTags.AddTag(DisinfectantUseAreaTag);
+		}
 		OutDescriptors.Add(MoveTemp(CombDescriptor));
+
 	}
 }
 

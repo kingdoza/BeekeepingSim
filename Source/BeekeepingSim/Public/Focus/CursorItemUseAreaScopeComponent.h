@@ -13,6 +13,7 @@ class UItemInstance;
 class UMaterialInstanceDynamic;
 class UCursorPartFocusScopeComponent;
 struct FItemActionContext;
+struct FItemActionExecutionResult;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class BEEKEEPINGSIM_API UCursorItemUseAreaScopeComponent : public UActorComponent
@@ -75,6 +76,7 @@ private:
 
 	AActor* ResolveActiveHostActor() const;
 	void RebuildDescriptorsFromProviderActor(AActor* ProviderActor);
+	void RebuildDescriptorsFromProviderComponents(AActor* HostActor);
 	void RebuildDescriptorsFromDirectComponentTags(AActor* HostActor);
 	void RefreshSelectedItemAndAction();
 	void RefreshActiveUseAreas();
@@ -91,6 +93,7 @@ private:
 	bool DoesDescriptorMatchActionQuery(const FItemUseAreaDescriptor& Descriptor, const UHoldItemUseAction* HoldAction) const;
 	void EndUseSession(bool bWasCanceled);
 	struct FItemActionContext BuildItemActionContext(int32 DescriptorIndex) const;
+	void ApplyUseEffectResultToSelectedItem(const FItemActionExecutionResult& Result);
 	void UpdatePartFocusOutlineSuppression() const;
 
 	UPROPERTY(Transient)

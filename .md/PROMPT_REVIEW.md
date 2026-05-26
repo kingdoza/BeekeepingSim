@@ -1,119 +1,157 @@
-# PROMPT_REVIEW — Beehive Comb Drag Flip/Shake + Flip Direction 전달
+# 리뷰 프롬프트: Generic ItemPlacementSlotActor + Mesh/Transform 확장
 
-## 리뷰 목표
+## 리뷰 대상
 
-이번 변경의 목적은 다음 2가지다.
+이번 리뷰는 `AItemPlacementSlotActor` 기반 generic item placement 시스템과, 추가된 아래 속성까지 포함한다.
 
-1. FocusEngaged 상태에서 lifted comb(`ABeehiveCombActor`)를 LMB drag로 해석
-   - 좌우 drag: flip(visible face toggle)
-   - 상하 반복 drag: shake(bee count 감소)
-2. flip 유발 drag의 X 방향(left/right)을 C++ API와 Blueprint event까지 전달
-   - 기존 flip/shake 정책, no-op 정책, click/drag gesture 충돌 방지 정책은 유지
+- `SlotMeshMaterial`
+- `SlotMeshRelativeTransform`
+- `AttachMeshRelativeTransform`
 
-리뷰는 **동작 정확성, 기존 계약 호환성, 회귀 위험** 중심으로 수행한다.
+리뷰 범위에는 다음이 포함된다.
 
----
-
-## 리뷰 대상 파일
-
-### Source
-- `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
-- `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-
-### 문서
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
+- `IItemPlacementSlot` 인터페이스
+- `AItemPlacementSlotActor` 구현
+- `UItemPlacementUseAction` / `UPollenPattyUseAction` 경로
+- `UCursorItemUseAreaScopeComponent` stack delta 실패 rollback 경로
+- `ABeehive`에서 pollen 직접 소유 로직 제거 상태
+- 관련 아키텍처/사용자 문서 반영 상태
 
 ---
 
-## 핵심 검증 항목
+## 우선순위
 
-### High 1) Focus drag lifecycle 및 delta 계약
-- `UCursorPartFocusActionComponent` 기존 begin/cancel/abort API가 유지되는지
-- drag lifecycle API가 유지되는지:
-  - `CanBeginPartFocusDrag`
-  - `BeginPartFocusDrag`
-  - `UpdatePartFocusDrag`
-  - `EndPartFocusDrag`
-  - `IsPartFocusDragInProgress`
-- `UCursorPartFocusScopeComponent`가 drag delta를 제공하는지:
-  - `GetPartFocusDragDeltaFromPress`
-  - `GetPartFocusDragDeltaSinceLastUpdate`
-- drag update 전에 delta 캐시가 갱신되는지
-
-### High 2) comb drag 가능 조건과 mode lock
-- `UBeehiveCombPartFocusActionComponent::CanBeginPartFocusDrag`가
-  - action engaged 상태에서만 허용되는지
-  - comb owner 유효성 검증하는지
-- flip/shake mode lock이 유지되는지
-  - 한 drag session에서 둘 다 실행되지 않는지
-  - mode 미확정 release 시 no-op인지
-
-### High 3) flip/shake 판정 정확성
-- flip 조건:
-  - `Abs(X) >= CombFlipDragThresholdPixels`
-  - `Abs(X) > Abs(Y) * HorizontalDominanceRatio`
-- shake 조건:
-  - vertical dominance/threshold 기반 mode 확정
-  - Y 누적 + 방향 반전으로 stroke 카운트 증가
-  - `RequiredShakeStrokeCount` 도달 시 1회 실행
-- shake 효과가 1차 범위대로 `ReduceTargetBeeCountByRatio` 경로만 쓰는지
-
-### High 4) flip 방향 전달 확장
-- `EBeehiveCombFlipDirection` enum 추가 여부
-- 기존 `FlipCombFace()`가 삭제되지 않고 wrapper로 유지되는지
-- 방향 포함 API 추가 여부:
-  - `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
-- 방향 포함 BP 이벤트 추가 여부:
-  - `ReceiveCombFlippedWithDirection(NewVisibleFace, FlipDirection)`
-- `UBeehiveCombPartFocusActionComponent`에서 `DeltaFromPress.X` 부호로 방향 결정하는지
-  - `>=0 -> Right`, `<0 -> Left`
-- 기존 `ReceiveCombFlipped(NewVisibleFace)` 경로가 유지되어 BP 호환이 깨지지 않는지
-
-### Medium 1) comb actor 구조/상태
-- `ABeehiveCombActor`에 `CombPivotRoot`가 추가되고, mesh/niagara가 pivot 하위로 붙었는지
-- visible face 상태(`Front/Back`)와 flip API가 일관되게 동작하는지
-- front/back 데이터 이름/의미를 swap하지 않는지
-
-### Medium 2) 회귀 방지
-- lid open/close, comb lift/restore 기존 delegate 흐름 회귀 없는지
-- item-use-area 입력 우선 정책 회귀 없는지
-- public API rename/delete 없는지
+1. High: SlotMesh/Attach transform 적용 시점과 attach 안정성
+2. High: placement 성공 후 stack delta 실패 rollback의 정확성
+3. Medium: use-area descriptor 활성/비활성 조건의 일관성
+4. Medium: SlotMeshMaterial 적용 방식의 런타임/에디터 안정성
+5. Low: 문서/에디터 작업 절차와 실제 코드 계약 정합성
 
 ---
 
-## 코드 검색 체크
+## 검토 포인트
 
-- `rg "GetPartFocusDragDeltaFromPress|GetPartFocusDragDeltaSinceLastUpdate" Source/BeekeepingSim/Public Source/BeekeepingSim/Private -n`
-- `rg "CanBeginPartFocusDrag|BeginPartFocusDrag|UpdatePartFocusDrag|EndPartFocusDrag" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
-- `rg "CombFlipDragThresholdPixels|HorizontalDominanceRatio|CombShakeStrokeThresholdPixels|RequiredShakeStrokeCount|ShakeBeeReductionRatio|VerticalDominanceRatio" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
-- `rg "EBeehiveCombFlipDirection|FlipCombFaceWithDirection|ReceiveCombFlippedWithDirection|FlipCombFace\\(" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors -n`
+### 1) ItemPlacementSlotActor 구조/책임 검증
+
+- `AItemPlacementSlotActor`가 아래 구조를 실제로 만족하는지 확인
+  - `Root`
+  - `SlotMeshComponent` (hit + visual 겸용)
+  - `AttachComponent`
+- `HitBox`, 별도 `HitComponent` UPROPERTY, 별도 `VisualComponents` UPROPERTY가 남아있지 않은지 확인
+- `SlotMeshAsset` 미지정 시 기존 BP 기본 mesh를 보존하는지 확인
+- `SlotMeshMaterial` 적용 시 material slot index/동적 머티리얼 충돌 가능성 점검
+
+### 2) Transform 적용 정책 검증
+
+- `SlotMeshRelativeTransform`이 `SlotMeshComponent`에 정확히 적용되는지
+- `AttachMeshRelativeTransform`이 `AttachComponent`에 정확히 적용되는지
+- 적용 시점이 `OnConstruction`/초기화 경로에서 일관적인지
+- PIE 재시작, BP compile 후 transform 드리프트/중복 누적이 없는지
+- ChildActor instance override 시 class default와 instance override 우선순위가 의도대로 동작하는지
+
+### 3) Descriptor 생성 조건 검증
+
+`GetItemUseAreaDescriptors_Implementation()`에서 아래 조건이 정확한지 확인
+
+- `PlacedActor == nullptr`
+- `AreaId` 유효
+- `SlotMeshComponent` 유효
+- `SlotMeshComponent->GetStaticMesh()` 유효
+
+descriptor 값 검증
+
+- `HitComponent = SlotMeshComponent`
+- `VisualComponents.Add(SlotMeshComponent)`
+- `EffectTargetObject = this`
+
+### 4) Placement / Occupied / Clear 검증
+
+- `TryPlaceItem()`:
+  - occupied/invalid class/invalid attach/world null 실패 처리
+  - spawn 후 attach 실패 시 destroy cleanup
+  - 성공 시 `PlacedActor` 저장
+- `IsPlacementOccupied()`:
+  - `PlacedActor != nullptr` 기준 유지
+- `ClearPlacedItem()`:
+  - destroy + nullptr 복귀
+- `AttachSocketName` 유효 시 socket attach 경로 정상 여부
+
+### 5) Action 경로 검증
+
+- `UItemPlacementUseAction::ApplyUseEffect()`가 `IItemPlacementSlot` 인터페이스만 통해 배치하는지
+- 성공 시 `bSucceeded=true`, `bConsumedItem=true`, `StackDelta=-1`
+- `UPollenPattyUseAction`이 남아 있어도 `ABeehive::TryInstallPollenPatty` 같은 제거된 API를 참조하지 않는지
+
+### 6) Rollback 경로 검증
+
+`UCursorItemUseAreaScopeComponent`에서
+
+- placement 성공 + stack delta 적용 실패 시
+  - `IItemPlacementSlot::ClearPlacedItem()` rollback 호출 여부
+  - active descriptor refresh 여부
+- stack delta 적용 성공 시 occupied slot descriptor가 즉시 사라지는지
+
+### 7) Beehive 분리 검증
+
+아래가 완전히 제거되었는지 확인
+
+- `FPollenPattyInstallSlot`
+- `PollenPattyInstallSlots`
+- `PollenPattyActorClass` (Beehive 소유)
+- `TryInstallPollenPatty`
+- `IsPollenPattySlotOccupied`
+- beehive 내부 pollen descriptor 생성 루프
+
+그리고 소독약 descriptor(lid/comb + `Item.UseArea.Beehive.Disinfectant`)는 유지되는지 확인
 
 ---
 
-## PIE 수동 검증 시나리오
+## 코드 검색 체크리스트
 
-1. lifted comb에서 오른쪽 drag flip 시 방향 이벤트 `Right` 확인
-2. lifted comb에서 왼쪽 drag flip 시 방향 이벤트 `Left` 확인
-3. flip 후 visible face toggle 결과가 기존과 동일한지 확인
-4. shake 제스처로 stroke count 충족 시 bee count 감소 확인
-5. 대각선/애매한 drag는 no-op인지 확인
-6. 한 drag session에서 flip과 shake 동시 실행되지 않는지 확인
-7. drag 불가 상태에서는 threshold 초과 시 click 취소 + no-op인지 확인
-8. 기존 `ReceiveCombFlipped` 기반 BP 연출이 깨지지 않는지 확인
-9. lid open/close, comb lift/restore, item-use-area hold-use 회귀 없는지 확인
+- 없어야 함:
+  - `FPollenPattyInstallSlot`
+  - `TryInstallPollenPatty`
+  - `IsPollenPattySlotOccupied`
+  - `HitBox` (ItemPlacementSlotActor 내부)
+  - ItemPlacementSlotActor의 `VisualComponents` UPROPERTY
+- 있어야 함:
+  - `SlotMeshComponent`
+  - `SlotMeshAsset`
+  - `SlotMeshMaterial`
+  - `SlotMeshRelativeTransform`
+  - `AttachMeshRelativeTransform`
+  - descriptor에서 `HitComponent = SlotMeshComponent`
+  - descriptor에서 `VisualComponents.Add(SlotMeshComponent)`
 
 ---
 
-## 기대 출력 형식
+## 빌드/실행 검증
 
-1. Findings (High/Medium/Low, 심각도 순)
-2. Open Questions / Assumptions
-3. Regression Risk 요약
-4. 최종 판단: Pass / Conditional Pass / Fail
+### 빌드
+- `BeekeepingSimEditor Win64 Development`
+
+### PIE 수동 시나리오
+1. 슬롯 mesh에 use-area 표시가 정상 표시/hover 전환되는지
+2. 슬롯별 `SlotMeshAsset` 차이에 따라 영역 모양이 달라지는지
+3. `SlotMeshRelativeTransform` 조정이 즉시 반영되는지
+4. `AttachMeshRelativeTransform` 조정 후 배치 actor 부착 위치가 의도대로인지
+5. 배치 성공 시 stack 1 감소
+6. 배치 직후 descriptor 비활성화(재사용 불가)
+7. stack delta 실패를 유도했을 때 placed actor rollback
+8. 소독약 기존 경로 정상 동작
+
+---
+
+## 리뷰 결과 출력 형식
+
+- Findings를 **심각도 순(High → Medium → Low)** 으로 제시
+- 각 항목에 반드시 포함:
+  - 파일 경로
+  - 원인
+  - 영향
+  - 수정 방향
+- 마지막에
+  - 회귀 위험
+  - 추가 테스트 필요 항목
+  - 문서 보강 필요 여부
+  를 요약

@@ -187,6 +187,32 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
   - LMB release/cancel/abort 시 session이 종료되어야 함
 - 선택 아이템이 있을 때 벌통 PartFocus hover outline/prompt가 숨겨지는지 확인한다.
 
+## 11. Generic Item Placement Slot Authoring (2026-05-26)
+
+- `BP_ItemPlacementSlotActor`를 `AItemPlacementSlotActor` 기반으로 만든다.
+  - 기본 구성: `Root`, `SlotMeshComponent`, `AttachComponent`
+  - `SlotMeshComponent`가 hit 영역 + use-area visual 표시를 동시에 담당한다.
+- 슬롯 설정:
+  - `AreaId` (예: `PollenPattySlot_0`)
+  - `AreaTags`에 `Item.UseArea.Beehive.PollenPatty`
+  - `SlotMeshAsset`으로 slot 인스턴스별 mesh 지정 가능
+  - `SlotMeshMaterial`로 item-use-area 표시 material 지정 가능
+  - `SlotMeshRelativeTransform`으로 hit/visual mesh의 local 위치/회전/스케일 조정
+  - `AttachRelativeTransform`으로 placed actor 부착 위치/회전/스케일 조정
+  - `AttachSocketName`이 필요하면 socket 이름 지정
+- `BP_Beehive`에서 화분떡 위치마다 `ChildActorComponent`를 추가하고 class를 `BP_ItemPlacementSlotActor`로 지정한다.
+- child actor 인스턴스 transform으로 슬롯 actor 자체 위치를 배치하고, `SlotMeshAsset`/`SlotMeshRelativeTransform`으로 표시/판정 mesh 모양과 local 위치를 조정한다.
+- `AttachRelativeTransform`으로 화분떡 actor가 실제로 붙을 local attach point를 조정한다.
+- `BP_Beehive`에는 native `ChildItemUseAreaProvider`가 기본으로 존재한다.
+- slot용 `ChildActorComponent`의 `Component Tags`에 `ItemUseAreaChild`를 추가한다.
+- 필요하면 `ChildItemUseAreaProvider`의 `RequiredChildActorClass`를 `BP_ItemPlacementSlotActor` 계열로 제한한다.
+- C++ scope는 child slot을 자동 등록하지 않는다. `ChildItemUseAreaProvider`의 tag/class 조건을 통과한 child slot만 descriptor로 수집된다.
+- 화분떡 아이템 action:
+  - `UItemPlacementUseAction` 또는 `UPollenPattyUseAction` 사용
+  - `UseAreaTagQuery`는 `Item.UseArea.Beehive.PollenPatty` 매칭
+  - `PlacedActorClass`는 `APollenPattyActor` 기반 BP 지정
+- occupied 상태(`PlacedActor` 유효)가 되면 슬롯 actor가 descriptor를 반환하지 않으므로 use-area가 자동 비활성화된다.
+
 ## Beehive Comb Delegate 위임
 
 - `BP_Beehive`에서 `Receive Comb Part Focus Begin/Cancel/Abort` 이벤트를 구현해 comb actor별 연출(들기/내리기/강제복귀)을 처리한다.

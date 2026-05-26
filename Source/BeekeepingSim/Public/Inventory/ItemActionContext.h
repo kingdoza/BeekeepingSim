@@ -10,6 +10,7 @@ class AActor;
 class UFocusTargetComponent;
 class UPrimitiveComponent;
 class UWorld;
+class UItemInstance;
 
 USTRUCT(BlueprintType)
 struct FItemActionContext
@@ -42,4 +43,7 @@ struct FItemActionContext
 
 	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
 	TObjectPtr<UObject> ItemUseEffectTargetObject = nullptr;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+	TObjectPtr<UItemInstance> SourceItemInstance = nullptr;
 };
