@@ -75,9 +75,7 @@ private:
 	void HandleHotbarChanged();
 
 	AActor* ResolveActiveHostActor() const;
-	void RebuildDescriptorsFromProviderActor(AActor* ProviderActor);
-	void RebuildDescriptorsFromProviderComponents(AActor* HostActor);
-	void RebuildDescriptorsFromDirectComponentTags(AActor* HostActor);
+	void RebuildDescriptorsFromItemUseAreaMeshProviders(AActor* HostActor);
 	void RefreshSelectedItemAndAction();
 	void RefreshActiveUseAreas();
 	void UpdateHoveredDescriptorFromCursor();

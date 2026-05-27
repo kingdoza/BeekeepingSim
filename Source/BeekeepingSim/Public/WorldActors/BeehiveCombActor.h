@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Focus/ItemUseAreaActivationProvider.h"
 #include "GameFramework/Actor.h"
 #include "BeehiveCombActor.generated.h"
 
@@ -8,6 +9,7 @@ class UNiagaraComponent;
 class UMaterialInstanceDynamic;
 class USceneComponent;
 class UStaticMeshComponent;
+class UItemUseAreaMeshComponent;
 class UCursorPartFocusActionComponent;
 
 UENUM(BlueprintType)
@@ -25,7 +27,7 @@ enum class EBeehiveCombFlipDirection : uint8
 };
 
 UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API ABeehiveCombActor : public AActor
+class BEEKEEPINGSIM_API ABeehiveCombActor : public AActor, public IItemUseAreaActivationProvider
 {
 	GENERATED_BODY()
 
@@ -65,6 +67,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UStaticMeshComponent* GetCombMeshComponent() const { return CombMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Bee Brush")
+	UItemUseAreaMeshComponent* GetBeeBrushUseAreaMesh() const { return BeeBrushUseAreaMesh; }
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const { return PartFocusAction; }
@@ -108,6 +113,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
 	void ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount);
 
+	virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> Root;
@@ -138,6 +145,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UItemUseAreaMeshComponent> BeeBrushUseAreaMesh;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped"))
 	void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);

@@ -7,7 +7,7 @@
 #include "Focus/BeekeeperFocusComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "Focus/FocusTargetComponent.h"
-#include "Focus/ItemUseAreaProvider.h"
+#include "Focus/ItemUseAreaMeshProviderComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Inventory/HoldItemUseAction.h"
@@ -127,9 +127,7 @@ void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
 		return;
 	}
 
-	RebuildDescriptorsFromProviderActor(HostActor);
-	RebuildDescriptorsFromProviderComponents(HostActor);
-	RebuildDescriptorsFromDirectComponentTags(HostActor);
+	RebuildDescriptorsFromItemUseAreaMeshProviders(HostActor);
 	RefreshActiveUseAreas();
 }
 
@@ -213,74 +211,27 @@ AActor* UCursorItemUseAreaScopeComponent::ResolveActiveHostActor() const
 	return GetOwner();
 }
 
-void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderActor(AActor* ProviderActor)
-{
-	if (!ProviderActor || !ProviderActor->GetClass()->ImplementsInterface(UItemUseAreaProvider::StaticClass()))
-	{
-		return;
-	}
-
-	TArray<FItemUseAreaDescriptor> ProviderDescriptors;
-	IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(ProviderActor, ProviderDescriptors);
-	for (const FItemUseAreaDescriptor& Descriptor : ProviderDescriptors)
-	{
-		RegisterItemUseAreaDescriptor(Descriptor);
-	}
-}
-
-void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromProviderComponents(AActor* HostActor)
+void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromItemUseAreaMeshProviders(AActor* HostActor)
 {
 	if (!HostActor)
 	{
 		return;
 	}
 
-	TArray<UActorComponent*> ActorComponents;
-	HostActor->GetComponents(ActorComponents);
-	for (UActorComponent* ActorComponent : ActorComponents)
+	TInlineComponentArray<UItemUseAreaMeshProviderComponent*> Providers(HostActor);
+	for (UItemUseAreaMeshProviderComponent* Provider : Providers)
 	{
-		if (!ActorComponent || ActorComponent == this)
-		{
-			continue;
-		}
-
-		if (!ActorComponent->GetClass()->ImplementsInterface(UItemUseAreaProvider::StaticClass()))
+		if (!Provider)
 		{
 			continue;
 		}
 
 		TArray<FItemUseAreaDescriptor> ProviderDescriptors;
-		IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors(ActorComponent, ProviderDescriptors);
+		Provider->BuildItemUseAreaDescriptors(ProviderDescriptors);
 		for (const FItemUseAreaDescriptor& Descriptor : ProviderDescriptors)
 		{
 			RegisterItemUseAreaDescriptor(Descriptor);
 		}
-	}
-}
-
-void UCursorItemUseAreaScopeComponent::RebuildDescriptorsFromDirectComponentTags(AActor* HostActor)
-{
-	if (!HostActor)
-	{
-		return;
-	}
-
-	TArray<UPrimitiveComponent*> PrimitiveComponents;
-	HostActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-	{
-		if (!PrimitiveComponent || !PrimitiveComponent->ComponentHasTag(TEXT("ItemUseArea")))
-		{
-			continue;
-		}
-
-		FItemUseAreaDescriptor Descriptor;
-		Descriptor.AreaId = PrimitiveComponent->GetFName();
-		Descriptor.OwnerActor = HostActor;
-		Descriptor.HitComponent = PrimitiveComponent;
-		Descriptor.VisualComponents.Add(PrimitiveComponent);
-		Descriptor.EffectTargetObject = HostActor;
-		RegisterItemUseAreaDescriptor(Descriptor);
 	}
 }
 
@@ -557,7 +508,7 @@ UMaterialInstanceDynamic* UCursorItemUseAreaScopeComponent::ResolveOrCreateMID(U
 
 bool UCursorItemUseAreaScopeComponent::DoesDescriptorMatchActionQuery(const FItemUseAreaDescriptor& Descriptor, const UHoldItemUseAction* HoldAction) const
 {
-	if (!HoldAction)
+	if (!HoldAction || Descriptor.AreaTags.IsEmpty())
 	{
 		return false;
 	}

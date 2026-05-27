@@ -102,7 +102,7 @@ Source/BeekeepingSim/
 - Host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리하고, host가 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
 - Anchored cursor FocusEngaged 진입 시 hotbar 선택은 빈손으로 전환하며, item-use area는 engaged 이후 대상 아이템을 다시 선택했을 때 활성화된다.
 - 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
-- `ABeehive`는 `UCursorItemUseAreaScopeComponent` + `IItemUseAreaProvider`를 통해 item-use-area first host를 구현한다.
+- `ABeehive`는 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area first host를 구현한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
@@ -170,3 +170,9 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
   - host 등록: `UCursorPartFocusRegistrationComponent`
   - child 수집: `UChildCursorPartFocusProviderComponent`
 - `APlacedItemActor`는 global `UFocusTargetComponent` 대상이 아니며 host 내부 PartFocus part로만 취급한다.
+
+## Update 2026-05-27 (ItemUseAreaMesh Provider)
+
+- FocusEngaged item-use-area 등록 source를 actor/provider override에서 `UItemUseAreaMeshProviderComponent`로 통합했다.
+- descriptor의 hit/visual/effect-target은 `UItemUseAreaMeshComponent`가 소유한다.
+- component active 판단은 `IItemUseAreaActivationProvider`가 담당하며 inactive인 경우 descriptor는 유지하고 `AreaTags`를 비운다.

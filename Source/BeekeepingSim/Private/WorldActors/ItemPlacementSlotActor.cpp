@@ -2,8 +2,8 @@
 
 #include "Character/BeekeeperCharacter.h"
 #include "Components/SceneComponent.h"
-#include "Components/StaticMeshComponent.h"
 #include "Focus/CursorItemUseAreaScopeComponent.h"
+#include "Focus/ItemUseAreaMeshComponent.h"
 #include "Inventory/ItemInstance.h"
 #include "WorldActors/PlacedItemActor.h"
 
@@ -14,7 +14,7 @@ AItemPlacementSlotActor::AItemPlacementSlotActor()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	SlotMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SlotMeshComponent"));
+	SlotMeshComponent = CreateDefaultSubobject<UItemUseAreaMeshComponent>(TEXT("SlotMeshComponent"));
 	SlotMeshComponent->SetupAttachment(Root);
 	SlotMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	SlotMeshComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -36,27 +36,6 @@ void AItemPlacementSlotActor::BeginPlay()
 	Super::BeginPlay();
 	ApplySlotAuthoringSettings();
 	RefreshSlotVisualState();
-}
-
-void AItemPlacementSlotActor::GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const
-{
-	const_cast<AItemPlacementSlotActor*>(this)->ApplySlotAuthoringSettings();
-	const_cast<AItemPlacementSlotActor*>(this)->RefreshSlotVisualState();
-
-	if (SanitizeAndCheckOccupied() || AreaId.IsNone() || !SlotMeshComponent || !SlotMeshComponent->GetStaticMesh())
-	{
-		return;
-	}
-
-	FItemUseAreaDescriptor Descriptor;
-	Descriptor.AreaId = AreaId;
-	Descriptor.AreaTags = AreaTags;
-	Descriptor.OwnerActor = const_cast<AItemPlacementSlotActor*>(this);
-	Descriptor.HitComponent = SlotMeshComponent;
-	Descriptor.EffectTargetObject = const_cast<AItemPlacementSlotActor*>(this);
-	Descriptor.VisualComponents.Add(SlotMeshComponent);
-
-	OutDescriptors.Add(MoveTemp(Descriptor));
 }
 
 void AItemPlacementSlotActor::GetCursorPartFocusDescriptors_Implementation(TArray<FCursorPartFocusPartDescriptor>& OutDescriptors) const
@@ -92,6 +71,18 @@ void AItemPlacementSlotActor::GetCursorPartFocusDescriptors_Implementation(TArra
 	Descriptor.PromptData.DisplayName = PlacedItemActor->GetPlacedItemDisplayName();
 	Descriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("RMB"));
 	OutDescriptors.Add(MoveTemp(Descriptor));
+}
+
+bool AItemPlacementSlotActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const
+{
+	(void)HostActor;
+
+	if (Component != SlotMeshComponent)
+	{
+		return true;
+	}
+
+	return !SanitizeAndCheckOccupied();
 }
 
 bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> PlacedActorClass, UItemInstance* SourceItemInstance, ABeekeeperCharacter* InteractingCharacter)
@@ -135,6 +126,7 @@ bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> Pl
 
 	RefreshSlotVisualState();
 	RequestHostPartFocusRebuild();
+	RequestHostItemUseAreaRebuild();
 	return true;
 }
 
@@ -183,6 +175,16 @@ void AItemPlacementSlotActor::ApplySlotAuthoringSettings()
 {
 	if (SlotMeshComponent)
 	{
+		SlotMeshComponent->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner);
+		if (SlotMeshComponent->GetConfiguredAreaId().IsNone() && !AreaId.IsNone())
+		{
+			SlotMeshComponent->SetAreaId(AreaId);
+		}
+		if (SlotMeshComponent->GetAreaTags().IsEmpty() && !AreaTags.IsEmpty())
+		{
+			SlotMeshComponent->SetAreaTags(AreaTags);
+		}
+
 		if (SlotMeshAsset)
 		{
 			SlotMeshComponent->SetStaticMesh(SlotMeshAsset);

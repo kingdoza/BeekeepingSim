@@ -7,6 +7,7 @@
 
 class AActor;
 
+// Deprecated: runtime item-use-area descriptor collection uses UItemUseAreaMeshProviderComponent.
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class BEEKEEPINGSIM_API UChildItemUseAreaProviderComponent : public UActorComponent, public IItemUseAreaProvider
 {

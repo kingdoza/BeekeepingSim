@@ -191,3 +191,23 @@
   - 미선택 상태면 `LastSelectedIndex` -> `0` -> 첫 enabled 슬롯 순서로 fallback 재선택한다.
 - focus rule 또는 stack 소모로 선택이 강제 해제될 때도 마지막 선택 슬롯을 기억한다.
 - FocusEngaged에서 hotbar slot input block 정책이 활성화된 경우 middle click 토글도 차단한다.
+
+## Update 2026-05-27 (BeeBrush Use Action)
+
+- `UBeeBrushUseAction`을 추가했다. (`UHoldItemUseAction` 기반)
+- use-area query tag: `Item.UseArea.Beehive.BeeBrush`
+- 효과 적용 정책:
+  - target: `Context.ItemUseEffectTargetObject`의 `ABeehiveCombActor`
+  - `TargetBeeCount`만 감소 (`ReduceTargetBeeCountByAmount`)
+  - `ColonyBeeCount`는 변경하지 않음
+  - item stack/durability 소비 없음 (`bConsumedItem=false` 유지)
+
+## Update 2026-05-27 (ItemUseArea EffectTarget Policy)
+
+- `Context.ItemUseEffectTargetObject`는 actor-level provider override가 아니라 `UItemUseAreaMeshComponent::EffectTargetPolicy`에서 결정된다.
+  - `ComponentOwner`
+  - `HostActor`
+  - `ExplicitObject`
+- item action은 context target을 cast해 도메인 mutation을 수행한다.
+  - BeeBrush: `ABeehiveCombActor`
+  - placement item use: `AItemPlacementSlotActor` (`IItemPlacementSlot`)

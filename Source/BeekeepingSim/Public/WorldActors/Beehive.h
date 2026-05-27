@@ -6,7 +6,6 @@
 #include "Environment/GameTimeBucketListener.h"
 #include "GameFramework/Actor.h"
 #include "Focus/FocusInteractable.h"
-#include "Focus/ItemUseAreaProvider.h"
 #include "WorldActors/BeeSwarmTypes.h"
 #include "Beehive.generated.h"
 
@@ -26,12 +25,12 @@ class UCursorPartFocusScopeComponent;
 class UCursorPartFocusActionComponent;
 class UBeehiveCombLiftComponent;
 class UCursorItemUseAreaScopeComponent;
-class UChildItemUseAreaProviderComponent;
+class UItemUseAreaMeshProviderComponent;
 class UCursorPartFocusRegistrationComponent;
 class UChildCursorPartFocusProviderComponent;
 
 UCLASS()
-class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IItemUseAreaProvider
+class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
 {
 	GENERATED_BODY()
 
@@ -67,8 +66,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
 	void SetLidOpenForPartFocus(bool bOpen);
 
-	virtual void GetItemUseAreaDescriptors_Implementation(TArray<FItemUseAreaDescriptor>& OutDescriptors) const override;
-
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 GetCurrentCombCount() const { return CurrentCombCount; }
 
@@ -86,6 +83,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	USceneComponent* GetCombLiftTargetRoot() const { return CombLiftTargetRoot; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	ABeehiveCombActor* GetLiftedCombActor() const;
 
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
 	void IncreaseCurrentCombCountForTest();
@@ -203,7 +203,7 @@ protected:
 	TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Item Use Area")
-	TObjectPtr<UChildItemUseAreaProviderComponent> ChildItemUseAreaProvider;
+	TObjectPtr<UItemUseAreaMeshProviderComponent> ItemUseAreaMeshProvider;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
@@ -336,6 +336,7 @@ private:
 	void RefreshCombSpawnAmounts(bool bSkipLiftedComb = false);
 	void ClampCurrentCombCount();
 	void RegisterCombPartsToScope();
+	void RebuildItemUseAreaDescriptorsIfAvailable();
 	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);
 	bool IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const;
 	UPrimitiveComponent* FindPrimitiveComponentByTag(FName ComponentTag) const;

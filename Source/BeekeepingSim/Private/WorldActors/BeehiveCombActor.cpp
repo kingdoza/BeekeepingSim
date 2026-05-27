@@ -3,9 +3,11 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
+#include "Focus/ItemUseAreaMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
+#include "WorldActors/Beehive.h"
 #include "WorldActors/BeehiveCombPartFocusActionComponent.h"
 
 namespace BeehiveCombActorNames
@@ -58,6 +60,12 @@ ABeehiveCombActor::ABeehiveCombActor()
 
 	BackHoneyPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BackHoneyPlane"));
 	BackHoneyPlane->SetupAttachment(CombMesh);
+
+	BeeBrushUseAreaMesh = CreateDefaultSubobject<UItemUseAreaMeshComponent>(TEXT("BeeBrushUseAreaMesh"));
+	BeeBrushUseAreaMesh->SetupAttachment(CombMesh);
+	BeeBrushUseAreaMesh->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner);
+	BeeBrushUseAreaMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BeeBrushUseAreaMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 }
 
 void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
@@ -287,6 +295,17 @@ void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRati
 	const float ClampedRatio = FMath::Clamp(ReductionRatio, 0.0f, 1.0f);
 	ReduceTargetBeeCountByRatio(ClampedRatio);
 	ReceiveCombShaken(FMath::Max(0, StrokeCount), ClampedRatio);
+}
+
+bool ABeehiveCombActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const
+{
+	if (Component != BeeBrushUseAreaMesh)
+	{
+		return true;
+	}
+
+	const ABeehive* BeehiveHost = Cast<ABeehive>(HostActor);
+	return BeehiveHost && (BeehiveHost->GetLiftedCombActor() == this);
 }
 
 #if WITH_EDITOR

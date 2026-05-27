@@ -54,9 +54,9 @@
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
 - `AStorageBox`: storage inventory와 storage UI interaction을 가진 actor
 - `IItemPlacementSlot`: item placement action이 concrete actor를 몰라도 배치를 요청할 수 있는 슬롯 계약
-- `AItemPlacementSlotActor`: `IItemUseAreaProvider` + `IItemPlacementSlot`를 구현하는 generic 배치 슬롯 actor
+- `AItemPlacementSlotActor`: `IItemUseAreaActivationProvider` + `IItemPlacementSlot` + `ICursorPartFocusProvider`를 구현하는 generic 배치 슬롯 actor
   - 구성: `Root`, `SlotMeshComponent`, `AttachComponent`
-  - `SlotMeshComponent`는 hit + visual component를 겸용한다.
+  - `SlotMeshComponent`는 `UItemUseAreaMeshComponent` 기반 hit + visual component다.
   - `SlotMeshAsset`으로 슬롯 인스턴스별 영역 mesh를 지정할 수 있다.
   - `SlotMeshMaterial`로 슬롯 인스턴스별 item-use-area 표시 material을 지정할 수 있다.
   - `SlotMeshRelativeTransform`으로 hit/visual mesh의 local transform을 조정한다.
@@ -115,7 +115,7 @@
   - preview key 입력(`R/F/C`)은 hover preview 대상의 action handler에서 선택적으로 처리
 - 현재 native `ABeehive` 기본 subobject(`LidPartFocusAction`)는 공통 `UCursorPartFocusActionComponent`를 사용하고, `ABeehiveCombActor` 기본 subobject(`PartFocusAction`)는 `UBeehiveCombPartFocusActionComponent`를 사용한다.
 - Beehive/Comb의 실제 lid open-close, comb lift-restore는 action component의 owner-actor delegate(`OnPartFocusBegin/Cancel/Abort`) 또는 component 이벤트 구현 경로에서 처리한다.
-- `ABeehive`는 `IItemUseAreaProvider`를 구현해 lid/comb descriptor(`FItemUseAreaDescriptor`)를 제공한다.
+- `ABeehive`는 `UItemUseAreaMeshProviderComponent`를 통해 item-use-area descriptor를 수집한다.
 - descriptor 기본 tag:
   - lid: `Beehive.UseArea.Lid`
   - comb: `Beehive.UseArea.Comb`
@@ -123,9 +123,10 @@
   - sanitation 상태: `SanitationValue`, `MaxSanitationValue`, `IncreaseSanitation`, `SetSanitationValue`, `GetSanitationRatio`
   - `ABeehive`는 pollen slot 상태를 직접 소유하지 않는다.
   - pollen slot은 `AItemPlacementSlotActor` child actor로 authoring하며, occupied 상태는 slot actor의 `PlacedActor`가 소유한다.
-  - slot actor는 empty일 때만 pollen descriptor(`Item.UseArea.Beehive.PollenPatty`)를 provider로 반환한다.
-  - 벌통 포함 모든 host actor는 필요 시 `UChildItemUseAreaProviderComponent`를 붙여 child slot provider를 `Component Tags`/class 조건으로 노출한다.
-  - disinfectant descriptor(`Item.UseArea.Beehive.Disinfectant`)는 lid/comb에서 계속 제공
+  - slot actor는 `IItemUseAreaActivationProvider`로 occupied 여부를 판단한다.
+  - empty slot: descriptor active(`AreaTags` 유지)
+  - occupied slot: descriptor inactive(`AreaTags` 비움)
+  - host provider는 child actor 내부 `UItemUseAreaMeshComponent`를 수집한다.
 
 ### `ABeehiveDualSwarmActor`
 
@@ -214,7 +215,7 @@
 - Actor 이름과 native parent 이름은 Blueprint 참조가 있으므로 rename 시 Core Redirect와 Blueprint migration이 필요하다.
 - Editor details customization은 editor-only 보조 기능이다. Runtime gameplay source of truth는 각 actor/component의 C++ parameter application 경로다.
 - FocusEngaged item-use area는 벌통 전용 기능이 아니라 generic host-provider 구조로 다룬다.
-- FocusEngaged host actor는 자신의 provider 구현 또는 host에 붙은 provider component를 통해 필요한 `FItemUseAreaDescriptor`를 구성한다.
+- FocusEngaged host actor는 host에 부착된 `UItemUseAreaMeshProviderComponent`가 owner/direct child actor의 `UItemUseAreaMeshComponent`를 수집해 `FItemUseAreaDescriptor`를 구성하는 경로를 사용한다.
 - `ABeehive`는 generic item-use-area 구조의 첫 구현 host로 본다.
 - 사용영역 mesh는 기존 gameplay mesh component, 반투명 가상 mesh component, child actor 내부 mesh component를 모두 허용하되 최종적으로 descriptor의 `HitComponent`, `VisualComponents`, `EffectTargetObject`로 정규화한다.
 - 벌떼 Niagara particle 이동 로직은 Niagara 시스템에서 처리하고 C++은 spline binding/parameter 주입만 담당한다.
@@ -322,3 +323,26 @@
   - `TryAcquireItem(ItemDefinition, 1)` 완전 성공 + `AddedQuantity == 1`일 때만 성공
   - 성공 시 slot `ClearPlacedItem` 호출, 실패 시 actor/slot 유지
 - `ABeehive::RebuildCursorPartFocusDescriptors()`는 기존 lid/comb 등록 후 `CursorPartFocusRegistration` append를 호출해 provider 기반 part를 추가 등록한다.
+
+## Update 2026-05-27 (BeeBrush Lifted Comb UseArea)
+
+- `ABeehiveCombActor`에 `BeeBrushUseAreaMesh`를 추가했다.
+  - 타입: `UItemUseAreaMeshComponent`
+  - 소비장 전용 BeeBrush item-use-area hit/visual 통합 component다.
+  - `AreaTags`/`VisualSettings`/`EffectTargetPolicy`는 component 디테일에서 설정한다.
+- lifted comb active 조건은 `ABeehiveCombActor::IsItemUseAreaMeshActive`에서 판정한다.
+- comb lift begin/cancel/abort 후 `ItemUseAreaScope->RebuildItemUseAreaDescriptors()`를 호출해 descriptor를 즉시 갱신한다.
+
+## Update 2026-05-27 (ItemUseAreaMesh Provider Integration)
+
+- `ABeehive` item-use-area 등록 경로를 actor-level override에서 component 기반으로 전환했다.
+  - `UItemUseAreaMeshProviderComponent`를 기본 subobject로 소유한다.
+- `ABeehiveCombActor::BeeBrushUseAreaMesh`
+  - 타입: `UItemUseAreaMeshComponent`
+  - 부착: `CombMesh` 하위
+  - active 조건: `IItemUseAreaActivationProvider` 구현으로 lifted comb일 때만 true
+- `AItemPlacementSlotActor::SlotMeshComponent`
+  - 타입: `UItemUseAreaMeshComponent`
+  - active 조건: slot empty일 때만 true
+  - place/clear 이후 host `UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()`를 호출해 즉시 반영
+- `EffectTargetObject`는 각 use-area mesh의 `EffectTargetPolicy`로 결정한다.

@@ -225,10 +225,9 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - `BP_Beehive`에서 화분떡 위치마다 `ChildActorComponent`를 추가하고 class를 `BP_ItemPlacementSlotActor`로 지정한다.
 - child actor 인스턴스 transform으로 슬롯 actor 자체 위치를 배치하고, `SlotMeshAsset`/`SlotMeshRelativeTransform`으로 표시/판정 mesh 모양과 local 위치를 조정한다.
 - `AttachRelativeTransform`으로 화분떡 actor가 실제로 붙을 local attach point를 조정한다.
-- `BP_Beehive`에는 native `ChildItemUseAreaProvider`가 기본으로 존재한다.
-- slot용 `ChildActorComponent`의 `Component Tags`에 `ItemUseAreaChild`를 추가한다.
-- 필요하면 `ChildItemUseAreaProvider`의 `RequiredChildActorClass`를 `BP_ItemPlacementSlotActor` 계열로 제한한다.
-- C++ scope는 child slot을 자동 등록하지 않는다. `ChildItemUseAreaProvider`의 tag/class 조건을 통과한 child slot만 descriptor로 수집된다.
+- `BP_Beehive`에는 native `ItemUseAreaMeshProvider`가 기본으로 존재한다.
+- slot용 `ChildActorComponent`에 필요한 경우 `Component Tags`를 추가하고, `ItemUseAreaMeshProvider.RequiredChildActorComponentTag`로 필터링한다.
+- C++ scope는 actor-level descriptor override를 호출하지 않고 `ItemUseAreaMeshProvider`가 수집한 `UItemUseAreaMeshComponent`만 등록한다.
 - 화분떡 아이템 action:
   - `UItemPlacementUseAction` 또는 `UPollenPattyUseAction` 사용
   - `UseAreaTagQuery`는 `Item.UseArea.Beehive.PollenPatty` 매칭
@@ -356,3 +355,49 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 슬롯 선택 상태에서 middle click 시 전체 미선택으로 전환되는지 확인한다.
 - 미선택 상태에서 middle click 시 마지막 선택 슬롯(기본 1번 슬롯)이 재선택되는지 확인한다.
 - FocusEngaged에서 hotbar slot input block 상태일 때 middle click이 무시되는지 확인한다.
+
+## BeeBrush Lifted Comb ItemUseArea (2026-05-27)
+
+1. Gameplay Tag 확인
+- `Project Settings > Gameplay Tags`에서 `Item.UseArea.Beehive.BeeBrush`가 등록되어 있는지 확인한다.
+
+2. `BP_BeehiveComb` 설정
+- `BeeBrushUseAreaMesh` 컴포넌트(`UItemUseAreaMeshComponent`)에 소비장 전체를 덮는 mesh를 지정한다.
+- `BeeBrushUseAreaMesh`에 item-use-area 표시 material을 지정한다.
+- 소비장 전체를 커버하도록 상대 위치/회전/스케일을 조정한다.
+- `BeeBrushUseAreaMesh.AreaTags`에 `Item.UseArea.Beehive.BeeBrush`를 추가한다.
+- `BeeBrushUseAreaMesh.EffectTargetPolicy`는 `ComponentOwner`로 유지한다.
+- 필요하면 `BeeBrushUseAreaMesh.VisualSettings`에서 표시 색상/opacity/pulse/hover strength를 조정한다.
+
+3. material parameter 확인
+- 아래 파라미터를 material에서 사용하도록 구성한다.
+  - `UseAreaColor`
+  - `UseAreaOpacity`
+  - `PulseSpeed`
+  - `HoverStrength`
+
+4. BeeBrush item definition 설정
+- BeeBrush item definition ActionSpec에 `UBeeBrushUseAction`을 추가한다.
+- 필요하면 held presentation actor BP를 별도로 지정한다.
+
+5. PIE 검증
+- BeeBrush 선택 전/또는 comb 미-lift 상태: BeeBrush use-area 표시 없음
+- comb lift 상태 + BeeBrush 선택: lifted comb의 `BeeBrushUseAreaMesh`만 표시
+- hover + LMB hold: 해당 comb의 `TargetBeeCount`만 감소
+- `ColonyBeeCount`/hotbar stack은 감소하지 않아야 함
+- comb return/cancel/abort 시 BeeBrush use-area가 즉시 사라져야 함
+
+## ItemUseAreaMeshComponent 전환 체크리스트 (2026-05-27)
+
+1. `BP_Beehive`
+- `ItemUseAreaMeshProvider` 컴포넌트 존재 확인
+- child actor 필터가 필요하면 `RequiredChildActorComponentTag` 설정
+
+2. placement slot BP
+- `SlotMeshComponent` 타입이 `UItemUseAreaMeshComponent`인지 확인
+- `AreaId/AreaTags/VisualSettings/EffectTargetPolicy`는 actor 프로퍼티가 아니라 `SlotMeshComponent` details에서 설정
+- `EffectTargetPolicy=ComponentOwner` 유지
+
+3. deprecated 경로 주의
+- `Get Item Use Area Descriptors` BP override는 새 runtime 경로에서 사용하지 않는다.
+- `Component Tags = ItemUseArea` fallback은 사용하지 않는다.

@@ -5,6 +5,7 @@
 #include "UObject/Interface.h"
 #include "ItemUseAreaProvider.generated.h"
 
+// Deprecated: runtime item-use-area descriptor collection uses UItemUseAreaMeshProviderComponent.
 UINTERFACE(BlueprintType)
 class BEEKEEPINGSIM_API UItemUseAreaProvider : public UInterface
 {
