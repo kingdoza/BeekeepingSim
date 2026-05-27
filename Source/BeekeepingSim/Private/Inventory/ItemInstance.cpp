@@ -59,6 +59,23 @@ void UItemInstance::SetDurability(float NewDurability)
 	Durability = NewDurability;
 }
 
+void UItemInstance::SetBeehiveCombState(float HoneyAmount, bool bIsFrontFaceVisible)
+{
+	BeehiveCombState.bHasState = true;
+	BeehiveCombState.HoneyAmount = FMath::Max(0.0f, HoneyAmount);
+	BeehiveCombState.bIsFrontFaceVisible = bIsFrontFaceVisible;
+}
+
+void UItemInstance::ClearBeehiveCombState()
+{
+	BeehiveCombState = FBeehiveCombItemState();
+}
+
+bool UItemInstance::HasBeehiveCombState() const
+{
+	return BeehiveCombState.bHasState;
+}
+
 bool UItemInstance::HasDurability() const
 {
 	return Definition && Definition->bUsesDurability;

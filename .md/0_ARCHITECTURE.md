@@ -77,7 +77,7 @@ Source/BeekeepingSim/
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
-- `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, 활성 슬롯(`CurrentCombCount`)에만 `ABeehiveCombActor`를 생성한다.
+- `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
 - `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
@@ -176,3 +176,23 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - FocusEngaged item-use-area 등록 source를 actor/provider override에서 `UItemUseAreaMeshProviderComponent`로 통합했다.
 - descriptor의 hit/visual/effect-target은 `UItemUseAreaMeshComponent`가 소유한다.
 - component active 판단은 `IItemUseAreaActivationProvider`가 담당하며 inactive인 경우 descriptor는 유지하고 `AreaTags`를 비운다.
+- child actor가 `IItemUseAreaMeshSource`를 구현하면 `UItemUseAreaMeshProviderComponent`가 추가 제공 mesh도 descriptor로 등록한다.
+
+## Update 2026-05-28 (Generic Placement Occupant + Beehive Comb Slot)
+
+- generic placement 점유/회수 계약을 component 기반으로 확장했다.
+  - `UPlacementOccupantComponent`: 반환 item definition(runtime + authored fallback), owning slot, 회수 가능 판정 hook, clear 전 hook
+  - `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 hotbar `TryAcquireItem(ItemDefinition, 1)` + slot clear
+- `AItemPlacementSlotActor`를 generic occupied actor 모델로 확장했다.
+  - `InitialOccupantActor` preplaced claim (BeginPlay), attach/snap 옵션, occupied actor descriptor 공급
+  - occupied actor의 `UItemUseAreaMeshComponent`를 host item-use-area provider에 노출
+  - clear 시 occupant `PreClearPlacementOccupant` hook 호출 후 destroy
+- `APlacedItemActor`는 새 generic component들로 migration했고 기존 getter/초기화 API는 wrapper로 유지한다.
+- 벌통 소비장 구조를 slot 기반으로 전환했다.
+  - `ABeehiveCombSlotActor`가 comb 전용 slot 역할을 수행한다.
+  - `ABeehive`는 comb child actor를 직접 관리하지 않고, comb slot child actor의 placed comb를 active comb로 본다.
+  - `InitialCombCount`는 에디터 authoring 값이며, `CurrentCombCount`는 slot occupancy에서 갱신되는 내부 캐시다.
+  - honey/colony/queen 후보 계산은 placed comb 기준으로 동작한다.
+- 소비장 회수 상태 계약:
+  - 회수 가능 조건: `TargetBeeCount == 0` && queen 미부착
+  - 회수 시 `UItemInstance`에 `BeehiveCombState(꿀양, visible face)`를 기록해 상태를 보존한다.

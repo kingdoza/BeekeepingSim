@@ -20,6 +20,7 @@ class UPrimitiveComponent;
 class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
 class ABeehiveCombActor;
+class ABeehiveCombSlotActor;
 class AQueenBeeActor;
 class UCursorPartFocusScopeComponent;
 class UCursorPartFocusActionComponent;
@@ -43,6 +44,7 @@ public:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual bool CanEditChange(const FProperty* InProperty) const override;
 #endif
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
@@ -66,6 +68,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
 	void SetLidOpenForPartFocus(bool bOpen);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void RefreshCombStateFromSlots();
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 GetCurrentCombCount() const { return CurrentCombCount; }
 
@@ -87,15 +92,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	ABeehiveCombActor* GetLiftedCombActor() const;
 
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
-	void IncreaseCurrentCombCountForTest();
-
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Beehive|Comb")
-	void DecreaseCurrentCombCountForTest();
-
-	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void SetCurrentCombCountForTest(int32 NewCount);
-
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	int32 CalculateCombSpawnAmount() const;
 
@@ -110,6 +106,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	AQueenBeeActor* GetQueenBeeActor() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	bool IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Population")
 	void ApplyColonyPopulationUpdate();
@@ -235,6 +234,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	TSubclassOf<ABeehiveCombActor> CombActorClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+	TSubclassOf<ABeehiveCombSlotActor> CombSlotActorClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
 	TSubclassOf<AQueenBeeActor> QueenBeeActorClass;
 
@@ -280,6 +282,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 MaxCombCount = 6;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
+	int32 InitialCombCount = 6;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
 	float CombSlotSpacing = 30.0f;
 
@@ -314,9 +319,6 @@ protected:
 	TArray<TObjectPtr<UChildActorComponent>> CombSlotComponents;
 
 	UPROPERTY(Transient)
-	bool bCombCountInitialized = false;
-
-	UPROPERTY(Transient)
 	int32 LastAppliedAttractionSwarmSpawnAmount = INDEX_NONE;
 
 private:
@@ -326,15 +328,20 @@ private:
 	void ApplySettingsToDualSwarmChildActor();
 	void EnsureDualSwarmChildActorClass();
 	void EnsureQueenBeeChildActorClass();
+	ABeehiveCombSlotActor* GetCombSlotActorByIndex(int32 Index) const;
+	int32 GetOccupiedCombCount() const;
 	bool ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const;
 	float CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const;
 	USceneComponent* ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const;
 	void DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease);
+	void ApplyInitialCombCountToSlots();
 	void RefreshCombLayoutAndParameters();
+	void ApplyInitialCombSetupForBeginPlay();
 	void RefreshCombSlotComponents();
 	void RefreshCombSlotTransforms();
 	void RefreshCombSpawnAmounts(bool bSkipLiftedComb = false);
-	void ClampCurrentCombCount();
+	void ClampCombAuthoringCounts();
+	void RefreshCurrentCombCountFromSlots();
 	void RegisterCombPartsToScope();
 	void RebuildItemUseAreaDescriptorsIfAvailable();
 	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);

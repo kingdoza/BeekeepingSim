@@ -25,6 +25,7 @@
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaActivationProvider.h`
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshProviderComponent.h`
 - `Source/BeekeepingSim/Private/Focus/ItemUseAreaMeshProviderComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshSource.h`
 - `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
 
@@ -54,7 +55,8 @@
 - `UCursorItemUseAreaScopeComponent`: FocusEngaged host 내부 item-use-area 수집/표시/hover/LMB hold-use scope
 - `UItemUseAreaMeshComponent`: item-use-area hit/visual/material/effect-target policy를 소유하는 mesh component
 - `IItemUseAreaActivationProvider`: item-use-area component별 active/inactive 판정 인터페이스
-- `UItemUseAreaMeshProviderComponent`: host/직접 child actor의 `UItemUseAreaMeshComponent`를 수집해 descriptor를 구성하는 provider
+- `UItemUseAreaMeshProviderComponent`: host/직접 child actor 및 child actor의 `IItemUseAreaMeshSource` 제공 mesh를 수집해 descriptor를 구성하는 provider
+- `IItemUseAreaMeshSource`: child actor가 직접 소유 component 외의 item-use-area mesh를 provider에 노출하는 C++ 확장 계약
 - `IFocusInteractable`: actor-level focus 이벤트 인터페이스
 
 ## State Model
@@ -100,6 +102,7 @@
 - provider 수집 규칙:
   - host owner의 `UItemUseAreaMeshComponent` 수집
   - host의 직접 `UChildActorComponent` 순회 후 child actor 내부 `UItemUseAreaMeshComponent` 수집
+  - child actor가 `IItemUseAreaMeshSource`를 구현하면 추가 제공 mesh도 수집
   - 필요 시 `RequiredChildActorComponentTag`로 child actor component를 필터링
 - `IItemUseAreaActivationProvider` 구현 actor가 false를 반환하면 descriptor는 유지하되 `AreaTags`를 비워 inactive 처리한다.
 - `Component Tags = ItemUseArea` fallback과 actor-level provider 호출은 runtime 수집 경로에서 사용하지 않는다.
@@ -268,6 +271,18 @@
 - 새 component 계약:
   - `UItemUseAreaMeshComponent`: `AreaId`, `AreaTags`, `VisualSettings`, `EffectTargetPolicy`
   - `IItemUseAreaActivationProvider`: component 단위 active 판정
-  - `UItemUseAreaMeshProviderComponent`: host/직접 child actor의 use-area mesh 수집 및 descriptor 생성
+  - `UItemUseAreaMeshProviderComponent`: host/직접 child actor/use-area mesh source의 use-area mesh 수집 및 descriptor 생성
 - `UCursorItemUseAreaScopeComponent`는 provider actor/interface/tag fallback을 사용하지 않고, provider component 결과만 등록한다.
 - 구 `IItemUseAreaProvider`/`UChildItemUseAreaProviderComponent` 경로는 migration 호환을 위해 소스에 남을 수 있으나, 현재 runtime 수집의 source-of-truth는 아니다.
+
+## Update 2026-05-28 (Placement Occupant Secondary Retrieve)
+
+- PartFocus secondary retrieve의 generic 실행 주체를 `UPlacementSlotRetrievePartFocusActionComponent`로 통합했다.
+  - owner actor의 `UPlacementOccupantComponent`를 조회해 반환 item/owning slot/회수 가능 여부를 판정한다.
+- `FCursorPartFocusPartDescriptor`의 action handler가 단일 컴포넌트라는 제약은 유지한다.
+  - 소비장(`ABeehiveCombActor`)은 LMB lift/drag를 기존 `UBeehiveCombPartFocusActionComponent`가 유지한다.
+  - secondary retrieve는 같은 comb part action이 내부 bridge로 `PlacementRetrieveAction`을 호출한다.
+- placement slot actor provider 경로:
+  - empty slot: item-use-area descriptor만 활성
+  - occupied generic slot: occupant part descriptor + secondary retrieve 가능
+  - comb slot: occupied descriptor는 등록하지 않고 comb part descriptor 경로만 사용

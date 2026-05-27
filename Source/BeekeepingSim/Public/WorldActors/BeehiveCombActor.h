@@ -11,6 +11,9 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UItemUseAreaMeshComponent;
 class UCursorPartFocusActionComponent;
+class UPlacementOccupantComponent;
+class UPlacementSlotRetrievePartFocusActionComponent;
+class UItemInstance;
 
 UENUM(BlueprintType)
 enum class EBeehiveCombVisibleFace : uint8
@@ -74,6 +77,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const { return PartFocusAction; }
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Placement")
+	UPlacementOccupantComponent* GetPlacementOccupantComponent() const { return PlacementOccupant; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Placement")
+	UPlacementSlotRetrievePartFocusActionComponent* GetPlacementRetrieveActionComponent() const { return PlacementRetrieveAction; }
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	USceneComponent* GetQueenFrontAttachPoint() const { return QueenFrontAttachPoint; }
 
@@ -113,6 +122,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
 	void ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Placement")
+	void ApplyStateFromItemInstance(const UItemInstance* SourceItemInstance);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Placement")
+	void WriteStateToItemInstance(UItemInstance* TargetItemInstance) const;
+
 	virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
 
 protected:
@@ -133,6 +148,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UCursorPartFocusActionComponent> PartFocusAction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPlacementOccupantComponent> PlacementOccupant;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPlacementSlotRetrievePartFocusActionComponent> PlacementRetrieveAction;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> QueenFrontAttachPoint;

@@ -4,11 +4,14 @@
 #include "Components/StaticMeshComponent.h"
 #include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/ItemUseAreaMeshComponent.h"
+#include "Inventory/ItemInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
 #include "WorldActors/Beehive.h"
 #include "WorldActors/BeehiveCombPartFocusActionComponent.h"
+#include "WorldActors/BeehiveCombPlacementOccupantComponent.h"
+#include "WorldActors/PlacementSlotRetrievePartFocusActionComponent.h"
 
 namespace BeehiveCombActorNames
 {
@@ -44,6 +47,13 @@ ABeehiveCombActor::ABeehiveCombActor()
 		RequiredTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
 		PartFocusAction->SetRequiredStateTags(RequiredTags);
 		PartFocusAction->SetExclusiveGroup(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.CombLift")), false));
+	}
+
+	PlacementOccupant = CreateDefaultSubobject<UBeehiveCombPlacementOccupantComponent>(TEXT("PlacementOccupant"));
+	PlacementRetrieveAction = CreateDefaultSubobject<UPlacementSlotRetrievePartFocusActionComponent>(TEXT("PlacementRetrieveAction"));
+	if (PlacementRetrieveAction)
+	{
+		PlacementRetrieveAction->SetEngageMode(ECursorPartFocusEngageMode::PreviewOnly);
 	}
 
 	QueenFrontAttachPoint = CreateDefaultSubobject<USceneComponent>(TEXT("QueenFrontAttachPoint"));
@@ -295,6 +305,29 @@ void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRati
 	const float ClampedRatio = FMath::Clamp(ReductionRatio, 0.0f, 1.0f);
 	ReduceTargetBeeCountByRatio(ClampedRatio);
 	ReceiveCombShaken(FMath::Max(0, StrokeCount), ClampedRatio);
+}
+
+void ABeehiveCombActor::ApplyStateFromItemInstance(const UItemInstance* SourceItemInstance)
+{
+	if (!SourceItemInstance || !SourceItemInstance->HasBeehiveCombState())
+	{
+		return;
+	}
+
+	const FBeehiveCombItemState CombState = SourceItemInstance->GetBeehiveCombState();
+	SetCurrentHoney(CombState.HoneyAmount);
+	SetVisibleCombFace(CombState.bIsFrontFaceVisible ? EBeehiveCombVisibleFace::Front : EBeehiveCombVisibleFace::Back);
+}
+
+void ABeehiveCombActor::WriteStateToItemInstance(UItemInstance* TargetItemInstance) const
+{
+	if (!TargetItemInstance)
+	{
+		return;
+	}
+
+	const bool bIsFrontFaceVisible = (VisibleCombFace == EBeehiveCombVisibleFace::Front);
+	TargetItemInstance->SetBeehiveCombState(CurrentHoney, bIsFrontFaceVisible);
 }
 
 bool ABeehiveCombActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const

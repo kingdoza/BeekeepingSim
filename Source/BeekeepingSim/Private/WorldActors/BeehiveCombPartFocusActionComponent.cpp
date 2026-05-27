@@ -3,6 +3,8 @@
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "GameplayTagsManager.h"
 #include "WorldActors/BeehiveCombActor.h"
+#include "WorldActors/ItemPlacementSlot.h"
+#include "WorldActors/PlacementSlotRetrievePartFocusActionComponent.h"
 
 UBeehiveCombPartFocusActionComponent::UBeehiveCombPartFocusActionComponent()
 {
@@ -11,6 +13,40 @@ UBeehiveCombPartFocusActionComponent::UBeehiveCombPartFocusActionComponent()
 	RequiredTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
 	SetRequiredStateTags(RequiredTags);
 	SetExclusiveGroup(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.CombLift")), false));
+}
+
+bool UBeehiveCombPartFocusActionComponent::CanHandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
+{
+	const ABeehiveCombActor* CombActor = ResolveOwnerCombActor();
+	const UPlacementSlotRetrievePartFocusActionComponent* RetrieveAction = CombActor ? CombActor->GetPlacementRetrieveActionComponent() : nullptr;
+	return RetrieveAction && RetrieveAction->CanRetrievePlacementOccupant(InteractingCharacter);
+}
+
+bool UBeehiveCombPartFocusActionComponent::HandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
+{
+	ABeehiveCombActor* CombActor = ResolveOwnerCombActor();
+	UPlacementSlotRetrievePartFocusActionComponent* RetrieveAction = CombActor ? CombActor->GetPlacementRetrieveActionComponent() : nullptr;
+	if (!CombActor || !RetrieveAction)
+	{
+		return false;
+	}
+
+	UItemInstance* AcquiredItemInstance = nullptr;
+	AActor* SlotActor = nullptr;
+	if (!RetrieveAction->TryRetrievePlacementOccupant(InteractingCharacter, AcquiredItemInstance, SlotActor))
+	{
+		return false;
+	}
+
+	CombActor->WriteStateToItemInstance(AcquiredItemInstance);
+
+	if (!SlotActor || !SlotActor->GetClass()->ImplementsInterface(UItemPlacementSlot::StaticClass()))
+	{
+		return false;
+	}
+
+	IItemPlacementSlot::Execute_ClearPlacedItem(SlotActor);
+	return true;
 }
 
 bool UBeehiveCombPartFocusActionComponent::CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const

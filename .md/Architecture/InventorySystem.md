@@ -211,3 +211,18 @@
 - item action은 context target을 cast해 도메인 mutation을 수행한다.
   - BeeBrush: `ABeehiveCombActor`
   - placement item use: `AItemPlacementSlotActor` (`IItemPlacementSlot`)
+
+## Update 2026-05-28 (Beehive Comb Retrieve State Contract)
+
+- `UItemInstance`에 소비장 회수 상태를 위한 최소 전용 상태를 추가했다.
+  - `FBeehiveCombItemState` (`bHasState`, `HoneyAmount`, `bIsFrontFaceVisible`)
+  - `SetBeehiveCombState`, `ClearBeehiveCombState`, `HasBeehiveCombState`, `GetBeehiveCombState`
+- `UBeekeeperHotbarComponent::TryAcquireItem` 결과에 마지막 변경 슬롯/인스턴스 정보를 추가했다.
+  - `LastModifiedSlotIndex`
+  - `LastModifiedItemInstance`
+- 소비장 회수 경로는 hotbar acquire 성공 후(`AddedQuantity == 1`) 반환된 item instance에 comb state를 기록한다.
+- invariant:
+  - comb 상태 보존이 필요한 반환 item definition(`DA_HoneyComb` 등)은 `MaxStack == 1`이어야 한다. (`MaxStack > 1`은 회수 차단 대상)
+- 상태 보존 범위:
+  - 보존: 꿀 양(`CurrentHoney`), visible face(front/back)
+  - 회수 가능 조건: `TargetBeeCount == 0` 및 queen 미부착(조건 판정은 WorldActors occupant hook에서 수행)

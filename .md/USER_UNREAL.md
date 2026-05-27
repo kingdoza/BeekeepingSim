@@ -401,3 +401,49 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 3. deprecated 경로 주의
 - `Get Item Use Area Descriptors` BP override는 새 runtime 경로에서 사용하지 않는다.
 - `Component Tags = ItemUseArea` fallback은 사용하지 않는다.
+
+## Generic Placement Occupant + Beehive Comb Slot 전환 (2026-05-28)
+
+1. `BP_Beehive` / 벌통 BP
+- comb rack child actor component의 class를 `ABeehiveCombSlotActor` 기반 BP로 설정한다. (예: `BP_BeehiveCombSlot`)
+- 기존 comb actor 직접 child actor 방식은 사용하지 않는다.
+- 필요 시 `ABeehive.CombSlotActorClass`를 slot BP class로 지정한다.
+- `InitialCombCount`로 초기 배치할 소비장 수를 지정한다. 이 값은 `0..MaxCombCount`로 제한되며 PIE/런타임 중 details에서 수정하지 않는다.
+
+2. `BP_BeehiveCombSlot`
+- `SlotMeshComponent` mesh/material/transform을 comb item 배치 위치에 맞게 설정한다.
+- `SlotMeshComponent.AreaTags`를 comb placement item의 `UseAreaTagQuery`와 일치시킨다.
+- preplaced comb를 사용할 경우:
+  - `InitialOccupantActor` 지정
+  - `bAttachInitialOccupantToSlot`, `bSnapInitialOccupantToAttachPoint` 옵션 확인
+
+3. `BP_BeehiveComb`
+- `PlacementOccupant` 컴포넌트(실제 class: `UBeehiveCombPlacementOccupantComponent`) 존재를 확인한다.
+- `PlacementRetrieveAction` 컴포넌트 존재를 확인한다.
+- secondary retrieve는 comb part action bridge로 처리되므로 descriptor action handler를 기존 comb part action으로 유지한다.
+- authored fallback 회수가 필요하면 `PlacementOccupant.AuthoredReturnItemDefinition`을 설정한다.
+
+4. 소비장 아이템 정의(`UItemDefinition`)
+- comb 배치 action(`UItemPlacementUseAction`)의 `PlacedActorClass`를 `ABeehiveCombActor` 기반 BP로 설정한다.
+- `UseAreaTagQuery`가 comb slot area tags와 매칭되는지 확인한다.
+- comb item은 상태 보존 계약을 위해 `MaxStack=1`을 필수로 유지한다. (`MaxStack>1`이면 회수 차단)
+
+5. 기존 placed item BP
+- `APlacedItemActor` 기반 BP에 `PlacementOccupant` + generic retrieve component가 붙어 있는지 확인한다.
+- 기존 `UPlacedItemRetrievePartFocusActionComponent`는 wrapper(deprecated 경로)로 남아 있으므로 신규 경로는 generic component 기준으로 확인한다.
+
+6. PIE 검증 체크리스트
+- generic slot:
+  - empty slot 배치 성공 / occupied 재배치 차단
+  - secondary 회수 성공 시 hotbar +1, slot clear
+  - hotbar 공간 부족 시 회수 실패, actor/slot 유지
+- preplaced slot:
+  - `InitialOccupantActor` claim 성공
+  - `AuthoredReturnItemDefinition` fallback 회수 성공
+- comb slot:
+  - comb item 배치 성공
+  - LMB lift/return 기존 동작 유지
+  - secondary retrieve:
+    - `TargetBeeCount == 0` + queen 미부착 -> 회수 성공
+    - `TargetBeeCount > 0` 또는 queen 부착 -> 회수 실패, slot/actor 유지
+  - 회수 후 재배치 시 꿀 양/visible face가 item state를 통해 복원되는지 확인

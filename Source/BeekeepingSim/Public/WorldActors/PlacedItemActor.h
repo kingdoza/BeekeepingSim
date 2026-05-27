@@ -8,6 +8,7 @@ class UCursorPartFocusActionComponent;
 class UItemDefinition;
 class UItemInstance;
 class UPlacedItemRetrievePartFocusActionComponent;
+class UPlacementOccupantComponent;
 class UPrimitiveComponent;
 class USceneComponent;
 class UStaticMeshComponent;
@@ -24,16 +25,22 @@ public:
 	void InitializePlacedItem(UItemInstance* SourceItemInstance, AActor* InOwningPlacementSlotActor);
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
-	UItemDefinition* GetItemDefinition() const { return ItemDefinition; }
+	UItemDefinition* GetItemDefinition() const;
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
-	AActor* GetOwningPlacementSlotActor() const { return OwningPlacementSlotActor; }
+	AActor* GetOwningPlacementSlotActor() const;
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
 	UPrimitiveComponent* GetPartFocusHitComponent() const;
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
 	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "Placed Item")
+	UPlacementOccupantComponent* GetPlacementOccupantComponent() const { return PlacementOccupant; }
+
+	UFUNCTION(BlueprintPure, Category = "Placed Item")
+	UPlacedItemRetrievePartFocusActionComponent* GetPlacementRetrieveActionComponent() const { return RetrieveAction.Get(); }
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
 	FText GetPlacedItemDisplayName() const;
@@ -49,11 +56,14 @@ protected:
 	TObjectPtr<UStaticMeshComponent> ItemMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UPlacedItemRetrievePartFocusActionComponent> RetrieveAction;
+	TObjectPtr<UPlacementOccupantComponent> PlacementOccupant;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Placed Item")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Placed Item", meta = (DeprecatedProperty, DeprecationMessage = "Use PlacementOccupant return definition API."))
 	TObjectPtr<UItemDefinition> ItemDefinition;
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Placed Item")
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Placed Item", meta = (DeprecatedProperty, DeprecationMessage = "Use PlacementOccupant owning slot API."))
 	TObjectPtr<AActor> OwningPlacementSlotActor;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPlacedItemRetrievePartFocusActionComponent> RetrieveAction;
 };

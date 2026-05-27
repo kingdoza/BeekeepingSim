@@ -13,6 +13,21 @@ class UItemDefinition;
 class UHoldItemUseAction;
 class AItemPresentationActor;
 
+USTRUCT(BlueprintType)
+struct FBeehiveCombItemState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
+	bool bHasState = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb", meta = (ClampMin = "0.0"))
+	float HoneyAmount = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
+	bool bIsFrontFaceVisible = true;
+};
+
 UCLASS(BlueprintType)
 class BEEKEEPINGSIM_API UItemInstance : public UObject, public IHotbarItemInterface
 {
@@ -64,6 +79,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void SetDurability(float NewDurability);
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
+	void SetBeehiveCombState(float HoneyAmount, bool bIsFrontFaceVisible);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
+	void ClearBeehiveCombState();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Beehive Comb")
+	bool HasBeehiveCombState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Beehive Comb")
+	FBeehiveCombItemState GetBeehiveCombState() const { return BeehiveCombState; }
+
 	UFUNCTION(BlueprintPure, Category = "Item")
 	FGuid GetInstanceId() const { return InstanceId; }
 
@@ -95,6 +122,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	float Durability = 1.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Beehive Comb")
+	FBeehiveCombItemState BeehiveCombState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	FGuid InstanceId;

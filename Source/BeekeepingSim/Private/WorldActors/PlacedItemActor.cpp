@@ -5,6 +5,7 @@
 #include "Focus/CursorPartFocusActionComponent.h"
 #include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
+#include "WorldActors/PlacementOccupantComponent.h"
 #include "WorldActors/PlacedItemRetrievePartFocusActionComponent.h"
 
 APlacedItemActor::APlacedItemActor()
@@ -20,6 +21,7 @@ APlacedItemActor::APlacedItemActor()
 	ItemMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	ItemMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 
+	PlacementOccupant = CreateDefaultSubobject<UPlacementOccupantComponent>(TEXT("PlacementOccupant"));
 	RetrieveAction = CreateDefaultSubobject<UPlacedItemRetrievePartFocusActionComponent>(TEXT("RetrieveAction"));
 	if (RetrieveAction)
 	{
@@ -29,14 +31,19 @@ APlacedItemActor::APlacedItemActor()
 
 void APlacedItemActor::InitializePlacedItem(UItemInstance* SourceItemInstance, AActor* InOwningPlacementSlotActor)
 {
-	ItemDefinition = SourceItemInstance ? SourceItemInstance->GetDefinition() : nullptr;
-	OwningPlacementSlotActor = InOwningPlacementSlotActor;
+	if (PlacementOccupant)
+	{
+		PlacementOccupant->InitializeFromPlacement(SourceItemInstance, InOwningPlacementSlotActor);
+	}
+	ItemDefinition = PlacementOccupant ? PlacementOccupant->GetReturnItemDefinition() : (SourceItemInstance ? SourceItemInstance->GetDefinition() : nullptr);
+	OwningPlacementSlotActor = PlacementOccupant ? PlacementOccupant->GetOwningPlacementSlotActor() : InOwningPlacementSlotActor;
 
 	if (ItemMesh)
 	{
-		if (ItemDefinition && ItemDefinition->WorldMesh)
+		UItemDefinition* ReturnDefinition = GetItemDefinition();
+		if (ReturnDefinition && ReturnDefinition->WorldMesh)
 		{
-			ItemMesh->SetStaticMesh(ItemDefinition->WorldMesh);
+			ItemMesh->SetStaticMesh(ReturnDefinition->WorldMesh);
 		}
 	}
 
@@ -53,7 +60,33 @@ UCursorPartFocusActionComponent* APlacedItemActor::GetPartFocusActionComponent()
 	return RetrieveAction;
 }
 
+UItemDefinition* APlacedItemActor::GetItemDefinition() const
+{
+	if (PlacementOccupant)
+	{
+		if (UItemDefinition* ReturnDefinition = PlacementOccupant->GetReturnItemDefinition())
+		{
+			return ReturnDefinition;
+		}
+	}
+
+	return ItemDefinition;
+}
+
+AActor* APlacedItemActor::GetOwningPlacementSlotActor() const
+{
+	if (PlacementOccupant)
+	{
+		if (AActor* SlotActor = PlacementOccupant->GetOwningPlacementSlotActor())
+		{
+			return SlotActor;
+		}
+	}
+
+	return OwningPlacementSlotActor;
+}
+
 FText APlacedItemActor::GetPlacedItemDisplayName() const
 {
-	return ItemDefinition ? ItemDefinition->DisplayName : FText::GetEmpty();
+	return GetItemDefinition() ? GetItemDefinition()->DisplayName : FText::GetEmpty();
 }

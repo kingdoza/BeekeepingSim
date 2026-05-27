@@ -20,7 +20,9 @@
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
 #include "WorldActors/BeehiveCombActor.h"
+#include "WorldActors/BeehiveCombSlotActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
+#include "WorldActors/ItemPlacementSlot.h"
 #include "WorldActors/QueenBeeActor.h"
 #include "Curves/CurveFloat.h"
 
@@ -104,6 +106,7 @@ ABeehive::ABeehive()
 	CombLiftComponent = CreateDefaultSubobject<UBeehiveCombLiftComponent>(TEXT("CombLiftComponent"));
 
 	CombActorClass = ABeehiveCombActor::StaticClass();
+	CombSlotActorClass = ABeehiveCombSlotActor::StaticClass();
 	QueenBeeActorClass = AQueenBeeActor::StaticClass();
 
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
@@ -140,6 +143,7 @@ void ABeehive::BeginPlay()
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	ApplyInitialCombSetupForBeginPlay();
 	RebuildCursorPartFocusDescriptors();
 
 	if (UWorld* World = GetWorld())
@@ -392,6 +396,20 @@ void ABeehive::SetLidOpenForPartFocus(bool bOpen)
 	ReceiveLidPartFocusStateChanged(bIsLidOpen);
 }
 
+void ABeehive::RefreshCombStateFromSlots()
+{
+	RefreshCurrentCombCountFromSlots();
+
+	if (CombLiftComponent && CombLiftComponent->GetLiftedCombSlotIndex() != INDEX_NONE && !GetLiftedCombActor())
+	{
+		CombLiftComponent->ReturnAllLiftedCombs();
+	}
+
+	RefreshCombSpawnAmounts(false);
+	RebuildCursorPartFocusDescriptors();
+	RebuildItemUseAreaDescriptorsIfAvailable();
+}
+
 int32 ABeehive::FindManagedCombSlotIndex(const ABeehiveCombActor* CombActor) const
 {
 	if (!CombActor)
@@ -399,15 +417,10 @@ int32 ABeehive::FindManagedCombSlotIndex(const ABeehiveCombActor* CombActor) con
 		return INDEX_NONE;
 	}
 
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
-		if (!CombSlotComponents.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		const UChildActorComponent* Slot = CombSlotComponents[Index];
-		if (Slot && Slot->GetChildActor() == CombActor)
+		const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		if (SlotActor && SlotActor->GetPlacedCombActor() == CombActor)
 		{
 			return Index;
 		}
@@ -426,6 +439,27 @@ UChildActorComponent* ABeehive::GetCombSlotComponentByIndex(int32 Index) const
 	return CombSlotComponents[Index];
 }
 
+ABeehiveCombSlotActor* ABeehive::GetCombSlotActorByIndex(int32 Index) const
+{
+	const UChildActorComponent* SlotComponent = GetCombSlotComponentByIndex(Index);
+	return SlotComponent ? Cast<ABeehiveCombSlotActor>(SlotComponent->GetChildActor()) : nullptr;
+}
+
+int32 ABeehive::GetOccupiedCombCount() const
+{
+	int32 OccupiedCount = 0;
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		if (SlotActor && SlotActor->GetPlacedCombActor())
+		{
+			++OccupiedCount;
+		}
+	}
+
+	return OccupiedCount;
+}
+
 ABeehiveCombActor* ABeehive::GetLiftedCombActor() const
 {
 	const int32 LiftedSlotIndex = CombLiftComponent ? CombLiftComponent->GetLiftedCombSlotIndex() : INDEX_NONE;
@@ -434,8 +468,8 @@ ABeehiveCombActor* ABeehive::GetLiftedCombActor() const
 		return nullptr;
 	}
 
-	const UChildActorComponent* Slot = GetCombSlotComponentByIndex(LiftedSlotIndex);
-	return Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+	const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(LiftedSlotIndex);
+	return SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 }
 
 bool ABeehive::GetCombSlotWorldTransformByIndex(int32 Index, FTransform& OutTransform) const
@@ -472,40 +506,23 @@ bool ABeehive::BuildCombSlotRestRelativeTransform(int32 Index, FTransform& OutTr
 	return true;
 }
 
-void ABeehive::IncreaseCurrentCombCountForTest()
-{
-	SetCurrentCombCountForTest(CurrentCombCount + 1);
-}
-
-void ABeehive::DecreaseCurrentCombCountForTest()
-{
-	SetCurrentCombCountForTest(CurrentCombCount - 1);
-}
-
-void ABeehive::SetCurrentCombCountForTest(int32 NewCount)
-{
-	CurrentCombCount = NewCount;
-	ClampCurrentCombCount();
-	bCombCountInitialized = true;
-	RefreshCombLayoutAndParameters();
-}
-
 int32 ABeehive::CalculateCombSpawnAmount() const
 {
-	if (CurrentCombCount <= 0)
+	const int32 OccupiedCombCount = GetOccupiedCombCount();
+	if (OccupiedCombCount <= 0)
 	{
 		return 0;
 	}
 
 	const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
 	const float SpawnRatio = FMath::Clamp(CombSpawnAmountRatio, 0.0f, 1.0f);
-	const float RawSpawnAmount = static_cast<float>(SafeBeeCount) * SpawnRatio / static_cast<float>(CurrentCombCount);
+	const float RawSpawnAmount = static_cast<float>(SafeBeeCount) * SpawnRatio / static_cast<float>(OccupiedCombCount);
 	return FMath::Max(0, FMath::RoundToInt(RawSpawnAmount));
 }
 
 void ABeehive::ReduceAllCombTargetBeeCountsByConfiguredRatio()
 {
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
 		ReduceCombTargetBeeCountByConfiguredRatio(Index);
 	}
@@ -513,18 +530,8 @@ void ABeehive::ReduceAllCombTargetBeeCountsByConfiguredRatio()
 
 void ABeehive::ReduceCombTargetBeeCountByConfiguredRatio(int32 CombIndex)
 {
-	if (!CombSlotComponents.IsValidIndex(CombIndex))
-	{
-		return;
-	}
-
-	UChildActorComponent* Slot = CombSlotComponents[CombIndex];
-	if (!Slot)
-	{
-		return;
-	}
-
-	ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Slot->GetChildActor());
+	ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(CombIndex);
+	ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 	if (!CombActor)
 	{
 		return;
@@ -666,17 +673,26 @@ void ABeehive::RefreshCombLayoutAndParameters()
 		return;
 	}
 
-	MaxCombCount = FMath::Max(0, MaxCombCount);
-	if (!bCombCountInitialized)
-	{
-		CurrentCombCount = MaxCombCount;
-		bCombCountInitialized = true;
-	}
-	ClampCurrentCombCount();
+	ClampCombAuthoringCounts();
 	RefreshCombSlotComponents();
 	RefreshCombSlotTransforms();
+	RefreshCurrentCombCountFromSlots();
 	RefreshCombSpawnAmounts(false);
 	RebuildCursorPartFocusDescriptors();
+}
+
+void ABeehive::ApplyInitialCombSetupForBeginPlay()
+{
+	if (IsTemplate())
+	{
+		return;
+	}
+
+	ApplyInitialCombCountToSlots();
+	RefreshCurrentCombCountFromSlots();
+	RefreshCombSpawnAmounts(false);
+	RebuildCursorPartFocusDescriptors();
+	RebuildItemUseAreaDescriptorsIfAvailable();
 }
 
 void ABeehive::RefreshCombSlotComponents()
@@ -795,7 +811,7 @@ void ABeehive::RefreshCombSlotComponents()
 		}
 	}
 
-	const TSubclassOf<AActor> ActiveCombClass = CombActorClass ? TSubclassOf<AActor>(CombActorClass) : TSubclassOf<AActor>(ABeehiveCombActor::StaticClass());
+	const TSubclassOf<AActor> ActiveSlotClass = CombSlotActorClass ? TSubclassOf<AActor>(CombSlotActorClass) : TSubclassOf<AActor>(ABeehiveCombSlotActor::StaticClass());
 	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
 		UChildActorComponent* Slot = CombSlotComponents[Index];
@@ -804,11 +820,9 @@ void ABeehive::RefreshCombSlotComponents()
 			continue;
 		}
 
-		const bool bShouldBeActive = Index < CurrentCombCount;
-		const TSubclassOf<AActor> DesiredClass = (bShouldBeActive ? ActiveCombClass : TSubclassOf<AActor>(nullptr));
-		if (Slot->GetChildActorClass() != DesiredClass)
+		if (Slot->GetChildActorClass() != ActiveSlotClass)
 		{
-			Slot->SetChildActorClass(DesiredClass);
+			Slot->SetChildActorClass(ActiveSlotClass);
 		}
 	}
 }
@@ -858,6 +872,27 @@ AQueenBeeActor* ABeehive::GetQueenBeeActor() const
 	return QueenBeeChildActor ? Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()) : nullptr;
 }
 
+bool ABeehive::IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) const
+{
+	if (!CombActor || !QueenBeeChildActor)
+	{
+		return false;
+	}
+
+	const USceneComponent* AttachParent = QueenBeeChildActor->GetAttachParent();
+	if (!AttachParent)
+	{
+		return false;
+	}
+
+	if (AttachParent == CombActor->GetQueenFrontAttachPoint() || AttachParent == CombActor->GetQueenBackAttachPoint())
+	{
+		return true;
+	}
+
+	return AttachParent->GetOwner() == CombActor;
+}
+
 bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const
 {
 	OutSlotIndex = INDEX_NONE;
@@ -873,15 +908,15 @@ bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const
 	TArray<FWeightedSlot> WeightedSlots;
 	float TotalWeight = 0.0f;
 
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
-		if (Index == LiftedSlotIndex || !CombSlotComponents.IsValidIndex(Index))
+		if (Index == LiftedSlotIndex)
 		{
 			continue;
 		}
 
-		const UChildActorComponent* Slot = CombSlotComponents[Index];
-		const ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+		const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		const ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 		if (!CombActor)
 		{
 			continue;
@@ -926,13 +961,14 @@ bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const
 
 float ABeehive::CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const
 {
-	if (CurrentCombCount <= 0)
+	const int32 SlotCount = CombSlotComponents.Num();
+	if (SlotCount <= 0)
 	{
 		return 0.0f;
 	}
 
-	const float Center = static_cast<float>(CurrentCombCount - 1) * 0.5f;
-	const float MaxDistance = FMath::Max(Center, static_cast<float>(CurrentCombCount - 1) - Center);
+	const float Center = static_cast<float>(SlotCount - 1) * 0.5f;
+	const float MaxDistance = FMath::Max(Center, static_cast<float>(SlotCount - 1) - Center);
 	const float Distance = FMath::Abs(static_cast<float>(SlotIndex) - Center);
 	const float Distance01 = MaxDistance > KINDA_SMALL_NUMBER ? Distance / MaxDistance : 0.0f;
 	const float CenterFactor = 1.0f - FMath::Clamp(Distance01, 0.0f, 1.0f);
@@ -941,34 +977,24 @@ float ABeehive::CalculateQueenBeeCombSlotWeight(int32 SlotIndex) const
 
 USceneComponent* ABeehive::ResolveQueenBeeAttachPoint(int32 SlotIndex, bool bFrontFace) const
 {
-	if (!CombSlotComponents.IsValidIndex(SlotIndex))
-	{
-		return nullptr;
-	}
-
-	const UChildActorComponent* Slot = CombSlotComponents[SlotIndex];
-	const ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+	const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(SlotIndex);
+	const ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 	return CombActor ? CombActor->GetQueenAttachPoint(bFrontFace) : nullptr;
 }
 
 void ABeehive::DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease)
 {
-	if (TotalHoneyIncrease <= 0.0f || CurrentCombCount <= 0)
+	if (TotalHoneyIncrease <= 0.0f)
 	{
 		return;
 	}
 
 	TArray<ABeehiveCombActor*> ActiveCombs;
-	ActiveCombs.Reserve(CurrentCombCount);
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	ActiveCombs.Reserve(CombSlotComponents.Num());
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
-		if (!CombSlotComponents.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		UChildActorComponent* Slot = CombSlotComponents[Index];
-		ABeehiveCombActor* CombActor = Slot ? Cast<ABeehiveCombActor>(Slot->GetChildActor()) : nullptr;
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 		if (CombActor)
 		{
 			ActiveCombs.Add(CombActor);
@@ -1006,6 +1032,34 @@ void ABeehive::DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease)
 	}
 }
 
+void ABeehive::ApplyInitialCombCountToSlots()
+{
+	const TSubclassOf<AActor> DesiredCombClass = CombActorClass ? TSubclassOf<AActor>(CombActorClass) : TSubclassOf<AActor>(ABeehiveCombActor::StaticClass());
+
+	const int32 TargetCount = FMath::Clamp(InitialCombCount, 0, CombSlotComponents.Num());
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		if (!SlotActor)
+		{
+			continue;
+		}
+
+		ABeehiveCombActor* PlacedComb = SlotActor->GetPlacedCombActor();
+		if (Index < TargetCount)
+		{
+			if (!PlacedComb)
+			{
+				IItemPlacementSlot::Execute_TryPlaceItem(SlotActor, DesiredCombClass, nullptr, nullptr);
+			}
+		}
+		else if (PlacedComb)
+		{
+			IItemPlacementSlot::Execute_ClearPlacedItem(SlotActor);
+		}
+	}
+}
+
 void ABeehive::RefreshCombSlotTransforms()
 {
 	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
@@ -1030,25 +1084,15 @@ void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb)
 {
 	const int32 SpawnAmount = CalculateCombSpawnAmount();
 	const int32 LiftedSlotIndex = (bSkipLiftedComb && CombLiftComponent) ? CombLiftComponent->GetLiftedCombSlotIndex() : INDEX_NONE;
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
 		if (Index == LiftedSlotIndex)
 		{
 			continue;
 		}
 
-		if (!CombSlotComponents.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		UChildActorComponent* Slot = CombSlotComponents[Index];
-		if (!Slot)
-		{
-			continue;
-		}
-
-		ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Slot->GetChildActor());
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 		if (!CombActor)
 		{
 			continue;
@@ -1058,9 +1102,16 @@ void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb)
 	}
 }
 
-void ABeehive::ClampCurrentCombCount()
+void ABeehive::ClampCombAuthoringCounts()
 {
-	CurrentCombCount = FMath::Clamp(CurrentCombCount, 0, MaxCombCount);
+	MaxCombCount = FMath::Max(0, MaxCombCount);
+	InitialCombCount = FMath::Clamp(InitialCombCount, 0, MaxCombCount);
+	RefreshCurrentCombCountFromSlots();
+}
+
+void ABeehive::RefreshCurrentCombCountFromSlots()
+{
+	CurrentCombCount = GetOccupiedCombCount();
 }
 
 void ABeehive::RegisterCombPartsToScope()
@@ -1070,20 +1121,10 @@ void ABeehive::RegisterCombPartsToScope()
 		return;
 	}
 
-	for (int32 Index = 0; Index < CurrentCombCount; ++Index)
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
 	{
-		if (!CombSlotComponents.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		UChildActorComponent* Slot = CombSlotComponents[Index];
-		if (!Slot)
-		{
-			continue;
-		}
-
-		ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Slot->GetChildActor());
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
 		if (!CombActor)
 		{
 			continue;
@@ -1241,5 +1282,27 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
 	RebuildCursorPartFocusDescriptors();
+}
+
+bool ABeehive::CanEditChange(const FProperty* InProperty) const
+{
+	if (!Super::CanEditChange(InProperty))
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	const bool bIsGameWorld = World && World->IsGameWorld();
+	if (!bIsGameWorld || !InProperty)
+	{
+		return true;
+	}
+
+	const FName PropertyName = InProperty->GetFName();
+	return PropertyName != GET_MEMBER_NAME_CHECKED(ABeehive, InitialCombCount)
+		&& PropertyName != GET_MEMBER_NAME_CHECKED(ABeehive, MaxCombCount)
+		&& PropertyName != GET_MEMBER_NAME_CHECKED(ABeehive, CombActorClass)
+		&& PropertyName != GET_MEMBER_NAME_CHECKED(ABeehive, CombSlotActorClass)
+		&& PropertyName != GET_MEMBER_NAME_CHECKED(ABeehive, CombSlotSpacing);
 }
 #endif

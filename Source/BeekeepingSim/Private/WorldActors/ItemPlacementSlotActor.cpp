@@ -1,10 +1,15 @@
 #include "WorldActors/ItemPlacementSlotActor.h"
 
 #include "Character/BeekeeperCharacter.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
+#include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/CursorItemUseAreaScopeComponent.h"
 #include "Focus/ItemUseAreaMeshComponent.h"
+#include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
+#include "WorldActors/PlacementOccupantComponent.h"
+#include "WorldActors/PlacementSlotRetrievePartFocusActionComponent.h"
 #include "WorldActors/PlacedItemActor.h"
 
 AItemPlacementSlotActor::AItemPlacementSlotActor()
@@ -35,6 +40,7 @@ void AItemPlacementSlotActor::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplySlotAuthoringSettings();
+	TryClaimInitialOccupantActor();
 	RefreshSlotVisualState();
 }
 
@@ -48,27 +54,28 @@ void AItemPlacementSlotActor::GetCursorPartFocusDescriptors_Implementation(TArra
 		return;
 	}
 
-	APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(PlacedActor);
-	if (!PlacedItemActor)
+	if (!PlacedActor)
 	{
 		return;
 	}
 
-	UPrimitiveComponent* HitComponent = PlacedItemActor->GetPartFocusHitComponent();
+	UPrimitiveComponent* HitComponent = ResolveOccupiedPartFocusHitComponent(PlacedActor);
 	if (!HitComponent)
 	{
 		return;
 	}
 
+	UCursorPartFocusActionComponent* ActionComponent = ResolveOccupiedPartFocusActionComponent(PlacedActor);
+
 	FCursorPartFocusPartDescriptor Descriptor;
 	Descriptor.PartId = FName(*FString::Printf(TEXT("PlacedItem.%s"), *GetName()));
-	Descriptor.OwnerActor = PlacedItemActor;
+	Descriptor.OwnerActor = PlacedActor;
 	Descriptor.HitComponent = HitComponent;
 	Descriptor.OutlineComponents.Add(HitComponent);
-	Descriptor.ActionHandler = PlacedItemActor->GetPartFocusActionComponent();
-	Descriptor.EngageMode = Descriptor.ActionHandler ? Descriptor.ActionHandler->GetEngageMode() : ECursorPartFocusEngageMode::PreviewOnly;
+	Descriptor.ActionHandler = ActionComponent;
+	Descriptor.EngageMode = ActionComponent ? ActionComponent->GetEngageMode() : ECursorPartFocusEngageMode::PreviewOnly;
 	Descriptor.PromptData.bIsValid = true;
-	Descriptor.PromptData.DisplayName = PlacedItemActor->GetPlacedItemDisplayName();
+	Descriptor.PromptData.DisplayName = ResolveOccupiedPartDisplayName(PlacedActor);
 	Descriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("RMB"));
 	OutDescriptors.Add(MoveTemp(Descriptor));
 }
@@ -87,7 +94,6 @@ bool AItemPlacementSlotActor::IsItemUseAreaMeshActive_Implementation(UItemUseAre
 
 bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> PlacedActorClass, UItemInstance* SourceItemInstance, ABeekeeperCharacter* InteractingCharacter)
 {
-	(void)SourceItemInstance;
 	(void)InteractingCharacter;
 
 	if (SanitizeAndCheckOccupied() || !PlacedActorClass || !AttachComponent)
@@ -111,6 +117,12 @@ bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> Pl
 		return false;
 	}
 
+	if (!CanAcceptOccupantActor(SpawnedActor))
+	{
+		SpawnedActor->Destroy();
+		return false;
+	}
+
 	const bool bAttached = SpawnedActor->AttachToComponent(AttachComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocketName);
 	if (!bAttached)
 	{
@@ -122,6 +134,20 @@ bool AItemPlacementSlotActor::TryPlaceItem_Implementation(TSubclassOf<AActor> Pl
 	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(SpawnedActor))
 	{
 		PlacedItemActor->InitializePlacedItem(SourceItemInstance, this);
+	}
+	else if (UPlacementOccupantComponent* Occupant = SpawnedActor->FindComponentByClass<UPlacementOccupantComponent>())
+	{
+		Occupant->InitializeFromPlacement(SourceItemInstance, this);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s rejected placed actor '%s': missing UPlacementOccupantComponent."), *GetName(), *SpawnedActor->GetName());
+		SpawnedActor->Destroy();
+		PlacedActor = nullptr;
+		RefreshSlotVisualState();
+		RequestHostPartFocusRebuild();
+		RequestHostItemUseAreaRebuild();
+		return false;
 	}
 
 	RefreshSlotVisualState();
@@ -139,6 +165,11 @@ void AItemPlacementSlotActor::ClearPlacedItem_Implementation()
 {
 	if (AActor* ExistingPlacedActor = PlacedActor.Get())
 	{
+		if (UPlacementOccupantComponent* Occupant = ExistingPlacedActor->FindComponentByClass<UPlacementOccupantComponent>())
+		{
+			Occupant->PreClearPlacementOccupant();
+		}
+
 		ExistingPlacedActor->Destroy();
 	}
 
@@ -146,6 +177,34 @@ void AItemPlacementSlotActor::ClearPlacedItem_Implementation()
 	RefreshSlotVisualState();
 	RequestHostPartFocusRebuild();
 	RequestHostItemUseAreaRebuild();
+}
+
+void AItemPlacementSlotActor::GetProvidedItemUseAreaMeshes(TArray<UItemUseAreaMeshComponent*>& OutMeshes) const
+{
+	if (!SanitizeAndCheckOccupied())
+	{
+		return;
+	}
+
+	AActor* OccupiedActor = PlacedActor.Get();
+	if (!OccupiedActor)
+	{
+		return;
+	}
+
+	TInlineComponentArray<UItemUseAreaMeshComponent*> OccupiedUseAreaMeshes(OccupiedActor);
+	for (UItemUseAreaMeshComponent* ItemUseAreaMesh : OccupiedUseAreaMeshes)
+	{
+		if (ItemUseAreaMesh)
+		{
+			OutMeshes.Add(ItemUseAreaMesh);
+		}
+	}
+}
+
+bool AItemPlacementSlotActor::CanAcceptOccupantActor(AActor* CandidateActor) const
+{
+	return CandidateActor && CandidateActor->FindComponentByClass<UPlacementOccupantComponent>() != nullptr;
 }
 
 void AItemPlacementSlotActor::RequestHostPartFocusRebuild() const
@@ -217,6 +276,104 @@ bool AItemPlacementSlotActor::SanitizeAndCheckOccupied() const
 	}
 
 	return true;
+}
+
+void AItemPlacementSlotActor::TryClaimInitialOccupantActor()
+{
+	if (SanitizeAndCheckOccupied() || !InitialOccupantActor)
+	{
+		return;
+	}
+
+	AActor* CandidateActor = InitialOccupantActor.Get();
+	if (!IsValid(CandidateActor) || !CanAcceptOccupantActor(CandidateActor))
+	{
+		return;
+	}
+
+	UPlacementOccupantComponent* Occupant = CandidateActor->FindComponentByClass<UPlacementOccupantComponent>();
+	if (!Occupant)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s cannot claim InitialOccupantActor '%s': missing UPlacementOccupantComponent."), *GetName(), *CandidateActor->GetName());
+		return;
+	}
+
+	PlacedActor = CandidateActor;
+	Occupant->SetOwningPlacementSlotActor(this);
+
+	if (bAttachInitialOccupantToSlot && AttachComponent)
+	{
+		const FAttachmentTransformRules AttachRules = bSnapInitialOccupantToAttachPoint
+			? FAttachmentTransformRules::SnapToTargetNotIncludingScale
+			: FAttachmentTransformRules::KeepWorldTransform;
+		CandidateActor->AttachToComponent(AttachComponent, AttachRules, AttachSocketName);
+	}
+
+	RequestHostPartFocusRebuild();
+	RequestHostItemUseAreaRebuild();
+}
+
+UPrimitiveComponent* AItemPlacementSlotActor::ResolveOccupiedPartFocusHitComponent(AActor* OccupiedActor) const
+{
+	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(OccupiedActor))
+	{
+		return PlacedItemActor->GetPartFocusHitComponent();
+	}
+
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	OccupiedActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (PrimitiveComponent && PrimitiveComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+		{
+			return PrimitiveComponent;
+		}
+	}
+
+	return nullptr;
+}
+
+UCursorPartFocusActionComponent* AItemPlacementSlotActor::ResolveOccupiedPartFocusActionComponent(AActor* OccupiedActor) const
+{
+	if (!OccupiedActor)
+	{
+		return nullptr;
+	}
+
+	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(OccupiedActor))
+	{
+		return PlacedItemActor->GetPartFocusActionComponent();
+	}
+
+	if (UPlacementSlotRetrievePartFocusActionComponent* RetrieveAction = OccupiedActor->FindComponentByClass<UPlacementSlotRetrievePartFocusActionComponent>())
+	{
+		return RetrieveAction;
+	}
+
+	return nullptr;
+}
+
+FText AItemPlacementSlotActor::ResolveOccupiedPartDisplayName(AActor* OccupiedActor) const
+{
+	if (!OccupiedActor)
+	{
+		return FText::GetEmpty();
+	}
+
+	if (UPlacementOccupantComponent* Occupant = OccupiedActor->FindComponentByClass<UPlacementOccupantComponent>())
+	{
+		if (const UItemDefinition* ReturnDefinition = Occupant->GetReturnItemDefinition())
+		{
+			return ReturnDefinition->DisplayName;
+		}
+	}
+
+	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(OccupiedActor))
+	{
+		return PlacedItemActor->GetPlacedItemDisplayName();
+	}
+
+	return FText::FromString(OccupiedActor->GetName());
 }
 
 UStaticMesh* AItemPlacementSlotActor::ResolveClassDefaultSlotMesh() const

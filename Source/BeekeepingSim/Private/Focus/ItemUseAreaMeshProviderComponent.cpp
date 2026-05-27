@@ -3,6 +3,7 @@
 #include "Components/ChildActorComponent.h"
 #include "Focus/ItemUseAreaActivationProvider.h"
 #include "Focus/ItemUseAreaMeshComponent.h"
+#include "Focus/ItemUseAreaMeshSource.h"
 
 void UItemUseAreaMeshProviderComponent::BuildItemUseAreaDescriptors(TArray<FItemUseAreaDescriptor>& OutDescriptors) const
 {
@@ -85,6 +86,15 @@ void UItemUseAreaMeshProviderComponent::BuildItemUseAreaDescriptors(TArray<FItem
 		{
 			BuildDescriptorFromComponent(ItemUseAreaMesh);
 		}
+
+		if (const IItemUseAreaMeshSource* MeshSource = Cast<IItemUseAreaMeshSource>(ChildActor))
+		{
+			TArray<UItemUseAreaMeshComponent*> ProvidedUseAreaMeshes;
+			MeshSource->GetProvidedItemUseAreaMeshes(ProvidedUseAreaMeshes);
+			for (UItemUseAreaMeshComponent* ItemUseAreaMesh : ProvidedUseAreaMeshes)
+			{
+				BuildDescriptorFromComponent(ItemUseAreaMesh);
+			}
+		}
 	}
 }
-

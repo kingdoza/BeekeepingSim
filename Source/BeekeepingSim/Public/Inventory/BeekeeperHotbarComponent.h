@@ -50,6 +50,12 @@ struct FHotbarItemAcquireResult
 	int32 RemainingQuantity = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	int32 LastModifiedSlotIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	TObjectPtr<UItemInstance> LastModifiedItemInstance = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
 	FText Message;
 };
 

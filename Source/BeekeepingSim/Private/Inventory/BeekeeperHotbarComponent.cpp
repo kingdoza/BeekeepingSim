@@ -215,8 +215,9 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 	const int32 MaxStack = ItemStackMoveUtils::ResolveMaxStack(ItemDefinition);
 	bool bHotbarChanged = false;
 
-	for (FHotbarSlotData& Slot : Slots)
+	for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
 	{
+		FHotbarSlotData& Slot = Slots[SlotIndex];
 		UItemInstance* ExistingItemInstance = Cast<UItemInstance>(Slot.ItemInstance);
 		if (!ItemStackMoveUtils::HasMatchingDefinition(ExistingItemInstance, ItemDefinition))
 		{
@@ -231,6 +232,8 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 
 		Result.AddedQuantity += QuantityToAdd;
 		Result.RemainingQuantity -= QuantityToAdd;
+		Result.LastModifiedSlotIndex = SlotIndex;
+		Result.LastModifiedItemInstance = ExistingItemInstance;
 		bHotbarChanged = true;
 
 		if (Result.RemainingQuantity <= 0)
@@ -258,6 +261,8 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 		Slots[EmptySlotIndex].ItemInstance = NewItemInstance;
 		Result.AddedQuantity += StackQuantity;
 		Result.RemainingQuantity -= StackQuantity;
+		Result.LastModifiedSlotIndex = EmptySlotIndex;
+		Result.LastModifiedItemInstance = NewItemInstance;
 		bHotbarChanged = true;
 	}
 

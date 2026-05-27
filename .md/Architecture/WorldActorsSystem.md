@@ -30,6 +30,14 @@
 - `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlot.h`
 - `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacementOccupantComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacementOccupantComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacementSlotRetrievePartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacementSlotRetrievePartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombSlotActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombSlotActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPlacementOccupantComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPlacementOccupantComponent.cpp`
 
 ## Responsibilities
 
@@ -54,13 +62,17 @@
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
 - `AStorageBox`: storage inventory와 storage UI interaction을 가진 actor
 - `IItemPlacementSlot`: item placement action이 concrete actor를 몰라도 배치를 요청할 수 있는 슬롯 계약
-- `AItemPlacementSlotActor`: `IItemUseAreaActivationProvider` + `IItemPlacementSlot` + `ICursorPartFocusProvider`를 구현하는 generic 배치 슬롯 actor
+- `AItemPlacementSlotActor`: `IItemUseAreaActivationProvider` + `IItemPlacementSlot` + `ICursorPartFocusProvider` + `IItemUseAreaMeshSource`를 구현하는 generic 배치 슬롯 actor
   - 구성: `Root`, `SlotMeshComponent`, `AttachComponent`
   - `SlotMeshComponent`는 `UItemUseAreaMeshComponent` 기반 hit + visual component다.
   - `SlotMeshAsset`으로 슬롯 인스턴스별 영역 mesh를 지정할 수 있다.
   - `SlotMeshMaterial`로 슬롯 인스턴스별 item-use-area 표시 material을 지정할 수 있다.
   - `SlotMeshRelativeTransform`으로 hit/visual mesh의 local transform을 조정한다.
   - `AttachRelativeTransform`으로 placed actor attach point의 local transform을 조정한다.
+- `UPlacementOccupantComponent`: 배치 점유 actor의 회수 정보(return item definition, owning slot)와 회수 가능 조건 hook을 제공한다.
+- `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 generic 회수(`TryAcquireItem + ClearPlacedItem`)를 수행한다.
+- `ABeehiveCombSlotActor`: comb 전용 `AItemPlacementSlotActor` subclass. comb class 검증, beehive refresh 요청, comb slot 정책을 캡슐화한다.
+- `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TargetBeeCount`, queen attach)을 구현하는 occupant subclass다.
 - `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
 
 ## Composition
@@ -101,9 +113,11 @@
   - `HalfSpan = (MaxCombCount - 1) * 0.5 * CombSlotSpacing`
   - `SlotY = -HalfSpan + (i * CombSlotSpacing)`
   - 전체 slot 배열 중심은 `CombRackRoot` origin
-- `CurrentCombCount` 정책: `MaxCombCount` 변경 시 강제 초기화 없이 `0..MaxCombCount` clamp만 수행
-- `CurrentCombCount <= 0`이면 활성 comb actor가 없고 comb spawn amount는 0
-- comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / CurrentCombCount)`
+- `InitialCombCount`는 에디터 authoring 값이며 `0..MaxCombCount`로 clamp된다.
+- `CurrentCombCount`는 외부 setter가 없는 내부 캐시이며, 실제 slot occupancy(`GetPlacedCombActor()`) 기준으로 갱신된다.
+- PIE/game world에서는 `InitialCombCount`, `MaxCombCount`, `CombActorClass`, `CombSlotActorClass`, `CombSlotSpacing` details 편집을 차단한다.
+- occupied comb 수가 0이면 comb spawn amount는 0이다.
+- comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / OccupiedCombCount)`
 - `SetColonyBeeCount` 포함 spawn amount 갱신 경로에서 active comb의 target bee count를 spawn amount로 리셋
 - `ApplyColonyPopulationUpdate()` 경로에서는 lifted comb slot을 제외한 active comb에만 spawn/target 갱신을 적용
 - `ApplyHoneyProductionUpdate()` 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량을 적용
@@ -344,5 +358,40 @@
 - `AItemPlacementSlotActor::SlotMeshComponent`
   - 타입: `UItemUseAreaMeshComponent`
   - active 조건: slot empty일 때만 true
+  - occupied actor의 `UItemUseAreaMeshComponent`는 `IItemUseAreaMeshSource` 경로로 host provider에 노출한다.
   - place/clear 이후 host `UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()`를 호출해 즉시 반영
 - `EffectTargetObject`는 각 use-area mesh의 `EffectTargetPolicy`로 결정한다.
+
+## Update 2026-05-28 (Generic Placement Occupant + Beehive Comb Slot)
+
+- 새 generic placement 타입:
+  - `UPlacementOccupantComponent`
+    - `RuntimeReturnItemDefinition`, `AuthoredReturnItemDefinition`, `OwningPlacementSlotActor`
+    - `CanRetrievePlacementOccupant`, `PreClearPlacementOccupant`, BP native hook
+  - `UPlacementSlotRetrievePartFocusActionComponent`
+    - hovered PartFocus secondary 입력에서 회수 수행
+    - 성공 조건: `TryAcquireItem(...)`의 `bSuccess && AddedQuantity == 1`
+    - 성공 시 owning slot `ClearPlacedItem` 실행
+- `AItemPlacementSlotActor` 확장:
+  - `InitialOccupantActor` preplaced claim 지원 (BeginPlay)
+  - `bAttachInitialOccupantToSlot`, `bSnapInitialOccupantToAttachPoint` 옵션 추가
+  - spawned/preplaced actor가 `UPlacementOccupantComponent`를 가지면 slot ownership 주입
+  - occupied actor의 `UItemUseAreaMeshComponent`를 provider source로 노출
+  - clear 시 occupant `PreClearPlacementOccupant` 호출 후 destroy
+- `APlacedItemActor` migration:
+  - 기본 구성: `UPlacementOccupantComponent` + `UPlacementSlotRetrievePartFocusActionComponent`
+  - 기존 `InitializePlacedItem`, getter API는 deprecated wrapper 성격으로 유지
+  - `UPlacedItemRetrievePartFocusActionComponent`는 generic component wrapper로 축소
+- 벌통 소비장 slot 구조:
+  - `ABeehiveCombSlotActor : AItemPlacementSlotActor`
+  - comb actor class 검증 후 배치 허용
+  - place/clear/BeginPlay 이후 owning `ABeehive`에 `RefreshCombStateFromSlots()` 요청
+  - comb slot은 occupied descriptor를 직접 등록하지 않고, comb part action의 secondary bridge를 사용
+- 벌통 comb 관리 전환:
+  - `ABeehive`는 `CombSlotActorClass`(기본 `ABeehiveCombSlotActor`)를 통해 slot child actor를 유지
+  - BeginPlay에서만 `InitialCombCount`만큼 초기 comb를 slot에 배치
+  - active comb는 slot의 `GetPlacedCombActor()`로 조회
+  - honey/colony/queen/lift 관련 comb 순회는 placed comb 기준으로 동작
+- 소비장 회수 조건:
+  - `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
+  - `TargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능
