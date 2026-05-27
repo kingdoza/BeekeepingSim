@@ -12,7 +12,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="" />
+    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/QNA_ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultGameplayTags.ini" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -47,7 +51,9 @@
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveLidPartFocusActionComponent.cpp" root0="SKIP_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PollenPattyActor.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PollenPattyActor.h" root0="FORCE_HIGHLIGHTING" />
   </component>
   <component name="McpProjectServerCommands">
@@ -240,7 +246,8 @@
       <workItem from="1779574373656" duration="6253000" />
       <workItem from="1779641175504" duration="11274000" />
       <workItem from="1779818036235" duration="4224000" />
-      <workItem from="1779837234681" duration="6721000" />
+      <workItem from="1779837234681" duration="7335000" />
+      <workItem from="1779905065349" duration="2573000" />
     </task>
     <servers />
   </component>

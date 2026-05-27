@@ -149,3 +149,126 @@
 - 권장 옵션:
   - 옵션 A
 - 답변 : 옵션A
+
+### [벌통 소비장 슬롯 배치/회수 설계 QnA]
+
+1. 소비장 회수 시 내부 상태 보존 정책
+- 질문 내용
+  - 소비장 슬롯에서 배치된 소비장을 화분떡처럼 회수할 때, `ABeehiveCombActor`의 꿀 양, visible face, target bee count 같은 runtime 상태를 아이템으로 보존할지 결정한다.
+- 필요한 이유
+  - 현재 `UItemInstance`는 definition/stack/durability 중심이며 소비장 actor의 도메인 상태를 일반적으로 직렬화하는 계약이 없다.
+  - 상태를 버리고 회수하면 꿀/벌 상태 손실이 생기고, 상태를 보존하려면 item instance 상태 확장 또는 별도 comb item state 계약이 필요하다.
+- 선택지
+  - 옵션 A: 1차 구현에서는 빈/idle 소비장만 회수 허용하고, 꿀/특수 상태가 있는 소비장은 회수 차단한다.
+  - 옵션 B: 회수 시 소비장 상태를 버리고 기본 소비장 item 1개만 hotbar에 반환한다.
+  - 옵션 C: `UItemInstance` 또는 comb 전용 item state를 확장해 소비장 상태를 보존한다.
+- 권장 옵션:
+  - 옵션 A
+- 답변 : 꿀양과 visible face만 보존하고 target bee count(여왕벌 포함) 가 0이 아니면 회수 불가능
+
+2. 초기 배치 소비장의 회수 item definition
+- 질문 내용
+  - 벌통이 `CurrentCombCount`/기본 배치로 생성한 초기 소비장을 회수할 때 어떤 item definition을 hotbar에 반환할지 결정한다.
+- 필요한 이유
+  - 화분떡처럼 아이템으로 배치된 소비장은 source item definition을 저장하면 되지만, 기존 벌통이 자동 생성한 소비장은 source item instance가 없다.
+  - 회수 성공 판정은 `TryAcquireItem(ItemDefinition, 1)`이므로 반환할 definition이 필요하다.
+- 선택지
+  - 옵션 A: `ABeehive`에 `DefaultCombItemDefinition`을 추가하고 초기 소비장 슬롯은 이 definition을 저장한다.
+  - 옵션 B: source item definition이 없는 초기 소비장은 회수 불가로 둔다.
+  - 옵션 C: 초기 소비장 자동 생성 기능을 제거하고 모든 소비장은 아이템 배치로만 생성한다.
+- 권장 옵션:
+  - 옵션 C
+- 답변:
+  - `ABeehive::DefaultCombItemDefinition`은 추가하지 않는다.
+  - 아이템 사용으로 배치된 소비장은 배치 시점의 source item instance에서 반환 `ItemDefinition`을 주입받는다.
+  - 이미 월드에 배치된 소비장은 actor/component 인스턴스에 명시된 authored fallback `ItemDefinition`을 사용할 수 있다.
+  - source item 주입값과 authored fallback이 모두 없으면 회수 불가로 본다.
+
+### [Generic Placement Occupant/Retrieve 설계 QnA]
+
+1. 배치 점유자 계약 형태
+- 질문 내용
+  - 배치된 actor가 반환 item definition, owning slot, 회수 가능 여부를 제공하는 계약을 interface로 둘지 component로 둘지 결정한다.
+- 필요한 이유
+  - interface는 가볍지만 actor class마다 구현이 필요하다.
+  - component는 소비장, 화분떡, 향후 preplaced world item에 공통 부착할 수 있어 generic authoring에 유리하다.
+- 선택지
+  - 옵션 A: `UPlacementOccupantComponent`를 추가하고, 회수 정보/초기화/authoring fallback을 component가 소유한다.
+  - 옵션 B: `IPlacementSlotOccupant` interface를 추가하고, 각 actor가 직접 구현한다.
+  - 옵션 C: component와 interface를 모두 두되, retrieve action은 component를 우선 조회하고 interface는 compatibility fallback으로 둔다.
+- 권장 옵션:
+  - 옵션 A
+- 답변 : 옵션A
+
+2. 이미 월드에 배치된 점유 actor와 slot 연결 방식
+- 질문 내용
+  - item placement 경로로 spawn되지 않고 레벨/BP에 미리 배치된 actor를 어떤 방식으로 slot의 occupied actor로 등록할지 결정한다.
+- 필요한 이유
+  - 회수 성공 시 `IItemPlacementSlot::ClearPlacedItem`을 호출하려면 occupant가 owning slot을 알아야 한다.
+  - preplaced actor는 `TryPlaceItem`을 거치지 않으므로 runtime source item/slot 주입이 자동으로 발생하지 않는다.
+- 선택지
+  - 옵션 A: slot actor에 `InitialOccupantActor`를 `EditInstanceOnly`로 노출하고 BeginPlay/OnConstruction에서 점유자로 claim한다.
+  - 옵션 B: slot actor가 attach된 child/nearby actor를 자동 스캔해 `UPlacementOccupantComponent`가 있는 actor를 claim한다.
+  - 옵션 C: occupant component에 `AuthoredOwningSlotActor`를 노출하고 actor 쪽에서 slot을 지정한다.
+- 권장 옵션:
+  - 옵션 A
+- 답변:
+  - 옵션 A. slot actor가 `InitialOccupantActor`를 `EditInstanceOnly`로 노출하고, BeginPlay/OnConstruction에서 자기 슬롯의 occupied actor로 claim한다.
+  - claim은 새 actor spawn이 아니라 기존 preplaced actor 등록이다.
+  - slot은 `InitialOccupantActor`의 `UPlacementOccupantComponent`에 owning slot을 주입한다.
+  - attach/snap 여부는 slot 설정으로 분리한다. 기본은 slot별 정책에 따르되, 소비장 슬롯은 attach point snap을 허용한다.
+
+3. authored fallback item definition 노출 범위
+- 질문 내용
+  - preplaced occupant의 회수용 fallback `ItemDefinition`을 어디까지 디테일창에 노출할지 결정한다.
+- 필요한 이유
+  - source item으로 배치된 actor는 runtime definition을 사용하지만, preplaced actor는 별도 fallback이 없으면 회수할 수 없다.
+  - class default에 설정하면 모든 BP 인스턴스가 같은 반환 item을 공유하고, instance only로 설정하면 레벨 배치별 명시성이 높아진다.
+- 선택지
+  - 옵션 A: `UPlacementOccupantComponent::AuthoredReturnItemDefinition`을 `EditInstanceOnly`로 노출한다.
+  - 옵션 B: `EditAnywhere`로 노출해 BP class default와 level instance에서 모두 설정 가능하게 한다.
+  - 옵션 C: authored fallback은 두지 않고 source item으로 배치된 actor만 회수 가능하게 한다.
+- 권장 옵션:
+  - 옵션 B
+- 답변 : 옵션B
+
+4. 회수 가능 조건 확장 방식
+- 질문 내용
+  - generic retrieve action이 actor별 회수 차단 조건을 어떻게 확인할지 결정한다.
+- 필요한 이유
+  - 소비장은 target bee count/여왕벌 상태에 따라 회수 차단이 필요하고, 향후 다른 preplaced item도 고유 조건이 생길 수 있다.
+  - retrieve action이 actor class별로 분기하면 generic 경계가 깨진다.
+- 선택지
+  - 옵션 A: `UPlacementOccupantComponent`에 `BlueprintNativeEvent CanRetrievePlacementOccupant(Character)`를 두고 actor/BP별 override를 허용한다.
+  - 옵션 B: actor가 별도 interface를 구현하면 retrieve action이 그 interface를 추가 조회한다.
+  - 옵션 C: slot actor가 모든 회수 가능 조건을 판단한다.
+- 권장 옵션:
+  - 옵션 A
+- 답변 : 옵션A
+
+5. 기존 `APlacedItemActor` migration 방식
+- 질문 내용
+  - 기존 화분떡/placed item actor의 `ItemDefinition`/`OwningPlacementSlotActor` 보관과 retrieve action을 새 generic occupant component 구조로 어떻게 옮길지 결정한다.
+- 필요한 이유
+  - 기존 `UPlacedItemRetrievePartFocusActionComponent`는 `APlacedItemActor` cast에 의존한다.
+  - 새 구조로 전환하면 소비장과 화분떡이 같은 retrieve action을 사용할 수 있지만, 기존 BP/native 계약 변화가 생긴다.
+- 선택지
+  - 옵션 A: `APlacedItemActor`에 `UPlacementOccupantComponent`와 `UPlacementSlotRetrievePartFocusActionComponent`를 붙이고 기존 getter는 deprecated wrapper로 유지한다.
+  - 옵션 B: 기존 `APlacedItemActor` API를 즉시 제거하고 component API만 사용한다.
+  - 옵션 C: 기존 placed item 경로는 유지하고 소비장만 새 component retrieve 경로를 사용한다.
+- 권장 옵션:
+  - 옵션 A
+- 답변 : 옵션A
+
+6. clear 시 occupied actor 처리
+- 질문 내용
+  - `IItemPlacementSlot::ClearPlacedItem`이 generic occupied actor를 제거할 때 destroy만 할지, actor별 cleanup hook을 먼저 호출할지 결정한다.
+- 필요한 이유
+  - 화분떡은 destroy만으로 충분할 수 있지만, 소비장이나 향후 world item은 detach, 상태 저장, 연출 종료 같은 정리가 필요할 수 있다.
+- 선택지
+  - 옵션 A: 기본은 destroy로 유지하되, `UPlacementOccupantComponent::PreClearPlacementOccupant` hook을 먼저 호출한다.
+  - 옵션 B: slot이 항상 destroy만 수행한다.
+  - 옵션 C: occupant component가 clear 방식(`Destroy`, `DetachOnly`, `HideOnly`)을 설정한다.
+- 권장 옵션:
+  - 옵션 A
+- 답변 : 옵션A

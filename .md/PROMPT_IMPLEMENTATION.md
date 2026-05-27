@@ -1,608 +1,525 @@
-# ItemUseAreaMeshComponent 통합 등록 구조 구현 프롬프트
+# Generic Placement Occupant + Beehive Comb Slot 구현 프롬프트
 
 ## 전제
 
-이번 작업은 기존 ItemUseArea 등록 방식을 `UItemUseAreaMeshComponent` 기반으로 통합한다.
+이번 작업은 기존 generic item placement 흐름을 확장해, 화분떡뿐 아니라 소비장 및 향후 preplaced world item도 같은 배치/회수 구조를 사용하게 만든다.
 
-확정 방향:
+핵심 책임 분리:
 
-- 실질 ItemUseArea의 `HitComponent`, `VisualComponents`, material 표시 설정은 `UItemUseAreaMeshComponent`가 담당한다.
-- host actor는 `GetItemUseAreaDescriptors`를 직접 override해서 descriptor를 수동 생성하지 않는다.
-- host actor에 부착된 담당 component가 host 자신 및 직접 child actor 내부의 `UItemUseAreaMeshComponent`를 수집해 descriptor를 만든다.
-- child actor가 `UItemUseAreaMeshComponent`를 가지고 있으면, 상위 host의 담당 component가 child actor를 순회해서 수집한다.
-- 소비장 BeeBrush use area와 placement slot use area는 이 generic 구조의 사례다.
-- 기존 actor-level `IItemUseAreaProvider`/Blueprint override/`ComponentTags=ItemUseArea` 등록 방식은 새 구조로 대체한다.
+- `AItemPlacementSlotActor`: 배치, 점유 판단, empty slot use-area, preplaced occupant claim, clear 담당
+- `UPlacementOccupantComponent`: 점유된 actor의 반환 `ItemDefinition`, owning slot, 회수 가능 조건, clear 전 hook 담당
+- `UPlacementSlotRetrievePartFocusActionComponent`: secondary PartFocus 입력에서 generic 회수 실행 담당
+- `ABeehiveCombSlotActor`: `AItemPlacementSlotActor` 기반 소비장 전용 slot subclass
+- `ABeehiveCombActor`: 기존 소비장 actor/상호작용은 유지하되 placement occupant로 회수 가능하게 확장
+
+구현 중 C++ source는 수정하되, `Content/` asset은 수정/저장하지 않는다. Blueprint 설정이 필요한 내용은 `.md/USER_UNREAL.md`에 작성한다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/CoreSystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
 - `.md/USER_UNREAL.md`
 
-## 설계 결정 반영
+특히 `.md/QNA_ARCHITECTURE.md`의 다음 섹션 답변을 따른다.
 
-`.md/QNA_ARCHITECTURE.md`의 `ItemUseAreaMeshComponent 통합 설계 QnA` 답변을 따른다.
+- `벌통 소비장 슬롯 배치/회수 설계 QnA`
+- `Generic Placement Occupant/Retrieve 설계 QnA`
 
-- `IItemUseAreaProvider` 등록 경로는 `UItemUseAreaMeshProviderComponent` 경로로 대체한다.
-- host 담당 component 이름은 `UItemUseAreaMeshProviderComponent`다.
-- child actor 수집은 host의 직접 `UChildActorComponent`까지만 한다.
-- child actor 필터는 `RequiredChildActorComponentTag`만 제공한다. 태그가 비어 있으면 모든 child actor를 허용한다.
-- inactive use area도 descriptor로 등록하되 effective `AreaTags`를 비운다.
-- active 조건 확장은 child actor가 `IItemUseAreaActivationProvider`를 구현하는 방식으로 처리한다.
-- `EffectTargetObject`는 `UItemUseAreaMeshComponent`의 `EffectTargetPolicy`로 결정한다.
-- `bItemUseAreaEnabled` 기본값은 true다.
-- `AItemPlacementSlotActor`도 새 mesh component 방식으로 전환하고, occupied 조건은 slot actor가 active provider로 판단한다.
-- Blueprint/API migration 리스크가 있으면 기존 class/API는 deprecated 단계로 두되, runtime 수집 경로에서는 사용하지 않는다.
+## 확정 설계 결정
+
+### 소비장 회수 상태 정책
+
+- 소비장 회수 시 꿀 양과 visible face는 보존한다.
+- `TargetBeeCount`가 0이 아니면 회수 불가다.
+- 여왕벌이 해당 소비장에 attach/점유되어 있으면 회수 불가다.
+- 소비장 상태 보존은 `UItemInstance` 확장으로 처리한다. 구현 중 저장 위치/형태가 애매하면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+### 소비장 ItemDefinition 정책
+
+- `ABeehive::DefaultCombItemDefinition`은 추가하지 않는다.
+- item placement 경로로 배치된 소비장은 source item instance에서 반환 `ItemDefinition`을 주입받는다.
+- 이미 월드에 배치된 소비장은 `UPlacementOccupantComponent::AuthoredReturnItemDefinition` fallback을 사용할 수 있다.
+- runtime 주입값과 authored fallback이 모두 없으면 회수 불가다.
+
+### Generic occupant/retrieve 정책
+
+- 배치 점유자 계약은 `UPlacementOccupantComponent`로 구현한다.
+- preplaced actor 연결은 slot actor의 `InitialOccupantActor`로 처리한다.
+- `AuthoredReturnItemDefinition`은 `EditAnywhere`로 노출한다.
+- 회수 가능 조건은 `UPlacementOccupantComponent`의 `BlueprintNativeEvent`로 확장한다.
+- 기존 `APlacedItemActor`는 새 component/action으로 migration하되 기존 getter는 deprecated wrapper로 유지한다.
+- clear 시 기본 destroy는 유지하되, destroy 전에 `PreClearPlacementOccupant` hook을 호출한다.
 
 ## 목표
 
-1. `UItemUseAreaMeshComponent`를 추가한다.
-2. `IItemUseAreaActivationProvider`를 추가한다.
-3. `UItemUseAreaMeshProviderComponent`를 추가한다.
-4. `UCursorItemUseAreaScopeComponent`의 descriptor 수집 경로를 새 provider component 중심으로 바꾼다.
-5. `ABeehive`의 actor-level ItemUseArea provider override 경로를 제거하거나 runtime 미사용 상태로 만든다.
-6. `ABeehiveCombActor`의 BeeBrush use area를 `UItemUseAreaMeshComponent`로 전환한다.
-7. `AItemPlacementSlotActor`의 slot use area를 `UItemUseAreaMeshComponent`로 전환하고 occupied active 조건을 구현한다.
-8. 기존 `UChildItemUseAreaProviderComponent`/`IItemUseAreaProvider`/direct component tag fallback 사용을 제거 또는 deprecated 처리한다.
-9. 문서와 Unreal Editor 수동 설정 문서를 갱신한다.
+1. `UPlacementOccupantComponent`를 추가한다.
+2. `UPlacementSlotRetrievePartFocusActionComponent`를 추가한다.
+3. `AItemPlacementSlotActor`를 generic occupied actor + initial occupant claim 구조로 확장한다.
+4. 기존 `APlacedItemActor`/`UPlacedItemRetrievePartFocusActionComponent`를 새 generic 구조로 migration한다.
+5. `ABeehiveCombSlotActor`를 추가한다.
+6. `ABeehive`의 소비장 slot 관리가 `ABeehiveCombSlotActor`를 통해 active comb를 다루도록 전환한다.
+7. `ABeehiveCombActor`에 occupant/retrieve 및 소비장 회수 가능 조건을 연결한다.
+8. 관련 architecture 문서와 Unreal 수동 설정 문서를 갱신한다.
+9. 가능하면 UBT 빌드를 수행한다.
 
-## 수정 대상
-
-새 파일:
-
-- `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshComponent.h`
-- `Source/BeekeepingSim/Private/Focus/ItemUseAreaMeshComponent.cpp`
-- `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshProviderComponent.h`
-- `Source/BeekeepingSim/Private/Focus/ItemUseAreaMeshProviderComponent.cpp`
-- `Source/BeekeepingSim/Public/Focus/ItemUseAreaActivationProvider.h`
-
-주요 수정:
-
-- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp`
-
-정리/검토 대상:
-
-- `Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h`
-- `Source/BeekeepingSim/Public/Focus/ChildItemUseAreaProviderComponent.h`
-- `Source/BeekeepingSim/Private/Focus/ChildItemUseAreaProviderComponent.cpp`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/USER_UNREAL.md`
-- `.md/0_ARCHITECTURE.md`
-
-## 신규 타입 1: UItemUseAreaMeshComponent
+## 신규 타입 1: UPlacementOccupantComponent
 
 위치:
 
-- `Public/Focus/ItemUseAreaMeshComponent.h`
-- `Private/Focus/ItemUseAreaMeshComponent.cpp`
-
-class:
-
-```cpp
-UENUM(BlueprintType)
-enum class EItemUseAreaEffectTargetPolicy : uint8
-{
-	ComponentOwner,
-	HostActor,
-	ExplicitObject
-};
-
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class BEEKEEPINGSIM_API UItemUseAreaMeshComponent : public UStaticMeshComponent
-```
-
-필수 property:
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-bool bItemUseAreaEnabled = true;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-FName AreaId;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-FGameplayTagContainer AreaTags;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-FItemUseAreaVisualSettings VisualSettings;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-EItemUseAreaEffectTargetPolicy EffectTargetPolicy = EItemUseAreaEffectTargetPolicy::ComponentOwner;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area", meta = (EditCondition = "EffectTargetPolicy == EItemUseAreaEffectTargetPolicy::ExplicitObject"))
-TObjectPtr<UObject> ExplicitEffectTargetObject = nullptr;
-```
-
-필수 API:
-
-```cpp
-UFUNCTION(BlueprintPure, Category = "Item Use Area")
-bool IsItemUseAreaEnabled() const;
-
-UFUNCTION(BlueprintPure, Category = "Item Use Area")
-FName GetResolvedAreaId() const;
-
-UFUNCTION(BlueprintPure, Category = "Item Use Area")
-const FGameplayTagContainer& GetAreaTags() const;
-
-UFUNCTION(BlueprintPure, Category = "Item Use Area")
-const FItemUseAreaVisualSettings& GetVisualSettings() const;
-
-UFUNCTION(BlueprintPure, Category = "Item Use Area")
-UObject* ResolveEffectTargetObject(AActor* HostActor) const;
-```
-
-정책:
-
-- `GetResolvedAreaId()`는 `AreaId`가 비어 있으면 component `GetFName()`을 반환한다.
-- `ResolveEffectTargetObject`:
-  - `ComponentOwner`: `GetOwner()`
-  - `HostActor`: 전달받은 host actor
-  - `ExplicitObject`: `ExplicitEffectTargetObject`
-- explicit target이 null이면 fallback은 `GetOwner()`로 둔다.
-- constructor에서 item-use-area 기본 collision은 기존 scope가 active 상태에서 제어하므로 과도하게 hard-code하지 않는다. 단, 새 component 기본 collision 정책이 필요하면 `NoCollision` 또는 `QueryOnly + Visibility Ignore` 중 기존 authoring과 충돌하지 않는 쪽을 선택한다.
-
-## 신규 타입 2: IItemUseAreaActivationProvider
-
-위치:
-
-- `Public/Focus/ItemUseAreaActivationProvider.h`
-
-interface:
-
-```cpp
-UINTERFACE(BlueprintType)
-class BEEKEEPINGSIM_API UItemUseAreaActivationProvider : public UInterface
-{
-	GENERATED_BODY()
-};
-
-class BEEKEEPINGSIM_API IItemUseAreaActivationProvider
-{
-	GENERATED_BODY()
-
-public:
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Item Use Area")
-	bool IsItemUseAreaMeshActive(UItemUseAreaMeshComponent* Component, AActor* HostActor) const;
-};
-```
-
-정책:
-
-- 구현하지 않은 actor는 active true로 간주한다.
-- 구현 actor가 false를 반환하면 descriptor는 등록하되 `AreaTags`를 비운다.
-- 이 interface는 item action 실행을 하지 않는다. active 조건 판단만 담당한다.
-
-## 신규 타입 3: UItemUseAreaMeshProviderComponent
-
-위치:
-
-- `Public/Focus/ItemUseAreaMeshProviderComponent.h`
-- `Private/Focus/ItemUseAreaMeshProviderComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacementOccupantComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacementOccupantComponent.cpp`
 
 class:
 
 ```cpp
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class BEEKEEPINGSIM_API UItemUseAreaMeshProviderComponent : public UActorComponent
+class BEEKEEPINGSIM_API UPlacementOccupantComponent : public UActorComponent
 ```
 
 필수 property:
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-FName RequiredChildActorComponentTag = NAME_None;
+UPROPERTY(Transient, BlueprintReadOnly, Category = "Placement Occupant")
+TObjectPtr<UItemDefinition> RuntimeReturnItemDefinition = nullptr;
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-bool bIncludeOwnerComponents = true;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Placement Occupant")
+TObjectPtr<UItemDefinition> AuthoredReturnItemDefinition = nullptr;
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-bool bIncludeDirectChildActors = true;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Use Area")
-bool bLogCollectionDebug = false;
+UPROPERTY(Transient, BlueprintReadOnly, Category = "Placement Occupant")
+TObjectPtr<AActor> OwningPlacementSlotActor = nullptr;
 ```
 
 필수 API:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Item Use Area")
-void BuildItemUseAreaDescriptors(TArray<FItemUseAreaDescriptor>& OutDescriptors) const;
+UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
+void InitializeFromPlacement(UItemInstance* SourceItemInstance, AActor* InOwningPlacementSlotActor);
+
+UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
+void SetOwningPlacementSlotActor(AActor* InOwningPlacementSlotActor);
+
+UFUNCTION(BlueprintPure, Category = "Placement Occupant")
+UItemDefinition* GetReturnItemDefinition() const;
+
+UFUNCTION(BlueprintPure, Category = "Placement Occupant")
+AActor* GetOwningPlacementSlotActor() const;
+
+UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
+bool CanRetrievePlacementOccupant(ABeekeeperCharacter* InteractingCharacter) const;
+
+UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
+void PreClearPlacementOccupant();
 ```
 
-수집 규칙:
-
-1. owner actor 자신의 `UItemUseAreaMeshComponent`들을 수집한다.
-2. owner actor의 직접 `UChildActorComponent`들을 순회한다.
-3. `RequiredChildActorComponentTag`가 비어 있지 않으면 해당 component tag가 있는 child actor component만 허용한다.
-4. child actor가 null이면 skip한다.
-5. child actor 내부의 `UItemUseAreaMeshComponent`들을 수집한다.
-6. recursive child actor 순회는 하지 않는다.
-
-descriptor 생성 규칙:
+Blueprint hooks:
 
 ```cpp
-Descriptor.AreaId = Component->GetResolvedAreaId();
-Descriptor.OwnerActor = Component->GetOwner();
-Descriptor.HitComponent = Component;
-Descriptor.VisualComponents.Add(Component);
-Descriptor.VisualSettings = Component->GetVisualSettings();
-Descriptor.EffectTargetObject = Component->ResolveEffectTargetObject(HostActor);
-Descriptor.AreaTags = bActive ? Component->GetAreaTags() : FGameplayTagContainer();
-```
+UFUNCTION(BlueprintNativeEvent, Category = "Placement Occupant")
+bool ReceiveCanRetrievePlacementOccupant(ABeekeeperCharacter* InteractingCharacter) const;
 
-active 판단:
-
-```cpp
-bool bActive = true;
-if (ComponentOwner implements IItemUseAreaActivationProvider)
-{
-	bActive = IItemUseAreaActivationProvider::Execute_IsItemUseAreaMeshActive(ComponentOwner, Component, HostActor);
-}
-```
-
-등록 skip 조건:
-
-- component null
-- `bItemUseAreaEnabled == false`
-- `AreaId` resolve 실패는 component name fallback으로 처리하므로 skip하지 않는다.
-- static mesh가 없어도 등록할지 여부는 결정 필요하면 `.md/QNA_IMPLEMENTATION.md`에 질문한다. 권장은 static mesh가 없어도 descriptor 생성은 허용하되 visual/hit이 빈 mesh라 실제 렌더만 없게 둔다.
-
-inactive 정책:
-
-- active false인 component도 descriptor를 등록한다.
-- 단 `Descriptor.AreaTags`는 비운다.
-- 이로써 scope가 material/collision을 꺼줄 수 있다.
-
-## UCursorItemUseAreaScopeComponent 변경 요구
-
-현재 제거/대체 대상:
-
-- `RebuildDescriptorsFromProviderActor`
-- `RebuildDescriptorsFromProviderComponents`
-- `RebuildDescriptorsFromDirectComponentTags`
-- `IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors` 호출
-- `ComponentTags=ItemUseArea` fallback
-- 임시 디버그 로그(`ItemUseArea ProviderActor=...`)가 있으면 제거한다.
-
-새 흐름:
-
-```cpp
-void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
-{
-	ClearAllVisualState();
-	RestoreOriginalCollisionStates();
-	DynamicMaterials.Reset();
-	RegisteredDescriptors.Reset();
-	ActiveDescriptorIndices.Reset();
-	HoveredDescriptorIndex = INDEX_NONE;
-
-	AActor* HostActor = ResolveActiveHostActor();
-	ActiveHostActor = HostActor;
-	if (!HostActor)
-	{
-		return;
-	}
-
-	RebuildDescriptorsFromItemUseAreaMeshProviders(HostActor);
-	RefreshActiveUseAreas();
-}
-```
-
-새 private helper:
-
-```cpp
-void RebuildDescriptorsFromItemUseAreaMeshProviders(AActor* HostActor);
-```
-
-구현:
-
-- `HostActor->GetComponents<UItemUseAreaMeshProviderComponent>(Providers)` 사용
-- provider가 없으면 descriptor 없음
-- 각 provider의 `BuildItemUseAreaDescriptors` 결과를 `RegisterItemUseAreaDescriptor`로 등록
-
-주의:
-
-- `UCursorItemUseAreaScopeComponent`는 descriptor 생성자가 아니다.
-- scope는 계속 선택 아이템 query 매칭, hover trace, visual material, collision, hold-use lifecycle만 담당한다.
-- active descriptor 판정은 기존 `DoesDescriptorMatchActionQuery` 구조를 유지한다.
-
-## ABeehive 변경 요구
-
-`ABeehive`는 더 이상 `IItemUseAreaProvider`를 구현하지 않는다.
-
-제거/정리:
-
-- `#include "Focus/ItemUseAreaProvider.h"` 제거
-- class inheritance에서 `public IItemUseAreaProvider` 제거
-- `GetItemUseAreaDescriptors_Implementation(...)` 제거
-- 기존 lid/comb/BeeBrush descriptor 수동 생성 로직 제거
-- `UChildItemUseAreaProviderComponent* ChildItemUseAreaProvider` 제거 또는 deprecated unused 처리
-
-추가:
-
-```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-TObjectPtr<UItemUseAreaMeshProviderComponent> ItemUseAreaMeshProvider;
-```
-
-constructor:
-
-```cpp
-ItemUseAreaMeshProvider = CreateDefaultSubobject<UItemUseAreaMeshProviderComponent>(TEXT("ItemUseAreaMeshProvider"));
-```
-
-설정:
-
-- `bIncludeOwnerComponents = true`
-- `bIncludeDirectChildActors = true`
-- `RequiredChildActorComponentTag`는 기본 `NAME_None`
-- 벌통 child actor가 많아 필터가 필요하면 BP에서 `RequiredChildActorComponentTag`를 지정하도록 `.md/USER_UNREAL.md`에 문서화한다.
-
-`RebuildItemUseAreaDescriptorsIfAvailable()`는 유지한다.
-
-- 소비장 lift/return/abort 후 rebuild 호출은 계속 필요하다.
-- placement slot place/clear 후 host scope rebuild 경로도 유지한다.
-
-## ABeehiveCombActor 변경 요구
-
-`BeeBrushUseAreaMesh`를 `UItemUseAreaMeshComponent`로 전환한다.
-
-변경:
-
-```cpp
-TObjectPtr<UItemUseAreaMeshComponent> BeeBrushUseAreaMesh;
-```
-
-getter:
-
-```cpp
-UItemUseAreaMeshComponent* GetBeeBrushUseAreaMesh() const;
-```
-
-기존 `BeeBrushUseAreaId`, `BeeBrushUseAreaTags`, `BeeBrushUseAreaVisualSettings` property/getter는 제거한다.
-
-- 해당 값은 이제 `BeeBrushUseAreaMesh` component의 Details에서 설정한다.
-
-`ABeehiveCombActor`는 `IItemUseAreaActivationProvider`를 구현한다.
-
-```cpp
-virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
+UFUNCTION(BlueprintNativeEvent, Category = "Placement Occupant")
+void ReceivePreClearPlacementOccupant();
 ```
 
 정책:
 
-- `Component != BeeBrushUseAreaMesh`이면 true 반환한다.
-- `HostActor`가 `ABeehive`이고, `HostActor`의 lifted comb가 `this`이면 true.
-- 그 외 false.
+- `InitializeFromPlacement`는 `SourceItemInstance->GetDefinition()`을 `RuntimeReturnItemDefinition`에 저장하고 owning slot을 저장한다.
+- `GetReturnItemDefinition` 우선순위는 `RuntimeReturnItemDefinition`, 그 다음 `AuthoredReturnItemDefinition`이다.
+- `CanRetrievePlacementOccupant` 기본 구현은 `GetReturnItemDefinition() != nullptr && OwningPlacementSlotActor != nullptr` 정도로 둔다.
+- actor별 특수 회수 조건은 BP/C++ override로 구현한다.
+- `PreClearPlacementOccupant` 기본 구현은 no-op이다.
 
-필요한 Beehive API:
+## 신규 타입 2: UPlacementSlotRetrievePartFocusActionComponent
+
+위치:
+
+- `Source/BeekeepingSim/Public/WorldActors/PlacementSlotRetrievePartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacementSlotRetrievePartFocusActionComponent.cpp`
+
+class:
 
 ```cpp
-UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
-ABeehiveCombActor* GetLiftedCombActor() const;
+UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class BEEKEEPINGSIM_API UPlacementSlotRetrievePartFocusActionComponent : public UCursorPartFocusActionComponent
 ```
 
-구현:
+동작:
 
-- `CombLiftComponent->GetLiftedCombSlotIndex()`
-- `GetCombSlotComponentByIndex(Index)->GetChildActor()`
-- `ABeehiveCombActor` cast
+1. owner actor에서 `UPlacementOccupantComponent`를 찾는다.
+2. occupant에서 `GetReturnItemDefinition()`을 조회한다.
+3. occupant에서 `GetOwningPlacementSlotActor()`를 조회한다.
+4. slot actor가 `IItemPlacementSlot`을 구현하는지 확인한다.
+5. `CanRetrievePlacementOccupant(Character)`가 true인지 확인한다.
+6. character hotbar에 `TryAcquireItem(ItemDefinition, 1)`을 호출한다.
+7. `bSuccess && AddedQuantity == 1`일 때만 성공으로 본다.
+8. 성공 시 `IItemPlacementSlot::Execute_ClearPlacedItem(SlotActor)`를 호출한다.
+9. 실패 시 actor와 slot 상태는 유지한다.
 
-BeeBrush component 기본 설정:
-
-- `EffectTargetPolicy = ComponentOwner`
-- `AreaTags` 기본값은 C++에서 gameplay tag를 강제 주입하지 않는다.
-- `BP_BeehiveComb`에서 `AreaTags = Item.UseArea.Beehive.BeeBrush`를 설정한다.
-- `VisualSettings`는 component Details에서 조정한다.
+`CanHandleSecondaryPartFocusAction`과 `HandleSecondaryPartFocusAction`만 구현한다. LMB begin/cancel 흐름은 건드리지 않는다.
 
 ## AItemPlacementSlotActor 변경 요구
 
-slot actor도 `UItemUseAreaMeshComponent` 기반으로 전환한다.
+현재 `SlotMeshComponent`는 유지한다.
 
-변경:
+- 타입은 기존처럼 `UItemUseAreaMeshComponent`를 유지한다.
+- 역할은 empty slot의 item-use-area hit/visual이다.
+- occupied 상태에서는 hidden/no collision/inactive 상태가 된다.
 
-- `SlotMeshComponent` 타입을 `UStaticMeshComponent`에서 `UItemUseAreaMeshComponent`로 변경한다.
-- `AItemPlacementSlotActor`의 `IItemUseAreaProvider` inheritance 제거
-- `GetItemUseAreaDescriptors_Implementation` 제거
-- `AreaId`, `AreaTags` property는 slot actor에서 제거하거나 deprecated 처리하고, `SlotMeshComponent`의 component Details로 이동한다.
-- `SlotMeshAsset`, `SlotMeshMaterial`, `SlotMeshRelativeTransform` authoring helper는 유지 가능하다. 단 적용 대상은 `UItemUseAreaMeshComponent`다.
-
-`AItemPlacementSlotActor`는 `IItemUseAreaActivationProvider`를 구현한다.
+추가/변경:
 
 ```cpp
-virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
+UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Item Placement Slot")
+TObjectPtr<AActor> InitialOccupantActor = nullptr;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Placement Slot")
+bool bAttachInitialOccupantToSlot = true;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Placement Slot")
+bool bSnapInitialOccupantToAttachPoint = false;
 ```
 
-정책:
+현재 `PlacedActor` 저장 필드는 public/BP 호환성이 있으므로 즉시 rename하지 않는다.
 
-- `Component != SlotMeshComponent`이면 true
-- `SlotMeshComponent`는 `!IsPlacementOccupied()`일 때 active true
-- occupied면 active false
+- 내부 의미는 generic occupied actor로 확장한다.
+- `GetPlacedActor()`는 deprecated 문구를 달 수 있으면 달고, 기존 API 호환을 위해 유지한다.
+- 새 getter가 필요하면 `GetOccupiedActor()`를 추가한다.
 
-결과:
+필수 동작:
 
-- empty slot: descriptor 등록 + AreaTags 유지 + placement action과 매칭
-- occupied slot: descriptor 등록 + AreaTags 비움 + material/collision은 scope가 비활성 처리
+- `TryPlaceItem` 성공 후 spawned actor에 `UPlacementOccupantComponent`가 있으면 `InitializeFromPlacement(SourceItemInstance, this)` 호출
+- 기존 `APlacedItemActor` 특수 cast 의존은 제거 또는 deprecated wrapper로 축소
+- `ClearPlacedItem`은 occupied actor의 occupant component가 있으면 `PreClearPlacementOccupant()` 호출 후 destroy
+- clear 후 `PlacedActor = nullptr`, visual refresh, PartFocus rebuild, ItemUseArea rebuild
+- `IsPlacementOccupied`는 `PlacedActor` 유효성 기준으로 유지
 
-place/clear 후:
+preplaced claim:
 
-- `RequestHostItemUseAreaRebuild()` 유지
-- host scope rebuild로 active state 갱신
+- BeginPlay에서 `InitialOccupantActor`가 있고 아직 occupied가 아니면 claim한다.
+- claim은 spawn이 아니라 기존 actor 등록이다.
+- claim 대상은 `UPlacementOccupantComponent`를 가져야 한다. 없으면 claim 실패/로그.
+- claim 성공 시 `PlacedActor = InitialOccupantActor`
+- occupant component에 `SetOwningPlacementSlotActor(this)` 호출
+- `bAttachInitialOccupantToSlot`이면 `AttachComponent`에 attach한다.
+- `bSnapInitialOccupantToAttachPoint`이면 snap, 아니면 world transform 보존 attach를 사용한다.
+- claim 후 visual/rebuild를 수행한다.
 
-`EffectTargetPolicy`:
+주의:
 
-- placement slot의 `SlotMeshComponent`는 `ComponentOwner`로 설정한다.
-- placement action은 `Context.ItemUseEffectTargetObject`를 `IItemPlacementSlot`로 해석한다.
+- OnConstruction에서 actor reference attach/destroy 같은 위험한 runtime mutation은 피한다. preplaced claim은 BeginPlay 중심으로 구현한다.
+- Editor preview가 꼭 필요하면 별도 QnA로 묻는다.
 
-## 기존 provider/API 제거 정책
+## 기존 APlacedItemActor migration
 
-완전 전환 대상:
+`APlacedItemActor`에 다음 component를 기본 subobject로 추가한다.
 
-- `IItemUseAreaProvider`
-- `UItemUseAreaProvider`
-- `UChildItemUseAreaProviderComponent`
-- actor-level `GetItemUseAreaDescriptors_Implementation`
-- BP `Get Item Use Area Descriptors` override workflow
-- direct `Component Tags = ItemUseArea` fallback
-- child actor `ItemUseAreaChild` interface-provider workflow
+- `UPlacementOccupantComponent`
+- `UPlacementSlotRetrievePartFocusActionComponent`
 
-단, 구현 중 Blueprint 참조/compile 위험이 확인되면:
+기존 API는 유지하되 내부에서 component를 읽게 한다.
 
-- 파일/class는 즉시 삭제하지 말고 deprecated 주석/문서만 남긴다.
-- `UCursorItemUseAreaScopeComponent` runtime 경로에서는 더 이상 호출하지 않는다.
-- `.md/QNA_IMPLEMENTATION.md`에 삭제 시점 질문을 남기고 중단하지 말고 가능한 범위에서 새 경로 전환을 완료한다.
+- `InitializePlacedItem(SourceItemInstance, SlotActor)`는 deprecated wrapper처럼 `PlacementOccupant->InitializeFromPlacement(...)` 호출
+- `GetItemDefinition()`은 `PlacementOccupant->GetReturnItemDefinition()` 반환
+- `GetOwningPlacementSlotActor()`는 `PlacementOccupant->GetOwningPlacementSlotActor()` 반환
+- `GetPartFocusActionComponent()`는 새 generic retrieve action을 반환
 
-## EffectTargetObject 구현 설명
+기존 `UPlacedItemRetrievePartFocusActionComponent`:
 
-`EffectTargetObject`는 item action이 실제 domain mutation을 수행할 대상이다.
+- 즉시 삭제하지 않는다.
+- 가능하면 `UPlacementSlotRetrievePartFocusActionComponent` subclass/deprecated wrapper로 축소한다.
+- runtime 경로에서는 새 generic component를 사용한다.
 
-경로:
+기존 `UPlacedItemRetrieveFocusActionComponent`:
 
-```text
-UItemUseAreaMeshComponent
--> UItemUseAreaMeshProviderComponent가 descriptor 생성
--> Descriptor.EffectTargetObject 설정
--> UCursorItemUseAreaScopeComponent::BuildItemActionContext
--> Context.ItemUseEffectTargetObject
--> UHoldItemUseAction::ApplyUseEffect
+- global preview focus retrieve 경로는 현재 정본에서 사용하지 않는 legacy에 가깝다.
+- 삭제/rename은 하지 말고, 필요 시 generic logic으로 내부만 정리한다.
+- 삭제 필요성이 생기면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+## 신규 타입 3: ABeehiveCombSlotActor
+
+위치:
+
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombSlotActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombSlotActor.cpp`
+
+class:
+
+```cpp
+UCLASS(Blueprintable)
+class BEEKEEPINGSIM_API ABeehiveCombSlotActor : public AItemPlacementSlotActor
 ```
 
-사례:
+책임:
 
-- BeeBrush 소비장: `EffectTargetPolicy = ComponentOwner` -> `ABeehiveCombActor`
-- 소독약 벌통 영역: `EffectTargetPolicy = HostActor` -> `ABeehive`
-- placement slot: `EffectTargetPolicy = ComponentOwner` -> `AItemPlacementSlotActor`
-- 특수 대상: `ExplicitObject`
+- 소비장 전용 placement slot
+- `ABeehiveCombActor` 계열 actor만 배치 허용
+- slot empty/occupied use-area 동작은 parent 재사용
+- place/clear/initial claim 후 owning beehive에 comb layout/part focus/item-use-area 갱신 요청
 
-## slot actor active 담당자 설명
+필수 API:
 
-배치 상태는 `AItemPlacementSlotActor`가 소유한다.
-
-따라서 slot use area active 가능 여부도 slot actor가 `IItemUseAreaActivationProvider`로 판단한다.
-
-```text
-empty slot
--> active true
--> AreaTags 유지
-
-occupied slot
--> active false
--> AreaTags 비움
--> descriptor는 유지되어 scope가 material/collision을 끈다
+```cpp
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb Slot")
+ABeehiveCombActor* GetPlacedCombActor() const;
 ```
 
-provider component는 slot 상태를 직접 해석하지 않는다.
+override:
+
+- `TryPlaceItem_Implementation`
+  - `PlacedActorClass`가 `ABeehiveCombActor` 계열인지 검증
+  - 통과하면 parent `TryPlaceItem_Implementation` 호출
+  - 성공 후 beehive 갱신 요청
+- `ClearPlacedItem_Implementation`
+  - parent clear 호출
+  - beehive 갱신 요청
+
+preplaced initial occupant:
+
+- parent claim 후 해당 actor가 `ABeehiveCombActor`가 아니면 claim 실패 처리한다.
+- parent에 hook이 필요하면 protected virtual `CanAcceptOccupantActor(AActor*)` 같은 확장점을 추가한다.
+
+갱신 요청:
+
+- parent의 host rebuild 경로를 활용한다.
+- 소비장 slot이 `ABeehive`의 child actor로 붙는 구조면 `GetAttachParentActor()`를 `ABeehive`로 해석한다.
+- `ABeehive::RebuildCursorPartFocusDescriptors()`
+- `UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()`
+- 필요하면 `ABeehive`에 public refresh API를 추가한다.
+
+## ABeehive 변경 요구
+
+현재 `ABeehive`는 `UChildActorComponent` 배열로 소비장 actor를 직접 생성한다. 이번 작업에서는 slot child actor를 생성하고, active comb는 slot의 placed comb로 조회한다.
+
+추가/변경 property:
+
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
+TSubclassOf<ABeehiveCombSlotActor> CombSlotActorClass;
+```
+
+기존 `CombActorClass`는 즉시 삭제하지 않는다.
+
+- 새로 배치되는 소비장 item의 `UItemPlacementUseAction::PlacedActorClass`가 comb actor class를 소유한다.
+- 기존 초기 자동 생성 정책이 남아 있다면 migration/compatibility 용도로만 최소 유지한다.
+- 삭제가 필요하면 Blueprint 영향 때문에 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+
+slot component 배열:
+
+- 기존 `CombSlotComponents`는 child actor component 배열로 유지 가능하다.
+- 각 child actor component의 class는 `ABeehiveCombSlotActor` 계열이어야 한다.
+- 이름/배치/spacing 정책은 기존 `CombSlotSpacing`, `CombRackRoot`, `MaxCombCount` 흐름을 최대한 유지한다.
+
+active comb 조회 변경:
+
+- `FindManagedCombSlotIndex(const ABeehiveCombActor*)`
+  - 각 slot component child actor를 `ABeehiveCombSlotActor`로 cast
+  - `GetPlacedCombActor()`가 입력 comb와 같으면 index 반환
+- `GetCombSlotComponentByIndex`
+  - 기존처럼 slot child actor component 반환
+- `GetCombSlotWorldTransformByIndex`
+  - slot component transform 기준 유지
+- `GetLiftedCombActor`
+  - lift component index -> slot actor -> placed comb actor
+
+기존 active comb 순회 로직 변경 대상:
+
+- `RegisterCombPartsToScope`
+- `RefreshCombSpawnAmounts`
+- `ApplyColonyPopulationUpdate`
+- `ApplyHoneyProductionUpdate`
+- `ChooseQueenBeeCombSlotIndex`
+- `ResolveQueenBeeAttachPoint`
+- `DistributeHoneyIncreaseToCombs`
+- `IsManagedActiveCombActor`
+
+각 로직은 `ABeehiveCombSlotActor::GetPlacedCombActor()`가 null인 slot은 skip한다.
+
+CurrentCombCount 정책:
+
+- `CurrentCombCount`는 legacy/test compatibility로 유지할 수 있다.
+- 새 구조에서 “점유된 소비장 수”와 다를 수 있으므로, 의미가 애매해지면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+- 권장은 `MaxCombCount`개의 slot은 항상 존재하고, 실제 active comb는 occupied slot 기준으로 계산하는 것이다.
+
+queen/bee/honey 정책:
+
+- queen 위치 후보는 placed comb가 있는 slot만 포함한다.
+- lifted comb slot 제외 정책 유지.
+- `TargetBeeCount`가 0이 아닌 소비장은 회수 불가이므로, 회수 성공 후 population/honey 갱신 대상에서 자연스럽게 제외된다.
+- 여왕벌이 붙은 소비장 회수 차단을 위해 `ABeehive` 또는 comb occupant hook에서 queen attach 상태 확인 API가 필요할 수 있다.
+
+## ABeehiveCombActor 변경 요구
+
+추가 component:
+
+- `UPlacementOccupantComponent`
+- `UPlacementSlotRetrievePartFocusActionComponent` 또는 기존 comb PartFocus action에 secondary retrieve 위임
+
+중요:
+
+- LMB 소비장 lift/return은 기존 `UBeehiveCombPartFocusActionComponent` 경로를 유지한다.
+- RMB/secondary retrieve는 generic retrieve action을 사용한다.
+- 하나의 descriptor/action handler에서 LMB와 secondary를 모두 처리해야 하는 구조라면 `UBeehiveCombPartFocusActionComponent`가 secondary에서 `UPlacementSlotRetrievePartFocusActionComponent` helper를 호출하게 구성한다.
+- 별도 retrieve action component를 붙이더라도 descriptor의 `ActionHandler`가 하나만 허용되는지 확인한다. descriptor가 action 1개만 받는다면 기존 comb action에 secondary retrieve 기능을 bridge한다.
+
+소비장 회수 가능 조건:
+
+- `UPlacementOccupantComponent::ReceiveCanRetrievePlacementOccupant`를 BP override하거나, C++ subclass/hook으로 구현한다.
+- 조건:
+  - `GetReturnItemDefinition()` 유효
+  - owning slot 유효
+  - `TargetBeeCount == 0`
+  - 여왕벌이 이 comb에 붙어 있지 않음
+- 꿀 양과 visible face는 회수 가능 조건에서 차단하지 않는다. 보존 대상이다.
+
+상태 보존:
+
+- 꿀 양과 visible face를 item instance에 보존해야 한다.
+- 현재 `UItemInstance`에 generic custom state 저장 계약이 없으면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+- 임시로 상태를 버리는 구현은 금지한다.
+
+## Inventory / ItemInstance 검토 요구
+
+소비장 회수 시 꿀 양과 visible face 보존이 확정되어 있다.
+
+검토할 것:
+
+- `UItemInstance`가 arbitrary runtime state를 저장할 수 있는지
+- 없다면 최소 확장 방식 후보를 `.md/QNA_IMPLEMENTATION.md`에 질문할 것
+
+질문 없이 임의로 `UItemInstance`에 대형 generic serialization system을 추가하지 않는다.
+
+가능한 질문 예:
+
+- 소비장 전용 item state struct를 둘지
+- item instance에 `InstancedStruct`/tagged payload 류 generic state를 둘지
+- 1차 구현에서 상태 보존 범위를 별도 component로 미룰지
+
+단, 사용자가 이미 “꿀양과 visible face만 보존”이라고 답했으므로, 상태를 버리는 옵션은 제안하지 않는다.
+
+## Focus / PartFocus 검토 요구
+
+확인할 것:
+
+- `FCursorPartFocusPartDescriptor`가 `ActionHandler` 하나만 지원하는지
+- secondary input이 현재 hovered part의 `ActionHandler->HandleSecondaryPartFocusAction`으로만 가는지
+
+제약:
+
+- 소비장 LMB action을 깨면 안 된다.
+- `UBeehiveCombPartFocusActionComponent`의 begin/cancel/abort 정책은 유지한다.
+
+권장 구현:
+
+- `UBeehiveCombPartFocusActionComponent`에 secondary retrieve bridge를 추가한다.
+- 내부에서 owner comb의 `UPlacementOccupantComponent`를 찾고 generic retrieve helper/static function/component API를 호출한다.
+- generic retrieve action과 code duplication을 피하기 위해 retrieve 실행 로직을 private helper 또는 component method로 공유한다.
+
+## AItemPlacementSlotActor SlotMeshComponent 유지
+
+`SlotMeshComponent`는 삭제하지 않는다.
+
+역할:
+
+- empty slot의 item-use-area hit/visual
+- placement item의 `UseAreaTagQuery` 매칭 대상
+- occupied 상태에서 hidden/collision off/inactive
+
+`UPlacementOccupantComponent`는 `SlotMeshComponent`를 대체하지 않는다.
 
 ## Editor 작업 문서화
 
-`.md/USER_UNREAL.md`에 추가/수정:
+`.md/USER_UNREAL.md`에 추가:
 
-1. `BP_Beehive`:
-   - `ItemUseAreaMeshProvider`가 있는지 확인
-   - 필요 시 `RequiredChildActorComponentTag` 설정
-2. `BP_BeehiveComb`:
-   - `BeeBrushUseAreaMesh`가 `UItemUseAreaMeshComponent` 타입인지 확인
-   - mesh/material/transform 설정
-   - `AreaTags = Item.UseArea.Beehive.BeeBrush`
-   - `EffectTargetPolicy = ComponentOwner`
-3. placement slot BP:
-   - `SlotMeshComponent`가 `UItemUseAreaMeshComponent` 타입인지 확인
-   - 기존 slot actor의 `AreaId/AreaTags`가 component Details로 이동했음을 반영
-   - `EffectTargetPolicy = ComponentOwner`
-4. 더 이상 `Get Item Use Area Descriptors` BP override를 사용하지 않는다.
-5. 더 이상 `Component Tags = ItemUseArea` fallback을 사용하지 않는다.
+1. `BP_Beehive` 또는 벌통 BP
+   - comb slot child actor class를 `ABeehiveCombSlotActor` subclass로 설정
+   - 기존 소비장 직접 child actor 방식에서 slot child actor 방식으로 전환
+2. `BP_BeehiveCombSlot`
+   - `SlotMeshComponent`의 mesh/material/transform 설정
+   - `AreaTags`를 소비장 배치 item의 query와 맞춤
+   - 필요 시 `InitialOccupantActor` 설정
+   - preplaced 소비장은 attach/snap 옵션 확인
+3. `BP_BeehiveComb`
+   - `UPlacementOccupantComponent` 존재 확인
+   - `AuthoredReturnItemDefinition` 설정 가능
+   - generic retrieve/secondary 경로 확인
+   - target bee count/queen attached 회수 차단 조건 구현 확인
+4. 소비장 item definition
+   - `UItemPlacementUseAction::PlacedActorClass`를 소비장 actor BP로 설정
+   - use-area tag query를 comb slot tag와 맞춤
+5. 기존 placed item BP
+   - `UPlacementOccupantComponent`와 generic retrieve action이 붙었는지 확인
+   - 기존 retrieve BP 노드가 있다면 deprecated 경고 확인
 
 ## 문서 갱신
 
 구현 후 갱신:
 
-- `.md/Architecture/FocusSystem.md`
-  - `UItemUseAreaMeshComponent`
-  - `UItemUseAreaMeshProviderComponent`
-  - `IItemUseAreaActivationProvider`
-  - `UCursorItemUseAreaScopeComponent`의 새 descriptor source
-  - 기존 provider/interface/tag fallback 제거 또는 deprecated
-- `.md/Architecture/WorldActorsSystem.md`
-  - `ABeehive`의 `ItemUseAreaMeshProvider`
-  - `ABeehiveCombActor`의 BeeBrush use area component
-  - `AItemPlacementSlotActor`의 mesh component 방식 전환
-- `.md/Architecture/InventorySystem.md`
-  - `EffectTargetObject`가 component policy로 결정되고 item action이 context target을 cast해 효과를 적용하는 정책
 - `.md/0_ARCHITECTURE.md`
-  - FocusEngaged ItemUseArea 등록 흐름 요약 업데이트
+  - generic placement occupant/retrieve 흐름
+  - 소비장 slot 구조 요약
+- `.md/Architecture/WorldActorsSystem.md`
+  - `UPlacementOccupantComponent`
+  - `UPlacementSlotRetrievePartFocusActionComponent`
+  - `ABeehiveCombSlotActor`
+  - `AItemPlacementSlotActor` initial occupant claim
+  - `ABeehive` comb slot 관리 변경
+- `.md/Architecture/FocusSystem.md`
+  - PartFocus secondary retrieve가 generic action/helper로 처리되는 경로
+- `.md/Architecture/InventorySystem.md`
+  - 소비장 회수 state 보존 계약. 구현이 QnA로 보류되면 보류 사실 명시
 - `.md/USER_UNREAL.md`
-  - BP migration 절차
+  - BP/editor migration 절차
 
 ## 검증 기준
 
-### 코드 검색
+### 검색
 
 있어야 함:
 
-- `UItemUseAreaMeshComponent`
-- `EItemUseAreaEffectTargetPolicy`
-- `UItemUseAreaMeshProviderComponent`
-- `IItemUseAreaActivationProvider`
-- `BuildItemUseAreaDescriptors`
-- `IsItemUseAreaMeshActive`
-- `RebuildDescriptorsFromItemUseAreaMeshProviders`
-- `GetLiftedCombActor`
+- `UPlacementOccupantComponent`
+- `UPlacementSlotRetrievePartFocusActionComponent`
+- `ABeehiveCombSlotActor`
+- `InitialOccupantActor`
+- `AuthoredReturnItemDefinition`
+- `RuntimeReturnItemDefinition`
+- `PreClearPlacementOccupant`
+- `CanRetrievePlacementOccupant`
 
-runtime 경로에서 없어야 함:
+runtime 경로에서 줄어들어야 함:
 
-- `IItemUseAreaProvider::Execute_GetItemUseAreaDescriptors`
-- `RebuildDescriptorsFromProviderActor`
-- `RebuildDescriptorsFromProviderComponents`
-- `RebuildDescriptorsFromDirectComponentTags`
-- `ComponentHasTag(TEXT("ItemUseArea"))`
+- `APlacedItemActor` hard cast 기반 retrieve 로직
+- placed item 전용 retrieve component에만 회수 규칙이 묶인 구조
 
-source 전체 삭제가 가능하면 없어야 함:
+### 동작 검증
 
-- `UChildItemUseAreaProviderComponent`
-- `IItemUseAreaProvider`
-
-단, BP migration risk로 deprecated 유지한 경우 최종 보고에 남긴다.
-
-### 동작 확인
-
-1. 벌통 FocusEngaged 진입
-   - `UCursorItemUseAreaScopeComponent`가 `UItemUseAreaMeshProviderComponent`에서 descriptor를 수집한다.
-2. BeeBrush 미선택
-   - 소비장 BeeBrush use area mesh는 scope 관리 대상이지만 보이지 않는다.
-3. BeeBrush 선택 + 소비장 미-lift
-   - BeeBrush area는 active 조건 false라 AreaTags empty
-   - 표시/hover/use가 안 된다.
-4. BeeBrush 선택 + 소비장 lift
-   - lifted 소비장만 BeeBrush area active
-   - hover highlighting 표시
-   - LMB hold 시 `ABeehiveCombActor::TargetBeeCount` 감소
-5. 소비장 return/abort
-   - 모든 BeeBrush area inactive
-   - material opacity 0
-6. placement slot empty
-   - slot use area active
-   - placement item과 tag query 매칭
-7. placement slot occupied
-   - descriptor는 유지되지만 AreaTags empty
-   - slot use area 표시/hover/use 비활성
-8. 뚜껑 PartFocus
-   - ItemUseArea collision 관리가 뚜껑 PartFocus hit component를 임의로 ignore 처리하지 않아야 한다.
-   - 뚜껑을 ItemUseArea로 쓰려면 별도 `UItemUseAreaMeshComponent`를 사용한다.
+1. 기존 화분떡 배치
+   - empty slot에 배치 가능
+   - occupied slot에는 다시 배치 불가
+   - secondary 회수 시 hotbar 공간 있으면 회수
+   - 공간 없으면 actor/slot 유지
+2. preplaced item
+   - slot의 `InitialOccupantActor`로 claim
+   - authored fallback item definition으로 회수
+   - 회수 성공 시 slot clear
+3. 소비장 배치
+   - empty comb slot에 소비장 item 배치
+   - 배치된 소비장은 기존 LMB lift/return 가능
+   - BeeBrush use area 기존 동작 유지
+4. 소비장 회수
+   - `TargetBeeCount == 0`이고 여왕벌 attach 없음이면 secondary 회수 가능
+   - `TargetBeeCount > 0`이면 회수 실패, actor/slot 유지
+   - 여왕벌이 붙어 있으면 회수 실패, actor/slot 유지
+   - 꿀 양과 visible face는 회수 후 item state로 보존
+5. 벌통 runtime
+   - honey production은 placed comb만 대상으로 수행
+   - colony population은 placed comb만 대상으로 수행
+   - queen location 후보는 placed comb만 포함
+   - lifted comb 제외 정책 유지
 
 ### 빌드
 
@@ -616,8 +533,10 @@ source 전체 삭제가 가능하면 없어야 함:
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- 기존 Blueprint serialized component type 변경 때문에 `BeeBrushUseAreaMesh` 또는 `SlotMeshComponent` migration이 자동으로 불가능한 경우
-- `IItemUseAreaProvider` 삭제가 Blueprint compile/save 이전에 대량 asset break를 유발하는 경우
-- `UItemUseAreaMeshComponent`를 `UStaticMeshComponent` subclass로 만들 수 없는 엔진/모듈 제약이 있는 경우
-- `EffectTargetPolicy=ExplicitObject`가 UObject property로 안전하게 저장되지 않는 경우
-- inactive descriptor를 등록하되 AreaTags를 비우는 방식이 기존 item-use action query 정책과 충돌하는 경우
+- 소비장 꿀 양/visible face를 `UItemInstance`에 보존할 안정적 계약이 없는 경우
+- `FCursorPartFocusPartDescriptor`가 기존 comb LMB action과 generic retrieve secondary action을 동시에 수용하기 어려운 경우
+- `CurrentCombCount` 의미가 새 slot occupancy 구조와 충돌해 public API 의미 변경이 필요한 경우
+- 기존 `APlacedItemActor` BP 참조 때문에 retrieve component migration이 asset break를 유발할 가능성이 큰 경우
+- preplaced initial occupant claim을 construction에서 처리해야 한다는 요구가 생기는 경우
+- `CombActorClass` 삭제/rename이 필요해지는 경우
+- UCLASS/UFUNCTION/UPROPERTY rename 또는 Core Redirect가 필요해지는 경우
