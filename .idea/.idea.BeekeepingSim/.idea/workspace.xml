@@ -12,33 +12,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BeekeepingSim/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/0_ARCHITECTURE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/FocusSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/InventorySystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/InventorySystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/Architecture/WorldActorsSystem.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_IMPLEMENTATION_R.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/PROMPT_REVIEW.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.md/USER_UNREAL.md" beforeDir="false" afterPath="$PROJECT_DIR$/.md/USER_UNREAL.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/BeekeeperHotbarComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/BeekeeperHotbarComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemActor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrieveFocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrieveFocusActionComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/ItemInstance.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/Inventory/ItemInstance.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemActor.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h" afterDir="false" />
-    </list>
+    <list default="true" id="c73c3b72-f463-4695-8efa-ae700df9bb3e" name="변경" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -271,7 +245,7 @@
       <workItem from="1779837234681" duration="7335000" />
       <workItem from="1779905065349" duration="2573000" />
       <workItem from="1779912162470" duration="881000" />
-      <workItem from="1779915364820" duration="616000" />
+      <workItem from="1779915364820" duration="1213000" />
     </task>
     <servers />
   </component>

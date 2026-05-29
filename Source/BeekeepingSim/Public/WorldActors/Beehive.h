@@ -110,6 +110,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	bool IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Queen Bee")
+	bool TryBrushQueenBeeFromCombVisibleFace(ABeehiveCombActor* CombActor);
+
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Population")
 	void ApplyColonyPopulationUpdate();
 
@@ -339,7 +342,7 @@ private:
 	void ApplyInitialCombSetupForBeginPlay();
 	void RefreshCombSlotComponents();
 	void RefreshCombSlotTransforms();
-	void RefreshCombSpawnAmounts(bool bSkipLiftedComb = false);
+	void RefreshCombSpawnAmounts(bool bSkipLiftedComb = false, bool bPreserveTargetRatios = true);
 	void ClampCombAuthoringCounts();
 	void RefreshCurrentCombCountFromSlots();
 	void RegisterCombPartsToScope();

@@ -24,7 +24,7 @@ bool UBeehiveCombPlacementOccupantComponent::ReceiveCanRetrievePlacementOccupant
 		return false;
 	}
 
-	if (CombActor->GetTargetBeeCount() != 0)
+	if (CombActor->GetTotalTargetBeeCount() != 0)
 	{
 		return false;
 	}

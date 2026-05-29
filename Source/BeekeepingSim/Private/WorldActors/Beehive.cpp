@@ -216,7 +216,7 @@ void ABeehive::SetColonyBeeCount(int32 NewBeeCount)
 	ColonyBeeCount = FMath::Max(0, NewBeeCount);
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
-	RefreshCombSpawnAmounts(false);
+	RefreshCombSpawnAmounts(false, true);
 }
 
 void ABeehive::ApplyColonyPopulationUpdate()
@@ -229,7 +229,7 @@ void ABeehive::ApplyColonyPopulationUpdate()
 	ColonyBeeCount = NewBeeCount;
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
-	RefreshCombSpawnAmounts(true);
+	RefreshCombSpawnAmounts(true, true);
 }
 
 float ABeehive::CalculateBeeIncreaseAmount() const
@@ -405,7 +405,7 @@ void ABeehive::RefreshCombStateFromSlots()
 		CombLiftComponent->ReturnAllLiftedCombs();
 	}
 
-	RefreshCombSpawnAmounts(false);
+	RefreshCombSpawnAmounts(false, true);
 	RebuildCursorPartFocusDescriptors();
 	RebuildItemUseAreaDescriptorsIfAvailable();
 }
@@ -538,7 +538,7 @@ void ABeehive::ReduceCombTargetBeeCountByConfiguredRatio(int32 CombIndex)
 	}
 
 	const float ClampedRatio = FMath::Clamp(CombTargetBeeCountReduceRatio, 0.0f, 1.0f);
-	CombActor->ReduceTargetBeeCountByRatio(ClampedRatio);
+	CombActor->ReduceAllTargetBeeCountsByRatio(ClampedRatio);
 }
 
 void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const
@@ -677,7 +677,7 @@ void ABeehive::RefreshCombLayoutAndParameters()
 	RefreshCombSlotComponents();
 	RefreshCombSlotTransforms();
 	RefreshCurrentCombCountFromSlots();
-	RefreshCombSpawnAmounts(false);
+	RefreshCombSpawnAmounts(false, false);
 	RebuildCursorPartFocusDescriptors();
 }
 
@@ -690,7 +690,7 @@ void ABeehive::ApplyInitialCombSetupForBeginPlay()
 
 	ApplyInitialCombCountToSlots();
 	RefreshCurrentCombCountFromSlots();
-	RefreshCombSpawnAmounts(false);
+	RefreshCombSpawnAmounts(false, false);
 	RebuildCursorPartFocusDescriptors();
 	RebuildItemUseAreaDescriptorsIfAvailable();
 }
@@ -893,6 +893,65 @@ bool ABeehive::IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) cons
 	return AttachParent->GetOwner() == CombActor;
 }
 
+bool ABeehive::TryBrushQueenBeeFromCombVisibleFace(ABeehiveCombActor* CombActor)
+{
+	if (!CombActor || !QueenBeeChildActor || !QueenBeeChildActor->GetChildActor())
+	{
+		return false;
+	}
+
+	if (!IsManagedActiveCombActor(CombActor))
+	{
+		return false;
+	}
+
+	USceneComponent* CurrentFaceAttachPoint = CombActor->GetQueenAttachPoint(CombActor->GetVisibleCombFace() == EBeehiveCombVisibleFace::Front);
+	if (!CurrentFaceAttachPoint || QueenBeeChildActor->GetAttachParent() != CurrentFaceAttachPoint)
+	{
+		return false;
+	}
+
+	TArray<int32> CandidateSlotIndices;
+	CandidateSlotIndices.Reserve(CombSlotComponents.Num());
+
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CandidateCombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+		if (!CandidateCombActor || CandidateCombActor == CombActor)
+		{
+			continue;
+		}
+
+		if (!CandidateCombActor->GetQueenFrontAttachPoint() || !CandidateCombActor->GetQueenBackAttachPoint())
+		{
+			continue;
+		}
+
+		CandidateSlotIndices.Add(Index);
+	}
+
+	if (CandidateSlotIndices.Num() <= 0)
+	{
+		return false;
+	}
+
+	const int32 SelectedCandidateIndex = FMath::RandRange(0, CandidateSlotIndices.Num() - 1);
+	const int32 SelectedSlotIndex = CandidateSlotIndices[SelectedCandidateIndex];
+	const bool bFrontFace = FMath::RandBool();
+	USceneComponent* NewAttachPoint = ResolveQueenBeeAttachPoint(SelectedSlotIndex, bFrontFace);
+	if (!NewAttachPoint)
+	{
+		return false;
+	}
+
+	QueenBeeChildActor->AttachToComponent(NewAttachPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	QueenBeeChildActor->SetRelativeLocation(FVector::ZeroVector);
+	const float RandomYaw = FMath::FRandRange(0.0f, 360.0f);
+	QueenBeeChildActor->SetRelativeRotation(FRotator(0.0f, RandomYaw, 0.0f));
+	return true;
+}
+
 bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const
 {
 	OutSlotIndex = INDEX_NONE;
@@ -1080,7 +1139,7 @@ void ABeehive::RefreshCombSlotTransforms()
 	}
 }
 
-void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb)
+void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb, bool bPreserveTargetRatios)
 {
 	const int32 SpawnAmount = CalculateCombSpawnAmount();
 	const int32 LiftedSlotIndex = (bSkipLiftedComb && CombLiftComponent) ? CombLiftComponent->GetLiftedCombSlotIndex() : INDEX_NONE;
@@ -1098,7 +1157,14 @@ void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb)
 			continue;
 		}
 
-		CombActor->SetSpawnAmountAndResetTargetBeeCount(CombPlaneSize, SpawnAmount);
+		if (bPreserveTargetRatios)
+		{
+			CombActor->SetTotalSpawnAmountPreservingTargetRatios(CombPlaneSize, SpawnAmount);
+		}
+		else
+		{
+			CombActor->SetTotalSpawnAmountAndResetTargetBeeCounts(CombPlaneSize, SpawnAmount);
+		}
 	}
 }
 

@@ -1,18 +1,16 @@
-# Generic Placement Occupant + Beehive Comb Slot 구현 프롬프트
+# Beehive Comb Face Bee Count 구현 프롬프트
 
 ## 전제
 
-이번 작업은 기존 generic item placement 흐름을 확장해, 화분떡뿐 아니라 소비장 및 향후 preplaced world item도 같은 배치/회수 구조를 사용하게 만든다.
+이번 작업은 `ABeehiveCombActor`의 벌 수 표현을 "소비장 전체 값"과 "Front/Back face별 Niagara 주입값"으로 분리한다.
 
-핵심 책임 분리:
+현재 C++은 단일 `SpawnAmount`/`TargetBeeCount`를 `FrontFaceBeeNiagara`와 `BackFaceBeeNiagara` 양쪽에 동일하게 넣고 있다. 이 해석은 잘못된 것으로 확정한다. 소비장 전체 `SpawnAmount`/`TargetBeeCount`를 front/back에 나눠 넣어야 한다.
 
-- `AItemPlacementSlotActor`: 배치, 점유 판단, empty slot use-area, preplaced occupant claim, clear 담당
-- `UPlacementOccupantComponent`: 점유된 actor의 반환 `ItemDefinition`, owning slot, 회수 가능 조건, clear 전 hook 담당
-- `UPlacementSlotRetrievePartFocusActionComponent`: secondary PartFocus 입력에서 generic 회수 실행 담당
-- `ABeehiveCombSlotActor`: `AItemPlacementSlotActor` 기반 소비장 전용 slot subclass
-- `ABeehiveCombActor`: 기존 소비장 actor/상호작용은 유지하되 placement occupant로 회수 가능하게 확장
+사용자 지시:
 
-구현 중 C++ source는 수정하되, `Content/` asset은 수정/저장하지 않는다. Blueprint 설정이 필요한 내용은 `.md/USER_UNREAL.md`에 작성한다.
+- Content asset 영향은 이번 작업에서 고려하지 않는다.
+- 기존 C++/Blueprint API 호환성 때문에 애매한 wrapper를 남기지 말고, 의미가 잘못된 API/UPROPERTY는 과감히 rename/remove한다.
+- 단, `Content/` asset을 직접 수정/저장하지는 않는다. 필요한 Editor 수동 작업은 `.md/USER_UNREAL.md` 또는 최종 보고에 적는다.
 
 ## 반드시 읽을 문서
 
@@ -20,523 +18,301 @@
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/CoreSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/InventorySystem.md`
 - `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
-- `.md/USER_UNREAL.md`
 
-특히 `.md/QNA_ARCHITECTURE.md`의 다음 섹션 답변을 따른다.
+특히 `.md/QNA_ARCHITECTURE.md`의 `소비장 면별 BeeBrush TargetBeeCount 설계 QnA` 답변을 따른다.
 
-- `벌통 소비장 슬롯 배치/회수 설계 QnA`
-- `Generic Placement Occupant/Retrieve 설계 QnA`
+## 확정 정책
 
-## 확정 설계 결정
+1. `SpawnAmount`와 `TargetBeeCount`는 소비장 전체 값이다.
+2. Front/Back Niagara에는 전체값을 그대로 넣지 않고 face별 분배값을 넣는다.
+3. 분배 규칙:
+   - `Front = (Total + 1) / 2`
+   - `Back = Total / 2`
+   - 홀수면 Front가 1을 더 가진다.
+4. `User.SpawnAmount`와 `User.TargetBeeCount` 모두 같은 분배 규칙으로 face별 Niagara에 주입한다.
+5. `GetTargetBeeCount()`처럼 단일 값을 반환하던 API는 제거/rename하고, 새 API는 total 의미를 명확히 드러낸다.
+6. 소비장 회수 조건은 양면 target 합계가 0이고 queen 미부착일 때만 만족한다.
+7. BeeBrush는 visible face target만 감소한다.
+8. 흔들기/legacy 전체 감소 API는 양면 target을 감소시키는 정책으로 유지하되 이름을 명확히 한다.
+9. time bucket/colony 갱신으로 total spawn이 바뀔 때는 face별 target 비율을 보존한다.
 
-### 소비장 회수 상태 정책
+## 구현 대상
 
-- 소비장 회수 시 꿀 양과 visible face는 보존한다.
-- `TargetBeeCount`가 0이 아니면 회수 불가다.
-- 여왕벌이 해당 소비장에 attach/점유되어 있으면 회수 불가다.
-- 소비장 상태 보존은 `UItemInstance` 확장으로 처리한다. 구현 중 저장 위치/형태가 애매하면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+주요 파일:
 
-### 소비장 ItemDefinition 정책
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Private/Inventory/BeeBrushUseAction.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPlacementOccupantComponent.cpp`
+- 관련 architecture 문서
 
-- `ABeehive::DefaultCombItemDefinition`은 추가하지 않는다.
-- item placement 경로로 배치된 소비장은 source item instance에서 반환 `ItemDefinition`을 주입받는다.
-- 이미 월드에 배치된 소비장은 `UPlacementOccupantComponent::AuthoredReturnItemDefinition` fallback을 사용할 수 있다.
-- runtime 주입값과 authored fallback이 모두 없으면 회수 불가다.
+## ABeehiveCombActor 상태 변경
 
-### Generic occupant/retrieve 정책
+기존 단일 상태:
 
-- 배치 점유자 계약은 `UPlacementOccupantComponent`로 구현한다.
-- preplaced actor 연결은 slot actor의 `InitialOccupantActor`로 처리한다.
-- `AuthoredReturnItemDefinition`은 `EditAnywhere`로 노출한다.
-- 회수 가능 조건은 `UPlacementOccupantComponent`의 `BlueprintNativeEvent`로 확장한다.
-- 기존 `APlacedItemActor`는 새 component/action으로 migration하되 기존 getter는 deprecated wrapper로 유지한다.
-- clear 시 기본 destroy는 유지하되, destroy 전에 `PreClearPlacementOccupant` hook을 호출한다.
+- `SpawnAmount`
+- `TargetBeeCount`
 
-## 목표
+권장 변경:
 
-1. `UPlacementOccupantComponent`를 추가한다.
-2. `UPlacementSlotRetrievePartFocusActionComponent`를 추가한다.
-3. `AItemPlacementSlotActor`를 generic occupied actor + initial occupant claim 구조로 확장한다.
-4. 기존 `APlacedItemActor`/`UPlacedItemRetrievePartFocusActionComponent`를 새 generic 구조로 migration한다.
-5. `ABeehiveCombSlotActor`를 추가한다.
-6. `ABeehive`의 소비장 slot 관리가 `ABeehiveCombSlotActor`를 통해 active comb를 다루도록 전환한다.
-7. `ABeehiveCombActor`에 occupant/retrieve 및 소비장 회수 가능 조건을 연결한다.
-8. 관련 architecture 문서와 Unreal 수동 설정 문서를 갱신한다.
-9. 가능하면 UBT 빌드를 수행한다.
+- `TotalSpawnAmount`
+- `FrontFaceTargetBeeCount`
+- `BackFaceTargetBeeCount`
 
-## 신규 타입 1: UPlacementOccupantComponent
+`TargetBeeCount` 단일 UPROPERTY는 제거한다. `SpawnAmount`도 의미가 모호하므로 `TotalSpawnAmount`로 rename한다.
 
-위치:
-
-- `Source/BeekeepingSim/Public/WorldActors/PlacementOccupantComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/PlacementOccupantComponent.cpp`
-
-class:
+필요한 helper:
 
 ```cpp
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class BEEKEEPINGSIM_API UPlacementOccupantComponent : public UActorComponent
+static int32 GetFrontShareFromTotal(int32 Total);
+static int32 GetBackShareFromTotal(int32 Total);
+int32 GetFaceSpawnAmount(EBeehiveCombVisibleFace Face) const;
+int32& GetMutableFaceTargetBeeCount(EBeehiveCombVisibleFace Face);
+int32 GetFaceTargetBeeCountInternal(EBeehiveCombVisibleFace Face) const;
 ```
 
-필수 property:
+분배 규칙은 helper 한 곳에만 둔다.
+
+## Public API 정리
+
+기존 API 중 의미가 모호한 것은 rename/remove한다. 호출부도 같이 고친다.
+
+권장 API:
 
 ```cpp
-UPROPERTY(Transient, BlueprintReadOnly, Category = "Placement Occupant")
-TObjectPtr<UItemDefinition> RuntimeReturnItemDefinition = nullptr;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount, int32 InTotalTargetBeeCount);
 
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Placement Occupant")
-TObjectPtr<UItemDefinition> AuthoredReturnItemDefinition = nullptr;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void SetTotalSpawnAmountAndResetTargetBeeCounts(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount);
 
-UPROPERTY(Transient, BlueprintReadOnly, Category = "Placement Occupant")
-TObjectPtr<AActor> OwningPlacementSlotActor = nullptr;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void SetTotalTargetBeeCount(int32 NewTotalTargetBeeCount);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ResetTargetBeeCountsToSpawnAmount();
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ReduceAllTargetBeeCountsByRatio(float Ratio);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ReduceAllTargetBeeCountsByAmount(int32 Amount);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ReduceVisibleFaceTargetBeeCountByAmount(int32 Amount);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void ReduceFaceTargetBeeCountByAmount(EBeehiveCombVisibleFace Face, int32 Amount);
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+int32 GetTotalSpawnAmount() const;
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+int32 GetTotalTargetBeeCount() const;
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+int32 GetFaceSpawnAmount(EBeehiveCombVisibleFace Face) const;
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+int32 GetFaceTargetBeeCount(EBeehiveCombVisibleFace Face) const;
+
+UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+int32 GetVisibleFaceTargetBeeCount() const;
 ```
 
-필수 API:
+기존 호출부 수정 예:
+
+- `GetSpawnAmount()` -> `GetTotalSpawnAmount()`
+- `GetTargetBeeCount()` -> `GetTotalTargetBeeCount()`
+- `SetSpawnAmountAndResetTargetBeeCount(...)` -> `SetTotalSpawnAmountAndResetTargetBeeCounts(...)`
+- `ReduceTargetBeeCountByRatio(...)` -> `ReduceAllTargetBeeCountsByRatio(...)`
+- `ReduceTargetBeeCountByAmount(...)` -> `ReduceAllTargetBeeCountsByAmount(...)` 또는 visible/face 전용 API
+
+## Sanitize 정책
+
+`SanitizeState()`는 다음을 보장한다.
+
+- `TotalSpawnAmount >= 0`
+- `0 <= FrontFaceTargetBeeCount <= GetFaceSpawnAmount(Front)`
+- `0 <= BackFaceTargetBeeCount <= GetFaceSpawnAmount(Back)`
+- `GetTotalTargetBeeCount() <= TotalSpawnAmount`
+
+전체 target을 설정할 때는 분배 helper로 front/back target을 다시 만든다.
+
+## Niagara 주입 변경
+
+`ApplyNiagaraUserParameters()`는 face별 값을 넣는다.
+
+Front:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
-void InitializeFromPlacement(UItemInstance* SourceItemInstance, AActor* InOwningPlacementSlotActor);
-
-UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
-void SetOwningPlacementSlotActor(AActor* InOwningPlacementSlotActor);
-
-UFUNCTION(BlueprintPure, Category = "Placement Occupant")
-UItemDefinition* GetReturnItemDefinition() const;
-
-UFUNCTION(BlueprintPure, Category = "Placement Occupant")
-AActor* GetOwningPlacementSlotActor() const;
-
-UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
-bool CanRetrievePlacementOccupant(ABeekeeperCharacter* InteractingCharacter) const;
-
-UFUNCTION(BlueprintCallable, Category = "Placement Occupant")
-void PreClearPlacementOccupant();
+FrontFaceBeeNiagara->SetVariableInt("User.SpawnAmount", GetFaceSpawnAmount(Front));
+FrontFaceBeeNiagara->SetVariableInt("User.TargetBeeCount", FrontFaceTargetBeeCount);
 ```
 
-Blueprint hooks:
+Back:
 
 ```cpp
-UFUNCTION(BlueprintNativeEvent, Category = "Placement Occupant")
-bool ReceiveCanRetrievePlacementOccupant(ABeekeeperCharacter* InteractingCharacter) const;
+BackFaceBeeNiagara->SetVariableInt("User.SpawnAmount", GetFaceSpawnAmount(Back));
+BackFaceBeeNiagara->SetVariableInt("User.TargetBeeCount", BackFaceTargetBeeCount);
+```
 
-UFUNCTION(BlueprintNativeEvent, Category = "Placement Occupant")
-void ReceivePreClearPlacementOccupant();
+`User.PlaneSize`는 기존처럼 양면 동일 적용한다.
+
+## BeeBrush 변경
+
+`UBeeBrushUseAction::ApplyUseEffect()`는 visible face 전용 감소 API를 호출한다.
+
+기존:
+
+```cpp
+CombActor->ReduceTargetBeeCountByAmount(RemoveAmount);
+```
+
+변경:
+
+```cpp
+CombActor->ReduceVisibleFaceTargetBeeCountByAmount(RemoveAmount);
+```
+
+BeeBrush는 `ColonyBeeCount`를 변경하지 않는다.
+
+## 흔들기/전체 감소 정책
+
+`ApplyCombShakeByRatio(...)`는 전체/양면 감소 정책으로 유지한다.
+
+권장:
+
+```cpp
+void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount)
+{
+    ReduceAllTargetBeeCountsByRatio(ClampedRatio);
+    ReceiveCombShaken(...);
+}
+```
+
+`ReduceAllTargetBeeCountsByRatio`는 각 face의 현재 target에 같은 ratio를 적용한다.
+
+예:
+
+- Front 251, Back 250, Ratio 0.1
+- 각 face별로 `RoundToInt(CurrentFaceTarget * Ratio)` 감소
+
+## Spawn 갱신 시 target 비율 보존
+
+`ABeehive::RefreshCombSpawnAmounts(...)`는 새 total spawn을 적용할 때 face별 target 비율을 보존해야 한다.
+
+`ABeehiveCombActor`에 전용 API를 추가한다.
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+void SetTotalSpawnAmountPreservingTargetRatios(const FVector2D& InPlaneSize, int32 InNewTotalSpawnAmount);
 ```
 
 정책:
 
-- `InitializeFromPlacement`는 `SourceItemInstance->GetDefinition()`을 `RuntimeReturnItemDefinition`에 저장하고 owning slot을 저장한다.
-- `GetReturnItemDefinition` 우선순위는 `RuntimeReturnItemDefinition`, 그 다음 `AuthoredReturnItemDefinition`이다.
-- `CanRetrievePlacementOccupant` 기본 구현은 `GetReturnItemDefinition() != nullptr && OwningPlacementSlotActor != nullptr` 정도로 둔다.
-- actor별 특수 회수 조건은 BP/C++ override로 구현한다.
-- `PreClearPlacementOccupant` 기본 구현은 no-op이다.
+- old face spawn이 0이면 해당 face target은 new face spawn으로 reset한다.
+- old face spawn이 0보다 크면:
+  - `NewFaceTarget = RoundToInt(NewFaceSpawn * OldFaceTarget / OldFaceSpawn)`
+- sanitize 후 Niagara parameter를 적용한다.
+- total spawn 변경으로 face spawn이 바뀌면 Niagara system reinitialize 필요 여부를 기존 `SpawnAmount != PreviousSpawnAmount` 정책에 맞춰 처리한다.
 
-## 신규 타입 2: UPlacementSlotRetrievePartFocusActionComponent
+초기화/명시 reset 경로:
 
-위치:
+- `SetTotalSpawnAmountAndResetTargetBeeCounts(...)`는 face target을 새 face spawn까지 채운다.
+- `RefreshCombSpawnAmounts(...)`는 확정 QnA에 따라 ratio 보존 API를 사용한다.
 
-- `Source/BeekeepingSim/Public/WorldActors/PlacementSlotRetrievePartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/PlacementSlotRetrievePartFocusActionComponent.cpp`
+단, BeginPlay/OnConstruction 등 초기 상태 구성에서 target이 아직 의미 없을 때는 reset API를 사용해도 된다. 어떤 경로가 초기화인지 애매하면 호출 의도를 기준으로 명시적으로 분리한다.
 
-class:
+## 회수 조건 수정
 
-```cpp
-UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class BEEKEEPINGSIM_API UPlacementSlotRetrievePartFocusActionComponent : public UCursorPartFocusActionComponent
-```
+`UBeehiveCombPlacementOccupantComponent`의 회수 조건은 새 total API를 사용한다.
 
-동작:
-
-1. owner actor에서 `UPlacementOccupantComponent`를 찾는다.
-2. occupant에서 `GetReturnItemDefinition()`을 조회한다.
-3. occupant에서 `GetOwningPlacementSlotActor()`를 조회한다.
-4. slot actor가 `IItemPlacementSlot`을 구현하는지 확인한다.
-5. `CanRetrievePlacementOccupant(Character)`가 true인지 확인한다.
-6. character hotbar에 `TryAcquireItem(ItemDefinition, 1)`을 호출한다.
-7. `bSuccess && AddedQuantity == 1`일 때만 성공으로 본다.
-8. 성공 시 `IItemPlacementSlot::Execute_ClearPlacedItem(SlotActor)`를 호출한다.
-9. 실패 시 actor와 slot 상태는 유지한다.
-
-`CanHandleSecondaryPartFocusAction`과 `HandleSecondaryPartFocusAction`만 구현한다. LMB begin/cancel 흐름은 건드리지 않는다.
-
-## AItemPlacementSlotActor 변경 요구
-
-현재 `SlotMeshComponent`는 유지한다.
-
-- 타입은 기존처럼 `UItemUseAreaMeshComponent`를 유지한다.
-- 역할은 empty slot의 item-use-area hit/visual이다.
-- occupied 상태에서는 hidden/no collision/inactive 상태가 된다.
-
-추가/변경:
+기존:
 
 ```cpp
-UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Item Placement Slot")
-TObjectPtr<AActor> InitialOccupantActor = nullptr;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Placement Slot")
-bool bAttachInitialOccupantToSlot = true;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Placement Slot")
-bool bSnapInitialOccupantToAttachPoint = false;
+CombActor->GetTargetBeeCount() != 0
 ```
 
-현재 `PlacedActor` 저장 필드는 public/BP 호환성이 있으므로 즉시 rename하지 않는다.
-
-- 내부 의미는 generic occupied actor로 확장한다.
-- `GetPlacedActor()`는 deprecated 문구를 달 수 있으면 달고, 기존 API 호환을 위해 유지한다.
-- 새 getter가 필요하면 `GetOccupiedActor()`를 추가한다.
-
-필수 동작:
-
-- `TryPlaceItem` 성공 후 spawned actor에 `UPlacementOccupantComponent`가 있으면 `InitializeFromPlacement(SourceItemInstance, this)` 호출
-- 기존 `APlacedItemActor` 특수 cast 의존은 제거 또는 deprecated wrapper로 축소
-- `ClearPlacedItem`은 occupied actor의 occupant component가 있으면 `PreClearPlacementOccupant()` 호출 후 destroy
-- clear 후 `PlacedActor = nullptr`, visual refresh, PartFocus rebuild, ItemUseArea rebuild
-- `IsPlacementOccupied`는 `PlacedActor` 유효성 기준으로 유지
-
-preplaced claim:
-
-- BeginPlay에서 `InitialOccupantActor`가 있고 아직 occupied가 아니면 claim한다.
-- claim은 spawn이 아니라 기존 actor 등록이다.
-- claim 대상은 `UPlacementOccupantComponent`를 가져야 한다. 없으면 claim 실패/로그.
-- claim 성공 시 `PlacedActor = InitialOccupantActor`
-- occupant component에 `SetOwningPlacementSlotActor(this)` 호출
-- `bAttachInitialOccupantToSlot`이면 `AttachComponent`에 attach한다.
-- `bSnapInitialOccupantToAttachPoint`이면 snap, 아니면 world transform 보존 attach를 사용한다.
-- claim 후 visual/rebuild를 수행한다.
-
-주의:
-
-- OnConstruction에서 actor reference attach/destroy 같은 위험한 runtime mutation은 피한다. preplaced claim은 BeginPlay 중심으로 구현한다.
-- Editor preview가 꼭 필요하면 별도 QnA로 묻는다.
-
-## 기존 APlacedItemActor migration
-
-`APlacedItemActor`에 다음 component를 기본 subobject로 추가한다.
-
-- `UPlacementOccupantComponent`
-- `UPlacementSlotRetrievePartFocusActionComponent`
-
-기존 API는 유지하되 내부에서 component를 읽게 한다.
-
-- `InitializePlacedItem(SourceItemInstance, SlotActor)`는 deprecated wrapper처럼 `PlacementOccupant->InitializeFromPlacement(...)` 호출
-- `GetItemDefinition()`은 `PlacementOccupant->GetReturnItemDefinition()` 반환
-- `GetOwningPlacementSlotActor()`는 `PlacementOccupant->GetOwningPlacementSlotActor()` 반환
-- `GetPartFocusActionComponent()`는 새 generic retrieve action을 반환
-
-기존 `UPlacedItemRetrievePartFocusActionComponent`:
-
-- 즉시 삭제하지 않는다.
-- 가능하면 `UPlacementSlotRetrievePartFocusActionComponent` subclass/deprecated wrapper로 축소한다.
-- runtime 경로에서는 새 generic component를 사용한다.
-
-기존 `UPlacedItemRetrieveFocusActionComponent`:
-
-- global preview focus retrieve 경로는 현재 정본에서 사용하지 않는 legacy에 가깝다.
-- 삭제/rename은 하지 말고, 필요 시 generic logic으로 내부만 정리한다.
-- 삭제 필요성이 생기면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
-
-## 신규 타입 3: ABeehiveCombSlotActor
-
-위치:
-
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombSlotActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombSlotActor.cpp`
-
-class:
+변경:
 
 ```cpp
-UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API ABeehiveCombSlotActor : public AItemPlacementSlotActor
+CombActor->GetTotalTargetBeeCount() != 0
 ```
 
-책임:
+queen attach 조건은 유지한다.
 
-- 소비장 전용 placement slot
-- `ABeehiveCombActor` 계열 actor만 배치 허용
-- slot empty/occupied use-area 동작은 parent 재사용
-- place/clear/initial claim 후 owning beehive에 comb layout/part focus/item-use-area 갱신 요청
+## ABeehive 호출부 수정
 
-필수 API:
+다음 호출부를 새 API로 맞춘다.
 
-```cpp
-UFUNCTION(BlueprintPure, Category = "Beehive|Comb Slot")
-ABeehiveCombActor* GetPlacedCombActor() const;
-```
-
-override:
-
-- `TryPlaceItem_Implementation`
-  - `PlacedActorClass`가 `ABeehiveCombActor` 계열인지 검증
-  - 통과하면 parent `TryPlaceItem_Implementation` 호출
-  - 성공 후 beehive 갱신 요청
-- `ClearPlacedItem_Implementation`
-  - parent clear 호출
-  - beehive 갱신 요청
-
-preplaced initial occupant:
-
-- parent claim 후 해당 actor가 `ABeehiveCombActor`가 아니면 claim 실패 처리한다.
-- parent에 hook이 필요하면 protected virtual `CanAcceptOccupantActor(AActor*)` 같은 확장점을 추가한다.
-
-갱신 요청:
-
-- parent의 host rebuild 경로를 활용한다.
-- 소비장 slot이 `ABeehive`의 child actor로 붙는 구조면 `GetAttachParentActor()`를 `ABeehive`로 해석한다.
-- `ABeehive::RebuildCursorPartFocusDescriptors()`
-- `UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()`
-- 필요하면 `ABeehive`에 public refresh API를 추가한다.
-
-## ABeehive 변경 요구
-
-현재 `ABeehive`는 `UChildActorComponent` 배열로 소비장 actor를 직접 생성한다. 이번 작업에서는 slot child actor를 생성하고, active comb는 slot의 placed comb로 조회한다.
-
-추가/변경 property:
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb")
-TSubclassOf<ABeehiveCombSlotActor> CombSlotActorClass;
-```
-
-기존 `CombActorClass`는 즉시 삭제하지 않는다.
-
-- 새로 배치되는 소비장 item의 `UItemPlacementUseAction::PlacedActorClass`가 comb actor class를 소유한다.
-- 기존 초기 자동 생성 정책이 남아 있다면 migration/compatibility 용도로만 최소 유지한다.
-- 삭제가 필요하면 Blueprint 영향 때문에 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
-
-slot component 배열:
-
-- 기존 `CombSlotComponents`는 child actor component 배열로 유지 가능하다.
-- 각 child actor component의 class는 `ABeehiveCombSlotActor` 계열이어야 한다.
-- 이름/배치/spacing 정책은 기존 `CombSlotSpacing`, `CombRackRoot`, `MaxCombCount` 흐름을 최대한 유지한다.
-
-active comb 조회 변경:
-
-- `FindManagedCombSlotIndex(const ABeehiveCombActor*)`
-  - 각 slot component child actor를 `ABeehiveCombSlotActor`로 cast
-  - `GetPlacedCombActor()`가 입력 comb와 같으면 index 반환
-- `GetCombSlotComponentByIndex`
-  - 기존처럼 slot child actor component 반환
-- `GetCombSlotWorldTransformByIndex`
-  - slot component transform 기준 유지
-- `GetLiftedCombActor`
-  - lift component index -> slot actor -> placed comb actor
-
-기존 active comb 순회 로직 변경 대상:
-
-- `RegisterCombPartsToScope`
 - `RefreshCombSpawnAmounts`
-- `ApplyColonyPopulationUpdate`
-- `ApplyHoneyProductionUpdate`
-- `ChooseQueenBeeCombSlotIndex`
-- `ResolveQueenBeeAttachPoint`
-- `DistributeHoneyIncreaseToCombs`
-- `IsManagedActiveCombActor`
+- `ReduceCombTargetBeeCountByConfiguredRatio`
+- active comb spawn/target refresh 경로
+- `GetTargetBeeCount`/`GetSpawnAmount` 검색 결과 전체
 
-각 로직은 `ABeehiveCombSlotActor::GetPlacedCombActor()`가 null인 slot은 skip한다.
+`RefreshCombSpawnAmounts`는 일반 갱신에서 ratio 보존 API를 사용한다.
 
-CurrentCombCount 정책:
-
-- `CurrentCombCount`는 legacy/test compatibility로 유지할 수 있다.
-- 새 구조에서 “점유된 소비장 수”와 다를 수 있으므로, 의미가 애매해지면 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
-- 권장은 `MaxCombCount`개의 slot은 항상 존재하고, 실제 active comb는 occupied slot 기준으로 계산하는 것이다.
-
-queen/bee/honey 정책:
-
-- queen 위치 후보는 placed comb가 있는 slot만 포함한다.
-- lifted comb slot 제외 정책 유지.
-- `TargetBeeCount`가 0이 아닌 소비장은 회수 불가이므로, 회수 성공 후 population/honey 갱신 대상에서 자연스럽게 제외된다.
-- 여왕벌이 붙은 소비장 회수 차단을 위해 `ABeehive` 또는 comb occupant hook에서 queen attach 상태 확인 API가 필요할 수 있다.
-
-## ABeehiveCombActor 변경 요구
-
-추가 component:
-
-- `UPlacementOccupantComponent`
-- `UPlacementSlotRetrievePartFocusActionComponent` 또는 기존 comb PartFocus action에 secondary retrieve 위임
-
-중요:
-
-- LMB 소비장 lift/return은 기존 `UBeehiveCombPartFocusActionComponent` 경로를 유지한다.
-- RMB/secondary retrieve는 generic retrieve action을 사용한다.
-- 하나의 descriptor/action handler에서 LMB와 secondary를 모두 처리해야 하는 구조라면 `UBeehiveCombPartFocusActionComponent`가 secondary에서 `UPlacementSlotRetrievePartFocusActionComponent` helper를 호출하게 구성한다.
-- 별도 retrieve action component를 붙이더라도 descriptor의 `ActionHandler`가 하나만 허용되는지 확인한다. descriptor가 action 1개만 받는다면 기존 comb action에 secondary retrieve 기능을 bridge한다.
-
-소비장 회수 가능 조건:
-
-- `UPlacementOccupantComponent::ReceiveCanRetrievePlacementOccupant`를 BP override하거나, C++ subclass/hook으로 구현한다.
-- 조건:
-  - `GetReturnItemDefinition()` 유효
-  - owning slot 유효
-  - `TargetBeeCount == 0`
-  - 여왕벌이 이 comb에 붙어 있지 않음
-- 꿀 양과 visible face는 회수 가능 조건에서 차단하지 않는다. 보존 대상이다.
-
-상태 보존:
-
-- 꿀 양과 visible face를 item instance에 보존해야 한다.
-- 현재 `UItemInstance`에 generic custom state 저장 계약이 없으면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
-- 임시로 상태를 버리는 구현은 금지한다.
-
-## Inventory / ItemInstance 검토 요구
-
-소비장 회수 시 꿀 양과 visible face 보존이 확정되어 있다.
-
-검토할 것:
-
-- `UItemInstance`가 arbitrary runtime state를 저장할 수 있는지
-- 없다면 최소 확장 방식 후보를 `.md/QNA_IMPLEMENTATION.md`에 질문할 것
-
-질문 없이 임의로 `UItemInstance`에 대형 generic serialization system을 추가하지 않는다.
-
-가능한 질문 예:
-
-- 소비장 전용 item state struct를 둘지
-- item instance에 `InstancedStruct`/tagged payload 류 generic state를 둘지
-- 1차 구현에서 상태 보존 범위를 별도 component로 미룰지
-
-단, 사용자가 이미 “꿀양과 visible face만 보존”이라고 답했으므로, 상태를 버리는 옵션은 제안하지 않는다.
-
-## Focus / PartFocus 검토 요구
-
-확인할 것:
-
-- `FCursorPartFocusPartDescriptor`가 `ActionHandler` 하나만 지원하는지
-- secondary input이 현재 hovered part의 `ActionHandler->HandleSecondaryPartFocusAction`으로만 가는지
-
-제약:
-
-- 소비장 LMB action을 깨면 안 된다.
-- `UBeehiveCombPartFocusActionComponent`의 begin/cancel/abort 정책은 유지한다.
-
-권장 구현:
-
-- `UBeehiveCombPartFocusActionComponent`에 secondary retrieve bridge를 추가한다.
-- 내부에서 owner comb의 `UPlacementOccupantComponent`를 찾고 generic retrieve helper/static function/component API를 호출한다.
-- generic retrieve action과 code duplication을 피하기 위해 retrieve 실행 로직을 private helper 또는 component method로 공유한다.
-
-## AItemPlacementSlotActor SlotMeshComponent 유지
-
-`SlotMeshComponent`는 삭제하지 않는다.
-
-역할:
-
-- empty slot의 item-use-area hit/visual
-- placement item의 `UseAreaTagQuery` 매칭 대상
-- occupied 상태에서 hidden/collision off/inactive
-
-`UPlacementOccupantComponent`는 `SlotMeshComponent`를 대체하지 않는다.
-
-## Editor 작업 문서화
-
-`.md/USER_UNREAL.md`에 추가:
-
-1. `BP_Beehive` 또는 벌통 BP
-   - comb slot child actor class를 `ABeehiveCombSlotActor` subclass로 설정
-   - 기존 소비장 직접 child actor 방식에서 slot child actor 방식으로 전환
-2. `BP_BeehiveCombSlot`
-   - `SlotMeshComponent`의 mesh/material/transform 설정
-   - `AreaTags`를 소비장 배치 item의 query와 맞춤
-   - 필요 시 `InitialOccupantActor` 설정
-   - preplaced 소비장은 attach/snap 옵션 확인
-3. `BP_BeehiveComb`
-   - `UPlacementOccupantComponent` 존재 확인
-   - `AuthoredReturnItemDefinition` 설정 가능
-   - generic retrieve/secondary 경로 확인
-   - target bee count/queen attached 회수 차단 조건 구현 확인
-4. 소비장 item definition
-   - `UItemPlacementUseAction::PlacedActorClass`를 소비장 actor BP로 설정
-   - use-area tag query를 comb slot tag와 맞춤
-5. 기존 placed item BP
-   - `UPlacementOccupantComponent`와 generic retrieve action이 붙었는지 확인
-   - 기존 retrieve BP 노드가 있다면 deprecated 경고 확인
+`ApplyInitialCombSetupForBeginPlay`, construction refresh 등 초기 채움 경로는 target reset이 맞는지 확인한다. reset이 필요한 곳은 `SetTotalSpawnAmountAndResetTargetBeeCounts`, 기존 target 보존이 필요한 곳은 `SetTotalSpawnAmountPreservingTargetRatios`를 명확히 구분한다.
 
 ## 문서 갱신
 
-구현 후 갱신:
+구현 후 반드시 갱신한다.
 
 - `.md/0_ARCHITECTURE.md`
-  - generic placement occupant/retrieve 흐름
-  - 소비장 slot 구조 요약
+  - 기존 “양면 Niagara에 동일 값 적용” 내용을 제거하고, 전체 spawn/target을 face별 분배 주입으로 수정
+  - 회수 조건을 total target 0으로 갱신
 - `.md/Architecture/WorldActorsSystem.md`
-  - `UPlacementOccupantComponent`
-  - `UPlacementSlotRetrievePartFocusActionComponent`
-  - `ABeehiveCombSlotActor`
-  - `AItemPlacementSlotActor` initial occupant claim
-  - `ABeehive` comb slot 관리 변경
-- `.md/Architecture/FocusSystem.md`
-  - PartFocus secondary retrieve가 generic action/helper로 처리되는 경로
+  - `ABeehiveCombActor` 상태 모델 갱신
+  - 분배 규칙, API 이름, BeeBrush/흔들기 정책 기록
 - `.md/Architecture/InventorySystem.md`
-  - 소비장 회수 state 보존 계약. 구현이 QnA로 보류되면 보류 사실 명시
-- `.md/USER_UNREAL.md`
-  - BP/editor migration 절차
+  - BeeBrush 효과 정책을 visible face target 감소로 수정
 
-## 검증 기준
+## 검증
 
-### 검색
+검색 검증:
 
-있어야 함:
+- 기존 API명이 남아 있지 않은지 확인
+  - `GetSpawnAmount(`
+  - `GetTargetBeeCount(`
+  - `SetSpawnAmountAndResetTargetBeeCount`
+  - `ReduceTargetBeeCountBy`
+  - `TargetBeeCount =`
+- 의도적으로 남긴 Niagara parameter 이름 `User.TargetBeeCount`는 제외한다.
 
-- `UPlacementOccupantComponent`
-- `UPlacementSlotRetrievePartFocusActionComponent`
-- `ABeehiveCombSlotActor`
-- `InitialOccupantActor`
-- `AuthoredReturnItemDefinition`
-- `RuntimeReturnItemDefinition`
-- `PreClearPlacementOccupant`
-- `CanRetrievePlacementOccupant`
+시나리오 검증:
 
-runtime 경로에서 줄어들어야 함:
+1. `ColonyBeeCount=1000`, occupied comb 2개, `CombSpawnAmountRatio=1.0`
+   - 각 소비장 total spawn 500
+   - Front spawn 250, Back spawn 250
+   - total target 500
+   - Front target 250, Back target 250
+2. total 501인 경우
+   - Front 251, Back 250
+3. BeeBrush
+   - Front visible 상태에서 BeeBrush 사용 시 Front target만 감소
+   - flip 후 BeeBrush 사용 시 Back target만 감소
+4. Shake
+   - 양면 target 모두 ratio만큼 감소
+5. 회수
+   - Front/Back target 합계가 0이어야 회수 가능
 
-- `APlacedItemActor` hard cast 기반 retrieve 로직
-- placed item 전용 retrieve component에만 회수 규칙이 묶인 구조
-
-### 동작 검증
-
-1. 기존 화분떡 배치
-   - empty slot에 배치 가능
-   - occupied slot에는 다시 배치 불가
-   - secondary 회수 시 hotbar 공간 있으면 회수
-   - 공간 없으면 actor/slot 유지
-2. preplaced item
-   - slot의 `InitialOccupantActor`로 claim
-   - authored fallback item definition으로 회수
-   - 회수 성공 시 slot clear
-3. 소비장 배치
-   - empty comb slot에 소비장 item 배치
-   - 배치된 소비장은 기존 LMB lift/return 가능
-   - BeeBrush use area 기존 동작 유지
-4. 소비장 회수
-   - `TargetBeeCount == 0`이고 여왕벌 attach 없음이면 secondary 회수 가능
-   - `TargetBeeCount > 0`이면 회수 실패, actor/slot 유지
-   - 여왕벌이 붙어 있으면 회수 실패, actor/slot 유지
-   - 꿀 양과 visible face는 회수 후 item state로 보존
-5. 벌통 runtime
-   - honey production은 placed comb만 대상으로 수행
-   - colony population은 placed comb만 대상으로 수행
-   - queen location 후보는 placed comb만 포함
-   - lifted comb 제외 정책 유지
-
-### 빌드
-
-가능하면 수행:
+가능하면 UBT 빌드 수행:
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-## QnA 중단 조건
+## 중단 조건
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- 소비장 꿀 양/visible face를 `UItemInstance`에 보존할 안정적 계약이 없는 경우
-- `FCursorPartFocusPartDescriptor`가 기존 comb LMB action과 generic retrieve secondary action을 동시에 수용하기 어려운 경우
-- `CurrentCombCount` 의미가 새 slot occupancy 구조와 충돌해 public API 의미 변경이 필요한 경우
-- 기존 `APlacedItemActor` BP 참조 때문에 retrieve component migration이 asset break를 유발할 가능성이 큰 경우
-- preplaced initial occupant claim을 construction에서 처리해야 한다는 요구가 생기는 경우
-- `CombActorClass` 삭제/rename이 필요해지는 경우
-- UCLASS/UFUNCTION/UPROPERTY rename 또는 Core Redirect가 필요해지는 경우
+- Niagara system이 `User.SpawnAmount`를 total 값으로 반드시 받아야 한다는 강한 근거가 소스/문서에서 발견되는 경우
+- face별 target ratio 보존이 기존 colony population/honey/queen 정책과 충돌하는 경우
+- API rename 후 C++ 호출부는 정리 가능하지만 generated reflection/BP compile 단계에서 Core Redirect 없이는 빌드 자체가 불가능한 경우
+- 문서의 확정 QnA와 소스 구조가 명백히 충돌하는 경우

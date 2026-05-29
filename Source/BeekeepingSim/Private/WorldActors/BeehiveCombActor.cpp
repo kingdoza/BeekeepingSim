@@ -96,77 +96,216 @@ void ABeehiveCombActor::BeginPlay()
 	ApplyHoneyVisualState();
 }
 
-void ABeehiveCombActor::ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InSpawnAmount, int32 InTargetBeeCount)
+int32 ABeehiveCombActor::GetFrontShareFromTotal(int32 Total)
 {
-	const int32 PreviousSpawnAmount = SpawnAmount;
+	return (FMath::Max(0, Total) + 1) / 2;
+}
+
+int32 ABeehiveCombActor::GetBackShareFromTotal(int32 Total)
+{
+	return FMath::Max(0, Total) / 2;
+}
+
+int32 ABeehiveCombActor::GetFaceSpawnAmount(EBeehiveCombVisibleFace Face) const
+{
+	return Face == EBeehiveCombVisibleFace::Front
+		? GetFrontShareFromTotal(TotalSpawnAmount)
+		: GetBackShareFromTotal(TotalSpawnAmount);
+}
+
+int32& ABeehiveCombActor::GetMutableFaceTargetBeeCount(EBeehiveCombVisibleFace Face)
+{
+	return Face == EBeehiveCombVisibleFace::Front ? FrontFaceTargetBeeCount : BackFaceTargetBeeCount;
+}
+
+int32 ABeehiveCombActor::GetFaceTargetBeeCountInternal(EBeehiveCombVisibleFace Face) const
+{
+	return Face == EBeehiveCombVisibleFace::Front ? FrontFaceTargetBeeCount : BackFaceTargetBeeCount;
+}
+
+int32 ABeehiveCombActor::GetFaceTargetBeeCount(EBeehiveCombVisibleFace Face) const
+{
+	return GetFaceTargetBeeCountInternal(Face);
+}
+
+int32 ABeehiveCombActor::GetVisibleFaceTargetBeeCount() const
+{
+	return GetFaceTargetBeeCountInternal(VisibleCombFace);
+}
+
+void ABeehiveCombActor::ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount, int32 InTotalTargetBeeCount)
+{
+	const int32 PreviousTotalSpawnAmount = TotalSpawnAmount;
 	PlaneSize = InPlaneSize;
-	SpawnAmount = InSpawnAmount;
-	TargetBeeCount = InTargetBeeCount;
+	TotalSpawnAmount = InTotalSpawnAmount;
+
+	const int32 SanitizedTotalTarget = FMath::Max(0, InTotalTargetBeeCount);
+	FrontFaceTargetBeeCount = GetFrontShareFromTotal(SanitizedTotalTarget);
+	BackFaceTargetBeeCount = GetBackShareFromTotal(SanitizedTotalTarget);
+
 	SanitizeState();
 	ApplyNiagaraUserParameters();
-	if (SpawnAmount != PreviousSpawnAmount)
+	if (TotalSpawnAmount != PreviousTotalSpawnAmount)
 	{
 		RestartBeeNiagaraSystems();
 	}
 }
 
-void ABeehiveCombActor::SetSpawnAmountAndResetTargetBeeCount(const FVector2D& InPlaneSize, int32 InSpawnAmount)
+void ABeehiveCombActor::SetTotalSpawnAmountAndResetTargetBeeCounts(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount)
 {
-	const int32 PreviousSpawnAmount = SpawnAmount;
+	const int32 PreviousTotalSpawnAmount = TotalSpawnAmount;
 	PlaneSize = InPlaneSize;
-	SpawnAmount = InSpawnAmount;
-	TargetBeeCount = SpawnAmount;
+	TotalSpawnAmount = InTotalSpawnAmount;
+	SanitizeState();
+	FrontFaceTargetBeeCount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	BackFaceTargetBeeCount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
 	SanitizeState();
 	ApplyNiagaraUserParameters();
-	if (SpawnAmount != PreviousSpawnAmount)
+	if (TotalSpawnAmount != PreviousTotalSpawnAmount)
 	{
 		RestartBeeNiagaraSystems();
 	}
 }
 
-void ABeehiveCombActor::SetTargetBeeCount(int32 NewTargetBeeCount)
+void ABeehiveCombActor::SetTotalSpawnAmountPreservingTargetRatios(const FVector2D& InPlaneSize, int32 InNewTotalSpawnAmount)
 {
-	TargetBeeCount = NewTargetBeeCount;
+	SanitizeState();
+
+	const int32 PreviousTotalSpawnAmount = TotalSpawnAmount;
+	const int32 OldFrontSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	const int32 OldBackSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
+	const int32 OldFrontTargetBeeCount = FrontFaceTargetBeeCount;
+	const int32 OldBackTargetBeeCount = BackFaceTargetBeeCount;
+
+	PlaneSize = InPlaneSize;
+	TotalSpawnAmount = InNewTotalSpawnAmount;
+
+	const int32 NewFrontSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	const int32 NewBackSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
+
+	if (OldFrontSpawnAmount <= 0)
+	{
+		FrontFaceTargetBeeCount = NewFrontSpawnAmount;
+	}
+	else
+	{
+		const float FrontRatio = static_cast<float>(OldFrontTargetBeeCount) / static_cast<float>(OldFrontSpawnAmount);
+		FrontFaceTargetBeeCount = FMath::RoundToInt(static_cast<float>(NewFrontSpawnAmount) * FrontRatio);
+	}
+
+	if (OldBackSpawnAmount <= 0)
+	{
+		BackFaceTargetBeeCount = NewBackSpawnAmount;
+	}
+	else
+	{
+		const float BackRatio = static_cast<float>(OldBackTargetBeeCount) / static_cast<float>(OldBackSpawnAmount);
+		BackFaceTargetBeeCount = FMath::RoundToInt(static_cast<float>(NewBackSpawnAmount) * BackRatio);
+	}
+
+	SanitizeState();
+	ApplyNiagaraUserParameters();
+	if (TotalSpawnAmount != PreviousTotalSpawnAmount)
+	{
+		RestartBeeNiagaraSystems();
+	}
+}
+
+void ABeehiveCombActor::SetTotalTargetBeeCount(int32 NewTotalTargetBeeCount)
+{
+	const int32 ClampedTotalTargetBeeCount = FMath::Clamp(NewTotalTargetBeeCount, 0, FMath::Max(0, TotalSpawnAmount));
+	FrontFaceTargetBeeCount = GetFrontShareFromTotal(ClampedTotalTargetBeeCount);
+	BackFaceTargetBeeCount = GetBackShareFromTotal(ClampedTotalTargetBeeCount);
 	SanitizeState();
 	ApplyNiagaraUserParameters();
 }
 
-void ABeehiveCombActor::ResetTargetBeeCountToSpawnAmount()
+void ABeehiveCombActor::ResetTargetBeeCountsToSpawnAmount()
 {
-	TargetBeeCount = SpawnAmount;
+	FrontFaceTargetBeeCount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	BackFaceTargetBeeCount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
 	SanitizeState();
 	ApplyNiagaraUserParameters();
 }
 
-void ABeehiveCombActor::ReduceTargetBeeCountByRatio(float Ratio)
+void ABeehiveCombActor::ReduceAllTargetBeeCountsByRatio(float Ratio)
 {
 	const float ClampedRatio = FMath::Clamp(Ratio, 0.0f, 1.0f);
-	const int32 Reduction = FMath::RoundToInt(static_cast<float>(TargetBeeCount) * ClampedRatio);
-	ReduceTargetBeeCountByAmount(Reduction);
+	const int32 FrontReduction = FMath::RoundToInt(static_cast<float>(FrontFaceTargetBeeCount) * ClampedRatio);
+	const int32 BackReduction = FMath::RoundToInt(static_cast<float>(BackFaceTargetBeeCount) * ClampedRatio);
+
+	FrontFaceTargetBeeCount -= FMath::Max(0, FrontReduction);
+	BackFaceTargetBeeCount -= FMath::Max(0, BackReduction);
+
+	SanitizeState();
+	ApplyNiagaraUserParameters();
 }
 
-void ABeehiveCombActor::ReduceTargetBeeCountByAmount(int32 Amount)
+void ABeehiveCombActor::ReduceAllTargetBeeCountsByAmount(int32 Amount)
 {
-	const int32 ClampedAmount = FMath::Max(0, Amount);
-	TargetBeeCount -= ClampedAmount;
+	const int32 ClampedAmount = FMath::Clamp(Amount, 0, GetTotalTargetBeeCount());
+	if (ClampedAmount <= 0)
+	{
+		return;
+	}
+
+	const int32 RequestedFrontReduction = GetFrontShareFromTotal(ClampedAmount);
+	const int32 RequestedBackReduction = GetBackShareFromTotal(ClampedAmount);
+
+	const int32 FrontReduction = FMath::Min(FrontFaceTargetBeeCount, RequestedFrontReduction);
+	const int32 BackReduction = FMath::Min(BackFaceTargetBeeCount, RequestedBackReduction);
+
+	FrontFaceTargetBeeCount -= FrontReduction;
+	BackFaceTargetBeeCount -= BackReduction;
+
+	int32 RemainingReduction = ClampedAmount - (FrontReduction + BackReduction);
+	if (RemainingReduction > 0)
+	{
+		const int32 AdditionalFrontReduction = FMath::Min(FrontFaceTargetBeeCount, RemainingReduction);
+		FrontFaceTargetBeeCount -= AdditionalFrontReduction;
+		RemainingReduction -= AdditionalFrontReduction;
+	}
+
+	if (RemainingReduction > 0)
+	{
+		const int32 AdditionalBackReduction = FMath::Min(BackFaceTargetBeeCount, RemainingReduction);
+		BackFaceTargetBeeCount -= AdditionalBackReduction;
+	}
+
+	SanitizeState();
+	ApplyNiagaraUserParameters();
+}
+
+void ABeehiveCombActor::ReduceVisibleFaceTargetBeeCountByAmount(int32 Amount)
+{
+	ReduceFaceTargetBeeCountByAmount(VisibleCombFace, Amount);
+}
+
+void ABeehiveCombActor::ReduceFaceTargetBeeCountByAmount(EBeehiveCombVisibleFace Face, int32 Amount)
+{
+	int32& FaceTargetBeeCount = GetMutableFaceTargetBeeCount(Face);
+	FaceTargetBeeCount -= FMath::Max(0, Amount);
 	SanitizeState();
 	ApplyNiagaraUserParameters();
 }
 
 void ABeehiveCombActor::ApplyNiagaraUserParameters()
 {
+	const int32 FrontSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	const int32 BackSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
+
 	if (FrontFaceBeeNiagara)
 	{
 		FrontFaceBeeNiagara->SetVariableVec2(BeehiveCombActorNames::PlaneSize, PlaneSize);
-		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, SpawnAmount);
-		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, TargetBeeCount);
+		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, FrontSpawnAmount);
+		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, FrontFaceTargetBeeCount);
 	}
 
 	if (BackFaceBeeNiagara)
 	{
 		BackFaceBeeNiagara->SetVariableVec2(BeehiveCombActorNames::PlaneSize, PlaneSize);
-		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, SpawnAmount);
-		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, TargetBeeCount);
+		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, BackSpawnAmount);
+		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, BackFaceTargetBeeCount);
 	}
 }
 
@@ -185,8 +324,27 @@ void ABeehiveCombActor::RestartBeeNiagaraSystems()
 
 void ABeehiveCombActor::SanitizeState()
 {
-	SpawnAmount = FMath::Max(0, SpawnAmount);
-	TargetBeeCount = FMath::Clamp(TargetBeeCount, 0, SpawnAmount);
+	TotalSpawnAmount = FMath::Max(0, TotalSpawnAmount);
+
+	const int32 FrontFaceSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Front);
+	const int32 BackFaceSpawnAmount = GetFaceSpawnAmount(EBeehiveCombVisibleFace::Back);
+
+	FrontFaceTargetBeeCount = FMath::Clamp(FrontFaceTargetBeeCount, 0, FrontFaceSpawnAmount);
+	BackFaceTargetBeeCount = FMath::Clamp(BackFaceTargetBeeCount, 0, BackFaceSpawnAmount);
+
+	int32 Overflow = GetTotalTargetBeeCount() - TotalSpawnAmount;
+	if (Overflow > 0)
+	{
+		const int32 BackReduction = FMath::Min(Overflow, BackFaceTargetBeeCount);
+		BackFaceTargetBeeCount -= BackReduction;
+		Overflow -= BackReduction;
+	}
+
+	if (Overflow > 0)
+	{
+		const int32 FrontReduction = FMath::Min(Overflow, FrontFaceTargetBeeCount);
+		FrontFaceTargetBeeCount -= FrontReduction;
+	}
 }
 
 USceneComponent* ABeehiveCombActor::GetQueenAttachPoint(bool bFrontFace) const
@@ -303,7 +461,7 @@ void ABeehiveCombActor::ApplyCombShakeByRatio(float ReductionRatio)
 void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRatio, int32 StrokeCount)
 {
 	const float ClampedRatio = FMath::Clamp(ReductionRatio, 0.0f, 1.0f);
-	ReduceTargetBeeCountByRatio(ClampedRatio);
+	ReduceAllTargetBeeCountsByRatio(ClampedRatio);
 	ReceiveCombShaken(FMath::Max(0, StrokeCount), ClampedRatio);
 }
 

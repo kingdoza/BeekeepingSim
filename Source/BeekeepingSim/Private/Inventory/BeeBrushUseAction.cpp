@@ -1,6 +1,7 @@
 #include "Inventory/BeeBrushUseAction.h"
 
 #include "GameplayTagContainer.h"
+#include "WorldActors/Beehive.h"
 #include "WorldActors/BeehiveCombActor.h"
 
 UBeeBrushUseAction::UBeeBrushUseAction()
@@ -29,6 +30,11 @@ FItemActionExecutionResult UBeeBrushUseAction::ApplyUseEffect(const FItemActionC
 		return Result;
 	}
 
+	if (ABeehive* Beehive = Cast<ABeehive>(Context.FocusEngagedHostActor))
+	{
+		Result.bSucceeded |= Beehive->TryBrushQueenBeeFromCombVisibleFace(CombActor);
+	}
+
 	PendingBeeRemoval += FMath::Max(0.0f, BeeRemovalPerSecond) * FMath::Max(0.0f, DeltaTime);
 	const int32 RemoveAmount = FMath::FloorToInt(PendingBeeRemoval);
 	if (RemoveAmount <= 0)
@@ -37,7 +43,7 @@ FItemActionExecutionResult UBeeBrushUseAction::ApplyUseEffect(const FItemActionC
 	}
 
 	PendingBeeRemoval -= static_cast<float>(RemoveAmount);
-	CombActor->ReduceTargetBeeCountByAmount(RemoveAmount);
+	CombActor->ReduceVisibleFaceTargetBeeCountByAmount(RemoveAmount);
 	Result.bSucceeded = true;
 	return Result;
 }
@@ -46,4 +52,3 @@ ABeehiveCombActor* UBeeBrushUseAction::ResolveTargetComb(const FItemActionContex
 {
 	return Cast<ABeehiveCombActor>(Context.ItemUseEffectTargetObject);
 }
-

@@ -45,28 +45,46 @@ public:
 #endif
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InSpawnAmount, int32 InTargetBeeCount);
+	void ApplyCombBeeParameters(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount, int32 InTotalTargetBeeCount);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void SetSpawnAmountAndResetTargetBeeCount(const FVector2D& InPlaneSize, int32 InSpawnAmount);
+	void SetTotalSpawnAmountAndResetTargetBeeCounts(const FVector2D& InPlaneSize, int32 InTotalSpawnAmount);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void SetTargetBeeCount(int32 NewTargetBeeCount);
+	void SetTotalSpawnAmountPreservingTargetRatios(const FVector2D& InPlaneSize, int32 InNewTotalSpawnAmount);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void ResetTargetBeeCountToSpawnAmount();
+	void SetTotalTargetBeeCount(int32 NewTotalTargetBeeCount);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void ReduceTargetBeeCountByRatio(float Ratio);
+	void ResetTargetBeeCountsToSpawnAmount();
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
-	void ReduceTargetBeeCountByAmount(int32 Amount);
+	void ReduceAllTargetBeeCountsByRatio(float Ratio);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ReduceAllTargetBeeCountsByAmount(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ReduceVisibleFaceTargetBeeCountByAmount(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
+	void ReduceFaceTargetBeeCountByAmount(EBeehiveCombVisibleFace Face, int32 Amount);
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
-	int32 GetSpawnAmount() const { return SpawnAmount; }
+	int32 GetTotalSpawnAmount() const { return TotalSpawnAmount; }
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
-	int32 GetTargetBeeCount() const { return TargetBeeCount; }
+	int32 GetTotalTargetBeeCount() const { return FrontFaceTargetBeeCount + BackFaceTargetBeeCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 GetFaceSpawnAmount(EBeehiveCombVisibleFace Face) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 GetFaceTargetBeeCount(EBeehiveCombVisibleFace Face) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
+	int32 GetVisibleFaceTargetBeeCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UStaticMeshComponent* GetCombMeshComponent() const { return CombMesh; }
@@ -180,6 +198,10 @@ protected:
 	void ReceiveCombShaken(int32 StrokeCount, float ReductionRatio);
 
 private:
+	static int32 GetFrontShareFromTotal(int32 Total);
+	static int32 GetBackShareFromTotal(int32 Total);
+	int32& GetMutableFaceTargetBeeCount(EBeehiveCombVisibleFace Face);
+	int32 GetFaceTargetBeeCountInternal(EBeehiveCombVisibleFace Face) const;
 	void ApplyNiagaraUserParameters();
 	void RestartBeeNiagaraSystems();
 	void SanitizeState();
@@ -191,10 +213,13 @@ private:
 	FVector2D PlaneSize = FVector2D(100.0f, 100.0f);
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb", meta = (ClampMin = "0"))
-	int32 SpawnAmount = 0;
+	int32 TotalSpawnAmount = 0;
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb", meta = (ClampMin = "0"))
-	int32 TargetBeeCount = 0;
+	int32 FrontFaceTargetBeeCount = 0;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb", meta = (ClampMin = "0"))
+	int32 BackFaceTargetBeeCount = 0;
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
 	float MaxHoneyPerComb = 100.0f;

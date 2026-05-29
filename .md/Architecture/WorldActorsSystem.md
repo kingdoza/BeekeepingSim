@@ -72,7 +72,7 @@
 - `UPlacementOccupantComponent`: 배치 점유 actor의 회수 정보(return item definition, owning slot)와 회수 가능 조건 hook을 제공한다.
 - `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 generic 회수(`TryAcquireItem + ClearPlacedItem`)를 수행한다.
 - `ABeehiveCombSlotActor`: comb 전용 `AItemPlacementSlotActor` subclass. comb class 검증, beehive refresh 요청, comb slot 정책을 캡슐화한다.
-- `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TargetBeeCount`, queen attach)을 구현하는 occupant subclass다.
+- `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TotalTargetBeeCount`, queen attach)을 구현하는 occupant subclass다.
 - `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
 
 ## Composition
@@ -107,6 +107,11 @@
   - 중앙 slot일수록 높은 가중치로 weighted random 선택
   - 선택된 comb의 front/back attach point를 50:50로 선택
   - attach point 기준 회전에 `0..360` 랜덤 yaw를 relative rotation으로 추가
+- BeeBrush queen relocation:
+  - `ABeehive::TryBrushQueenBeeFromCombVisibleFace(CombActor)`가 여왕벌 이동의 owner다.
+  - 대상 소비장의 현재 visible face attach point에 여왕벌이 붙어 있을 때만 털어냄이 성공한다.
+  - 성공 시 같은 소비장을 제외한 다른 active comb 중 하나를 균등 랜덤으로 선택하고, front/back attach point를 50:50로 골라 재부착한다.
+  - 다른 소비장이 없거나 여왕벌이 해당 face에 붙어 있지 않으면 이동하지 않는다.
 - `ApplyBeeSwarmSettings()`에서 child actor 재생성 없이 기존 instance에 계산된 DTO를 재주입
 - 시간 갱신(`ApplyBeeSwarmHour24`) 경로에서도 class 변경 없이 parameter만 갱신
 - `CombSlotSpacing` 기준 local `Y` 중앙 정렬 배치:
@@ -118,8 +123,9 @@
 - PIE/game world에서는 `InitialCombCount`, `MaxCombCount`, `CombActorClass`, `CombSlotActorClass`, `CombSlotSpacing` details 편집을 차단한다.
 - occupied comb 수가 0이면 comb spawn amount는 0이다.
 - comb spawn amount 계산식: `RoundToInt(ColonyBeeCount * Clamp01(CombSpawnAmountRatio) / OccupiedCombCount)`
-- `SetColonyBeeCount` 포함 spawn amount 갱신 경로에서 active comb의 target bee count를 spawn amount로 리셋
-- `ApplyColonyPopulationUpdate()` 경로에서는 lifted comb slot을 제외한 active comb에만 spawn/target 갱신을 적용
+- `SetColonyBeeCount`, `ApplyColonyPopulationUpdate()` 등 일반 spawn amount 갱신 경로에서는 active comb의 face target 비율을 보존하며 total spawn만 갱신한다.
+- 초기 배치/초기 채움 경로(`RefreshCombLayoutAndParameters`, `ApplyInitialCombSetupForBeginPlay`)에서는 active comb target을 face spawn값으로 명시 reset한다.
+- `ApplyColonyPopulationUpdate()` 경로에서는 lifted comb slot을 제외한 active comb에만 spawn/target 갱신을 적용한다.
 - `ApplyHoneyProductionUpdate()` 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량을 적용
 - 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
 - cursor part focus 등록:
@@ -178,21 +184,29 @@
 - 방향 포함 flip API: `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
 - 방향 포함 BP 이벤트: `ReceiveCombFlippedWithDirection(NewVisibleFace, FlipDirection)`
 - `SetVisibleCombFace(...)`는 visible face state만 저장한다. 실제 yaw/flip 회전 연출은 Blueprint event에서 구현한다.
-- shake API: `ApplyCombShakeByRatio` (`ReduceTargetBeeCountByRatio`만 수행)
+- shake API: `ApplyCombShakeByRatio` (`ReduceAllTargetBeeCountsByRatio` 수행)
 - flip/shake 시각 애니메이션은 C++ 보간 대신 Blueprint event(`ReceiveCombFlipped`, `ReceiveCombShaken`) 위임
 - 상태:
-  - `SpawnAmount`는 `0` 이상 clamp
-  - `TargetBeeCount`는 항상 `0..SpawnAmount` clamp
+  - `TotalSpawnAmount`는 `0` 이상 clamp
+  - `FrontFaceTargetBeeCount`는 `0..FrontFaceSpawnAmount` clamp
+  - `BackFaceTargetBeeCount`는 `0..BackFaceSpawnAmount` clamp
+  - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
+- 분배 규칙:
+  - `FrontShare = (Total + 1) / 2`
+  - `BackShare = Total / 2`
+  - 홀수면 front가 1 더 가진다.
 - 감소 API:
-  - `ReduceTargetBeeCountByRatio(float)` (`Ratio`는 `0..1` clamp, 감소량은 `RoundToInt(CurrentTargetBeeCount * Ratio)`)
-  - `ReduceTargetBeeCountByAmount(int32)`
+  - `ReduceAllTargetBeeCountsByRatio(float)` (`Ratio`는 `0..1` clamp, face별 감소량은 `RoundToInt(CurrentFaceTarget * Ratio)`)
+  - `ReduceAllTargetBeeCountsByAmount(int32)` (양면 감소)
+  - `ReduceVisibleFaceTargetBeeCountByAmount(int32)` (visible face 전용 감소)
+  - `ReduceFaceTargetBeeCountByAmount(EBeehiveCombVisibleFace, int32)`
 - 파라미터 적용 시점:
   - `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, 명시 API 호출 시
 - Niagara user parameter 적용:
   - `User.PlaneSize` (Vector2D)
-  - `User.SpawnAmount` (Int32)
-  - `User.TargetBeeCount` (Int32)
+  - `User.SpawnAmount` (Int32, face별 분배값)
+  - `User.TargetBeeCount` (Int32, face별 분배값)
 - honey visual 적용:
   - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
   - front/back plane relative location을 empty/full 위치 사이에서 보간
@@ -394,4 +408,4 @@
   - honey/colony/queen/lift 관련 comb 순회는 placed comb 기준으로 동작
 - 소비장 회수 조건:
   - `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
-  - `TargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능
+  - `TotalTargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능

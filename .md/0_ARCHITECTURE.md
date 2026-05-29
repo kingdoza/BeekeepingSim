@@ -83,7 +83,8 @@ Source/BeekeepingSim/
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
 - 여왕벌 위치 후보는 active comb 중 현재 lifted comb slot을 제외하며, 중앙 comb일수록 높은 확률로 선택된다.
 - 선택된 comb에서는 front/back attach point를 50:50으로 고르고, attach point 기준으로 `0..360` 랜덤 yaw를 추가 적용한다.
-- `ABeehiveCombActor`는 `FrontFaceBeeNiagara`/`BackFaceBeeNiagara`에 `User.PlaneSize`, `User.SpawnAmount`, `User.TargetBeeCount`를 동일 값으로 적용한다.
+- BeeBrush가 현재 visible face에 부착된 여왕벌을 털어내면 `ABeehive`가 같은 소비장을 제외한 다른 active comb 중 하나를 랜덤으로 골라 front/back attach point에 재부착한다. 다른 소비장이 없거나 여왕벌이 해당 face에 붙어 있지 않으면 여왕벌은 이동하지 않는다.
+- `ABeehiveCombActor`는 소비장 전체 기준 `TotalSpawnAmount`/`TotalTargetBeeCount`를 상태로 소유하고, Niagara 주입 시 front/back face 분배값(`Front=(Total+1)/2`, `Back=Total/2`)으로 `User.SpawnAmount`/`User.TargetBeeCount`를 각각 적용한다.
 - `AQueenBeeActor`는 Tick마다 `AddActorLocalRotation`으로 `[-YawJitterDegreesPerTick, +YawJitterDegreesPerTick]` yaw를 누적해 떨림을 만든다.
 - `AQueenBeeActor`는 `BaseEggLayingPower`를 소유하며 colony population 증가량 계산의 기본 산란력으로 사용된다.
 - colony population 계산식 요약:
@@ -194,5 +195,5 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
   - `InitialCombCount`는 에디터 authoring 값이며, `CurrentCombCount`는 slot occupancy에서 갱신되는 내부 캐시다.
   - honey/colony/queen 후보 계산은 placed comb 기준으로 동작한다.
 - 소비장 회수 상태 계약:
-  - 회수 가능 조건: `TargetBeeCount == 0` && queen 미부착
+  - 회수 가능 조건: `TotalTargetBeeCount == 0` && queen 미부착
   - 회수 시 `UItemInstance`에 `BeehiveCombState(꿀양, visible face)`를 기록해 상태를 보존한다.

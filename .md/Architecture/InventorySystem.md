@@ -198,7 +198,8 @@
 - use-area query tag: `Item.UseArea.Beehive.BeeBrush`
 - 효과 적용 정책:
   - target: `Context.ItemUseEffectTargetObject`의 `ABeehiveCombActor`
-  - `TargetBeeCount`만 감소 (`ReduceTargetBeeCountByAmount`)
+  - 현재 visible face의 target만 감소 (`ReduceVisibleFaceTargetBeeCountByAmount`)
+  - visible face에 여왕벌이 붙어 있으면 `Context.FocusEngagedHostActor`의 `ABeehive::TryBrushQueenBeeFromCombVisibleFace`를 통해 다른 소비장으로 재부착을 시도
   - `ColonyBeeCount`는 변경하지 않음
   - item stack/durability 소비 없음 (`bConsumedItem=false` 유지)
 
@@ -225,4 +226,4 @@
   - comb 상태 보존이 필요한 반환 item definition(`DA_HoneyComb` 등)은 `MaxStack == 1`이어야 한다. (`MaxStack > 1`은 회수 차단 대상)
 - 상태 보존 범위:
   - 보존: 꿀 양(`CurrentHoney`), visible face(front/back)
-  - 회수 가능 조건: `TargetBeeCount == 0` 및 queen 미부착(조건 판정은 WorldActors occupant hook에서 수행)
+  - 회수 가능 조건: `TotalTargetBeeCount == 0` 및 queen 미부착(조건 판정은 WorldActors occupant hook에서 수행)
