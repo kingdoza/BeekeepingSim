@@ -81,6 +81,7 @@ protected:
 	int32 FindFirstEmptyStorageSlot() const;
 
 	UItemInstance* CreateStorageItemInstance(class UItemDefinition* ItemDefinition, int32 StackCount);
+	UItemInstance* CreateStorageItemInstance(class UItemDefinition* ItemDefinition, int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "1"))

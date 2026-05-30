@@ -35,7 +35,7 @@ class BEEKEEPINGSIM_API UItemInstance : public UObject, public IHotbarItemInterf
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
-	void InitializeFromDefinition(UItemDefinition* InDefinition, int32 InStackCount = 1, float InDurability = 1.0f);
+	void InitializeFromDefinition(UItemDefinition* InDefinition, int32 InStackCount = 1, float InDurability = -1.0f);
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemDefinition* GetDefinition() const { return Definition; }

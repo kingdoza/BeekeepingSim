@@ -161,6 +161,16 @@ bool AItemPlacementSlotActor::IsPlacementOccupied_Implementation() const
 	return SanitizeAndCheckOccupied();
 }
 
+FGameplayTagContainer AItemPlacementSlotActor::GetSlotAreaTags() const
+{
+	if (SlotMeshComponent)
+	{
+		return SlotMeshComponent->GetAreaTags();
+	}
+
+	return AreaTags;
+}
+
 void AItemPlacementSlotActor::ClearPlacedItem_Implementation()
 {
 	if (AActor* ExistingPlacedActor = PlacedActor.Get())
@@ -299,7 +309,14 @@ void AItemPlacementSlotActor::TryClaimInitialOccupantActor()
 	}
 
 	PlacedActor = CandidateActor;
-	Occupant->SetOwningPlacementSlotActor(this);
+	if (APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(CandidateActor))
+	{
+		PlacedItemActor->InitializePlacedItem(nullptr, this);
+	}
+	else
+	{
+		Occupant->SetOwningPlacementSlotActor(this);
+	}
 
 	if (bAttachInitialOccupantToSlot && AttachComponent)
 	{

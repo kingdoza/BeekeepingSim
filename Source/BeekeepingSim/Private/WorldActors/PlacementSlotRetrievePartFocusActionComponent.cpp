@@ -2,9 +2,11 @@
 
 #include "Character/BeekeeperCharacter.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
+#include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
 #include "WorldActors/ItemPlacementSlot.h"
 #include "WorldActors/PlacementOccupantComponent.h"
+#include "WorldActors/PlacedItemRemainingComponent.h"
 
 bool UPlacementSlotRetrievePartFocusActionComponent::CanHandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
 {
@@ -75,13 +77,29 @@ bool UPlacementSlotRetrievePartFocusActionComponent::TryRetrievePlacementOccupan
 		return false;
 	}
 
-	const FHotbarItemAcquireResult AcquireResult = Hotbar->TryAcquireItem(ItemDefinition, 1);
+	FItemAcquireSpec AcquireSpec;
+	AcquireSpec.ItemDefinition = ItemDefinition;
+	AcquireSpec.Quantity = 1;
+
+	UPlacedItemRemainingComponent* RemainingComponent = GetOwner() ? GetOwner()->FindComponentByClass<UPlacedItemRemainingComponent>() : nullptr;
+	if (RemainingComponent && RemainingComponent->HasRemaining())
+	{
+		AcquireSpec.bOverrideDurability = true;
+		AcquireSpec.Durability = RemainingComponent->GetCurrentAmount();
+	}
+
+	const FHotbarItemAcquireResult AcquireResult = Hotbar->TryAcquireItemBySpec(AcquireSpec);
 	if (!AcquireResult.bSuccess || AcquireResult.AddedQuantity != 1)
 	{
 		return false;
 	}
 
 	OutAcquiredItemInstance = AcquireResult.LastModifiedItemInstance.Get();
+	if (RemainingComponent && OutAcquiredItemInstance)
+	{
+		RemainingComponent->WriteBackToItemInstance(OutAcquiredItemInstance);
+	}
+
 	OutSlotActor = SlotActor;
 	return true;
 }

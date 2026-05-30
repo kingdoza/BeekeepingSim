@@ -37,6 +37,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item Placement Slot")
 	AActor* GetOccupiedActor() const { return PlacedActor; }
 
+	UFUNCTION(BlueprintPure, Category = "Item Placement Slot")
+	FGameplayTagContainer GetSlotAreaTags() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual bool CanAcceptOccupantActor(AActor* CandidateActor) const;

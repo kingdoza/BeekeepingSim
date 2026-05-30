@@ -5,6 +5,11 @@
 
 namespace ItemStackMoveUtils
 {
+namespace
+{
+	constexpr float DurabilityStackTolerance = 0.0001f;
+}
+
 int32 ResolveMaxStack(const UItemDefinition* Definition)
 {
 	return Definition ? FMath::Max(1, Definition->MaxStack) : 1;
@@ -18,6 +23,47 @@ int32 ClampQuantityToAvailable(const int32 RequestedQuantity, const int32 Availa
 bool HasMatchingDefinition(const UItemInstance* ItemInstance, const UItemDefinition* Definition)
 {
 	return ItemInstance && ItemInstance->GetDefinition() == Definition;
+}
+
+bool HasCompatibleStackState(const UItemInstance* ExistingItem, const UItemDefinition* Definition, bool bHasDurabilityOverride, float DurabilityOverride)
+{
+	if (!HasMatchingDefinition(ExistingItem, Definition))
+	{
+		return false;
+	}
+
+	if (!Definition || !Definition->bUsesDurability)
+	{
+		return true;
+	}
+
+	if (!bHasDurabilityOverride)
+	{
+		return false;
+	}
+
+	return FMath::IsNearlyEqual(ExistingItem->GetCurrentDurability(), DurabilityOverride, DurabilityStackTolerance);
+}
+
+bool CanMergeItemStacks(const UItemInstance* TargetItem, const UItemInstance* SourceItem)
+{
+	if (!TargetItem || !SourceItem)
+	{
+		return false;
+	}
+
+	const UItemDefinition* SourceDefinition = SourceItem->GetDefinition();
+	if (!HasMatchingDefinition(TargetItem, SourceDefinition))
+	{
+		return false;
+	}
+
+	if (!SourceDefinition || !SourceDefinition->bUsesDurability)
+	{
+		return true;
+	}
+
+	return FMath::IsNearlyEqual(TargetItem->GetCurrentDurability(), SourceItem->GetCurrentDurability(), DurabilityStackTolerance);
 }
 
 int32 GetAvailableStackSpace(const UItemInstance* ItemInstance, const int32 MaxStack)
@@ -48,6 +94,11 @@ int32 MergeIntoStack(UItemInstance* TargetItem, const int32 RequestedQuantity, c
 
 UItemInstance* CreateItemInstance(UObject* Outer, UItemDefinition* Definition, const int32 StackCount)
 {
+	return CreateItemInstance(Outer, Definition, StackCount, false, 0.0f);
+}
+
+UItemInstance* CreateItemInstance(UObject* Outer, UItemDefinition* Definition, const int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride)
+{
 	if (!Outer || !Definition || StackCount <= 0)
 	{
 		return nullptr;
@@ -59,7 +110,8 @@ UItemInstance* CreateItemInstance(UObject* Outer, UItemDefinition* Definition, c
 		return nullptr;
 	}
 
-	NewItemInstance->InitializeFromDefinition(Definition, StackCount);
+	const float InitialDurability = bHasDurabilityOverride ? DurabilityOverride : -1.0f;
+	NewItemInstance->InitializeFromDefinition(Definition, StackCount, InitialDurability);
 	return NewItemInstance;
 }
 

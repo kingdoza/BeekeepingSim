@@ -7,6 +7,8 @@
 class UCursorPartFocusActionComponent;
 class UItemDefinition;
 class UItemInstance;
+class UPlacedItemRemainingComponent;
+class UPlacedItemRemainingVisualComponent;
 class UPlacedItemRetrievePartFocusActionComponent;
 class UPlacementOccupantComponent;
 class UPrimitiveComponent;
@@ -40,7 +42,13 @@ public:
 	UPlacementOccupantComponent* GetPlacementOccupantComponent() const { return PlacementOccupant; }
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
+	UPlacedItemRemainingComponent* GetRemainingComponent() const { return RemainingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Placed Item")
 	UPlacedItemRetrievePartFocusActionComponent* GetPlacementRetrieveActionComponent() const { return RetrieveAction.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Placed Item")
+	UStaticMeshComponent* GetItemMeshComponent() const { return ItemMesh; }
 
 	UFUNCTION(BlueprintPure, Category = "Placed Item")
 	FText GetPlacedItemDisplayName() const;
@@ -66,4 +74,13 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UPlacedItemRetrievePartFocusActionComponent> RetrieveAction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPlacedItemRemainingComponent> RemainingComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPlacedItemRemainingVisualComponent> RuntimeRemainingVisualComponent;
+
+private:
+	void InitializeRemainingVisualComponent(UItemDefinition* ReturnItemDefinition);
 };

@@ -19,8 +19,6 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/PollenPattyActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/PollenPattyActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
@@ -30,10 +28,22 @@
 - `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlot.h`
 - `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/PlacementOccupantComponent.h`
 - `Source/BeekeepingSim/Private/WorldActors/PlacementOccupantComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/PlacementSlotRetrievePartFocusActionComponent.h`
 - `Source/BeekeepingSim/Private/WorldActors/PlacementSlotRetrievePartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrieveFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrieveFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemRemainingComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemRemainingComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemRemainingVisualComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemRemainingVisualComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/PlacedItemAreaScaleRemainingVisualComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/PlacedItemAreaScaleRemainingVisualComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombSlotActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombSlotActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPlacementOccupantComponent.h`
@@ -51,7 +61,6 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
-- `APollenPattyActor`: 벌통 slot에 부착되는 pollen patty 월드 표시 actor
 - `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -70,7 +79,10 @@
   - `SlotMeshRelativeTransform`으로 hit/visual mesh의 local transform을 조정한다.
   - `AttachRelativeTransform`으로 placed actor attach point의 local transform을 조정한다.
 - `UPlacementOccupantComponent`: 배치 점유 actor의 회수 정보(return item definition, owning slot)와 회수 가능 조건 hook을 제공한다.
-- `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 generic 회수(`TryAcquireItem + ClearPlacedItem`)를 수행한다.
+- `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 state-aware acquire(`TryAcquireItemBySpec`) + slot clear를 수행한다.
+- `UPlacedItemRemainingComponent`: 배치 아이템 durability 잔량 런타임 상태 owner.
+- `UPlacedItemRemainingVisualComponent`: 배치 잔량 비주얼 반영용 base component.
+- `UPlacedItemAreaScaleRemainingVisualComponent`: 화분떡용 XY 면적 scale 비주얼 component (`sqrt(Ratio), sqrt(Ratio), 1`).
 - `ABeehiveCombSlotActor`: comb 전용 `AItemPlacementSlotActor` subclass. comb class 검증, beehive refresh 요청, comb slot 정책을 캡슐화한다.
 - `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TotalTargetBeeCount`, queen attach)을 구현하는 occupant subclass다.
 - `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
@@ -102,6 +114,8 @@
 - colony population 계수 설정: `BeeIncreaseCoefficient`, `BeeDecreaseCoefficient`
 - honey production bucket 설정: `HoneyProductionBucketMinutes=60`, `bApplyHoneyProductionOnBeginPlayBucket=false` 기본
 - honey production 계수/분배 설정: `HoneyProductionCoefficient`, `HoneyDistributionDeviationRatio`
+- pollen patty consumption bucket 설정: `PollenPattyConsumptionBucketMinutes=60`, `bApplyPollenPattyConsumptionOnBeginPlayBucket=false` 기본
+- pollen patty consumption 설정: `PollenPattyConsumptionAmountPerBucket`, `PollenPattyConsumptionSide(Leftmost/Rightmost)`, `PollenPattyConsumptionAreaTags`
 - queen 위치 갱신 규칙:
   - active comb 후보에서 현재 lifted comb slot 제외
   - 중앙 slot일수록 높은 가중치로 weighted random 선택
@@ -257,7 +271,14 @@
 - `ABeehive`의 queen 위치 갱신도 Environment actor 직접 참조 없이 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트로만 수행한다.
 - `ABeehive`의 colony population 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`ColonyPopulation`)로만 수행한다.
 - `ABeehive`의 honey production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
+- `ABeehive`의 pollen patty 고정 소모도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`PollenPattyConsumption`)로 수행한다.
 - 같은 60분 경계에서는 subscription 순서를 `HoneyProduction` 먼저, `ColonyPopulation` 다음으로 두어 꿀 생산이 기존 벌 수 기준으로 선행 처리된다.
+- pollen patty 소모량은 `PollenPattyConsumptionAmountPerBucket` 고정값이며, bucket 길이/이벤트 횟수/벌 수/온도에 따라 스케일하지 않는다.
+- pollen patty 소모 대상 탐색은 direct child `AItemPlacementSlotActor` 수집 경로를 사용하며 provider descriptor `AreaTags`는 사용하지 않는다.
+  - slot 매칭: `AItemPlacementSlotActor::GetSlotAreaTags().HasAll(PollenPattyConsumptionAreaTags)`
+  - 후보 조건: occupied actor에 active `UPlacedItemRemainingComponent`가 있고 `CurrentAmount > 0`
+  - 후보 선택: 벌통 local Y 기준 `Leftmost`(최소 Y) 또는 `Rightmost`(최대 Y), tie는 먼저 수집된 slot 유지
+  - 소모 실행: 선택된 1개에만 `ConsumeAmount(...)` 호출, 같은 bucket spillover 없음
 - colony population 계산식:
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
   - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
@@ -330,14 +351,14 @@
 - `APlacedItemActor`를 추가했다.
   - 배치 아이템 1개를 대표하는 generic world actor
   - `InitializePlacedItem(UItemInstance*, AActor*)`로 source item definition과 owning placement slot owner를 초기화한다.
-  - 기본 구성: `Root`, `ItemMesh`, `FocusTarget`, `UPlacedItemRetrieveFocusActionComponent`
+  - 기본 구성: `Root`, `ItemMesh`, `UPlacementOccupantComponent`, `UPlacedItemRetrievePartFocusActionComponent`(generic `UPlacementSlotRetrievePartFocusActionComponent` wrapper)
 - `UPlacedItemRetrieveFocusActionComponent`를 추가했다.
   - preview hover + secondary input에서 회수를 수행한다.
-  - hotbar `TryAcquireItem(ItemDefinition, 1)`이 완전 성공(`AddedQuantity == 1`)일 때만 회수 성공 처리한다.
+  - 현재는 generic retrieve component(`UPlacementSlotRetrievePartFocusActionComponent`) 호출을 위임하는 compatibility wrapper로 유지한다.
+  - hotbar acquire가 완전 성공(`AddedQuantity == 1`)일 때만 회수 성공 처리한다.
   - 성공 시 owning slot이 `IItemPlacementSlot`이면 `Execute_ClearPlacedItem`으로 slot/actor 제거를 위임한다.
   - slot 정보가 없으면 fallback으로 placed actor만 destroy한다.
 - `AItemPlacementSlotActor::TryPlaceItem_Implementation`은 spawn/attach 성공 후, spawned actor가 `APlacedItemActor`일 때 `InitializePlacedItem(SourceItemInstance, this)`를 호출한다.
-- `APollenPattyActor` native class/file/UCLASS rename은 수행하지 않는다.
 
 ## Update 2026-05-27 (PartFocus Retrieve)
 
@@ -346,9 +367,10 @@
   - occupied 상태: item-use-area descriptor는 제공하지 않고 placed item PartFocus descriptor를 제공
 - placed item descriptor는 `APlacedItemActor`의 hit component/action component를 사용한다.
 - `APlacedItemActor`는 host 내부 PartFocus 대상 actor이며 global focus target이 아니다.
-  - 기본 구성: `Root`, `ItemMesh`, `UPlacedItemRetrievePartFocusActionComponent`
-- `UPlacedItemRetrievePartFocusActionComponent`는 secondary PartFocus action으로 회수를 처리한다.
-  - `TryAcquireItem(ItemDefinition, 1)` 완전 성공 + `AddedQuantity == 1`일 때만 성공
+  - 기본 구성: `Root`, `ItemMesh`, `UPlacedItemRetrievePartFocusActionComponent`(generic wrapper)
+- 현재 secondary PartFocus 회수 로직의 source of truth는 `UPlacementSlotRetrievePartFocusActionComponent`다.
+- `UPlacedItemRetrievePartFocusActionComponent`는 secondary PartFocus action 경로를 generic component로 위임하는 compatibility wrapper다.
+  - acquire 완전 성공 + `AddedQuantity == 1`일 때만 성공
   - 성공 시 slot `ClearPlacedItem` 호출, 실패 시 actor/slot 유지
 - `ABeehive::RebuildCursorPartFocusDescriptors()`는 기존 lid/comb 등록 후 `CursorPartFocusRegistration` append를 호출해 provider 기반 part를 추가 등록한다.
 
@@ -384,7 +406,7 @@
     - `CanRetrievePlacementOccupant`, `PreClearPlacementOccupant`, BP native hook
   - `UPlacementSlotRetrievePartFocusActionComponent`
     - hovered PartFocus secondary 입력에서 회수 수행
-    - 성공 조건: `TryAcquireItem(...)`의 `bSuccess && AddedQuantity == 1`
+    - 성공 조건: state-aware acquire(`TryAcquireItemBySpec`)의 `bSuccess && AddedQuantity == 1`
     - 성공 시 owning slot `ClearPlacedItem` 실행
 - `AItemPlacementSlotActor` 확장:
   - `InitialOccupantActor` preplaced claim 지원 (BeginPlay)
@@ -393,9 +415,9 @@
   - occupied actor의 `UItemUseAreaMeshComponent`를 provider source로 노출
   - clear 시 occupant `PreClearPlacementOccupant` 호출 후 destroy
 - `APlacedItemActor` migration:
-  - 기본 구성: `UPlacementOccupantComponent` + `UPlacementSlotRetrievePartFocusActionComponent`
+  - 기본 구성: `UPlacementOccupantComponent` + `UPlacedItemRetrievePartFocusActionComponent`(=`UPlacementSlotRetrievePartFocusActionComponent` wrapper) + `UPlacedItemRemainingComponent`
   - 기존 `InitializePlacedItem`, getter API는 deprecated wrapper 성격으로 유지
-  - `UPlacedItemRetrievePartFocusActionComponent`는 generic component wrapper로 축소
+  - `UPlacedItemRetrievePartFocusActionComponent`/`UPlacedItemRetrieveFocusActionComponent`는 generic component wrapper로 축소
 - 벌통 소비장 slot 구조:
   - `ABeehiveCombSlotActor : AItemPlacementSlotActor`
   - comb actor class 검증 후 배치 허용
@@ -409,3 +431,31 @@
 - 소비장 회수 조건:
   - `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
   - `TotalTargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능
+
+## Update 2026-05-31 (Placed Item Durability Remaining)
+
+- `APlacedItemActor` 구성에 placed remaining 시스템을 추가했다.
+  - 기본 subobject: `UPlacedItemRemainingComponent`
+  - runtime visual: item definition spec의 `VisualComponentClass`를 검증 후 생성
+- `UPlacedItemRemainingComponent` 정책:
+  - `UItemDefinition::PlacedRemainingSpec.bUseDurabilityAsPlacedRemaining=true`일 때만 active
+  - source item instance가 있으면 durability 복사
+  - source item instance가 없는 preplaced actor는 full durability로 초기화
+  - invalid config(`bUsesDurability=false` 또는 `MaxDurability<=0`)는 warning log + 비활성 처리
+- 회수 경로:
+  - `UPlacementSlotRetrievePartFocusActionComponent`가 remaining durability를 acquire spec으로 전달한다.
+  - acquire 성공 후 `LastModifiedItemInstance`에 durability write-back을 수행하고 slot clear를 진행한다.
+  - acquire 실패 시 placed actor/remaining 상태를 유지한다.
+- 화분떡 전용 actor 경로 제거:
+  - `APollenPattyActor`를 제거하고 `APlacedItemActor` 공용 경로를 사용한다.
+  - 화분떡 scale visual은 `UPlacedItemAreaScaleRemainingVisualComponent`로 처리한다.
+
+## Update 2026-05-31 (Pollen Patty Fixed Consumption)
+
+- `ABeehive`에 화분떡 고정 소모 API/설정을 추가했다.
+  - `ApplyPollenPattyConsumptionUpdate()`
+  - `PollenPattyConsumptionBucketMinutes`, `bApplyPollenPattyConsumptionOnBeginPlayBucket`
+  - `PollenPattyConsumptionAmountPerBucket`, `PollenPattyConsumptionSide`, `PollenPattyConsumptionAreaTags`
+- bucket 구독 `SubscriptionTag="PollenPattyConsumption"`에서 선택된 slot 하나만 소모한다.
+- slot tag 조회는 `AItemPlacementSlotActor::GetSlotAreaTags()`를 사용한다.
+- 런타임 로직에 `Item.UseArea.Beehive.PollenPatty` 문자열 하드코딩을 두지 않고, `PollenPattyConsumptionAreaTags` authored 값으로만 판정한다.

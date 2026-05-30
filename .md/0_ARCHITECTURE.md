@@ -81,6 +81,10 @@ Source/BeekeepingSim/
 - `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
+- `ABeehive`는 시간 bucket 구독(`PollenPattyConsumption`)을 통해 화분떡을 고정량(`PollenPattyConsumptionAmountPerBucket`) 소모한다.
+- 화분떡 소모량은 벌 수/온도/bucket 길이와 무관한 고정값이며, bucket 길이는 소모 주기만 바꾼다.
+- 소모 대상은 `PollenPattyConsumptionAreaTags`와 slot의 configured `AreaTags`(`AItemPlacementSlotActor::GetSlotAreaTags`) 매칭으로 식별한다.
+- 여러 후보가 있으면 벌통 local Y 기준으로 leftmost/rightmost 1개만 소모하고, 같은 bucket에서 spillover 분배는 하지 않는다.
 - 여왕벌 위치 후보는 active comb 중 현재 lifted comb slot을 제외하며, 중앙 comb일수록 높은 확률로 선택된다.
 - 선택된 comb에서는 front/back attach point를 50:50으로 고르고, attach point 기준으로 `0..360` 랜덤 yaw를 추가 적용한다.
 - BeeBrush가 현재 visible face에 부착된 여왕벌을 털어내면 `ABeehive`가 같은 소비장을 제외한 다른 active comb 중 하나를 랜덤으로 골라 front/back attach point에 재부착한다. 다른 소비장이 없거나 여왕벌이 해당 face에 붙어 있지 않으면 여왕벌은 이동하지 않는다.
@@ -155,7 +159,7 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
   - Focus는 preview target owner의 `UFocusSecondaryActionComponent` 실행만 위임한다.
 - WorldActors에 generic placed item 회수 흐름을 추가했다.
   - `AItemPlacementSlotActor`가 spawn한 `APlacedItemActor`를 `InitializePlacedItem(SourceItemInstance, this)`로 초기화한다.
-  - hover + secondary input 시 `UPlacedItemRetrieveFocusActionComponent`가 `TryAcquireItem(ItemDefinition, 1)` 수행
+  - hover + secondary input 시 회수 action이 state-aware hotbar acquire(`TryAcquireItemBySpec`)를 수행한다.
   - `bSuccess && AddedQuantity == 1`일 때만 성공
   - 성공 시 `IItemPlacementSlot::Execute_ClearPlacedItem`로 slot 점유를 해제한다.
 
@@ -183,7 +187,7 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 
 - generic placement 점유/회수 계약을 component 기반으로 확장했다.
   - `UPlacementOccupantComponent`: 반환 item definition(runtime + authored fallback), owning slot, 회수 가능 판정 hook, clear 전 hook
-  - `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 hotbar `TryAcquireItem(ItemDefinition, 1)` + slot clear
+  - `UPlacementSlotRetrievePartFocusActionComponent`: PartFocus secondary 입력에서 hotbar `TryAcquireItemBySpec(...)` + slot clear
 - `AItemPlacementSlotActor`를 generic occupied actor 모델로 확장했다.
   - `InitialOccupantActor` preplaced claim (BeginPlay), attach/snap 옵션, occupied actor descriptor 공급
   - occupied actor의 `UItemUseAreaMeshComponent`를 host item-use-area provider에 노출
@@ -197,3 +201,29 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - 소비장 회수 상태 계약:
   - 회수 가능 조건: `TotalTargetBeeCount == 0` && queen 미부착
   - 회수 시 `UItemInstance`에 `BeehiveCombState(꿀양, visible face)`를 기록해 상태를 보존한다.
+
+## Update 2026-05-31 (Placed Item Durability Remaining)
+
+- 배치 아이템 잔량은 신규 `RemainingAmount/MaxAmount` 필드 없이 durability를 재사용한다.
+  - max 잔량 source: `UItemDefinition::MaxDurability`
+  - inventory 잔량 source: `UItemInstance::Durability`
+  - 배치 중 런타임 잔량 owner: `UPlacedItemRemainingComponent`
+- `APlacedItemActor`는 기본 subobject로 `UPlacedItemRemainingComponent`를 항상 소유한다.
+  - `bUseDurabilityAsPlacedRemaining=false`이거나 invalid config면 remaining은 비활성/무상태로 둔다.
+- 회수 경로는 `FItemAcquireSpec` 기반 state-aware acquire를 사용한다.
+  - durability stack 병합은 `FMath::IsNearlyEqual(A, B, 0.0001f)` 기준의 동일 durability끼리만 허용한다.
+  - 회수 성공 후 반환 `LastModifiedItemInstance`에 placed remaining durability를 write-back한다.
+- 화분떡 전용 actor 경로는 제거했다.
+  - `APollenPattyActor`를 제거하고 공용 `APlacedItemActor` 경로를 사용한다.
+  - Blueprint 호환을 위해 `DefaultEngine.ini` `[CoreRedirects]`에 `PollenPattyActor -> PlacedItemActor` class redirect를 추가했다.
+
+## Update 2026-05-31 (Pollen Patty Fixed Consumption)
+
+- `ABeehive`에 `PollenPattyConsumption` bucket 구독을 추가했다.
+  - 기본값: `PollenPattyConsumptionBucketMinutes=60`, `bApplyPollenPattyConsumptionOnBeginPlayBucket=false`
+- 소모량은 `PollenPattyConsumptionAmountPerBucket` 고정값만 사용한다.
+  - bucket 길이, catch-up 횟수, 벌 수/온도/생산량 계산으로 소모량을 스케일하지 않는다.
+- 소모 대상 탐색은 provider descriptor 대신 direct child `AItemPlacementSlotActor` 수집 경로를 사용한다.
+  - 매칭 기준: slot configured tags가 `PollenPattyConsumptionAreaTags`를 모두 포함
+  - 후보 조건: occupied actor에 active `UPlacedItemRemainingComponent`가 있고 `CurrentAmount > 0`
+- 후보가 여러 개면 벌통 local Y 기준 `Leftmost/Rightmost` 1개를 선택해 `ConsumeAmount(...)`를 호출한다.

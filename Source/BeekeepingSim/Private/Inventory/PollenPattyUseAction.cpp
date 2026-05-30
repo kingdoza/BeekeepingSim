@@ -1,9 +1,12 @@
 #include "Inventory/PollenPattyUseAction.h"
 
 #include "GameplayTagContainer.h"
+#include "WorldActors/PlacedItemActor.h"
 
 UPollenPattyUseAction::UPollenPattyUseAction()
 {
+	PlacedActorClass = APlacedItemActor::StaticClass();
+
 	const FGameplayTag PollenAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Item.UseArea.Beehive.PollenPatty")), false);
 	if (PollenAreaTag.IsValid())
 	{

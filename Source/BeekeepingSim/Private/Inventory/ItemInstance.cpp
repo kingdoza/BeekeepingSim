@@ -13,11 +13,19 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 	StackCount = 0;
 	if (Definition && Definition->bUsesDurability)
 	{
-		Durability = FMath::Max(0.0f, Definition->MaxDurability);
+		const float MaxDurability = FMath::Max(0.0f, Definition->MaxDurability);
+		if (InDurability < 0.0f)
+		{
+			Durability = MaxDurability;
+		}
+		else
+		{
+			Durability = FMath::Clamp(InDurability, 0.0f, MaxDurability);
+		}
 	}
 	else
 	{
-		Durability = InDurability;
+		Durability = (InDurability < 0.0f) ? 1.0f : InDurability;
 	}
 	SetStackCount(InStackCount);
 	RebuildActions();
@@ -56,6 +64,12 @@ void UItemInstance::SetStackCount(int32 NewStackCount)
 
 void UItemInstance::SetDurability(float NewDurability)
 {
+	if (HasDurability())
+	{
+		Durability = FMath::Clamp(NewDurability, 0.0f, GetMaxDurability());
+		return;
+	}
+
 	Durability = NewDurability;
 }
 

@@ -6,6 +6,8 @@
 #include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
 #include "WorldActors/PlacementOccupantComponent.h"
+#include "WorldActors/PlacedItemRemainingComponent.h"
+#include "WorldActors/PlacedItemRemainingVisualComponent.h"
 #include "WorldActors/PlacedItemRetrievePartFocusActionComponent.h"
 
 APlacedItemActor::APlacedItemActor()
@@ -23,6 +25,7 @@ APlacedItemActor::APlacedItemActor()
 
 	PlacementOccupant = CreateDefaultSubobject<UPlacementOccupantComponent>(TEXT("PlacementOccupant"));
 	RetrieveAction = CreateDefaultSubobject<UPlacedItemRetrievePartFocusActionComponent>(TEXT("RetrieveAction"));
+	RemainingComponent = CreateDefaultSubobject<UPlacedItemRemainingComponent>(TEXT("RemainingComponent"));
 	if (RetrieveAction)
 	{
 		RetrieveAction->SetEngageMode(ECursorPartFocusEngageMode::PreviewOnly);
@@ -35,16 +38,26 @@ void APlacedItemActor::InitializePlacedItem(UItemInstance* SourceItemInstance, A
 	{
 		PlacementOccupant->InitializeFromPlacement(SourceItemInstance, InOwningPlacementSlotActor);
 	}
-	ItemDefinition = PlacementOccupant ? PlacementOccupant->GetReturnItemDefinition() : (SourceItemInstance ? SourceItemInstance->GetDefinition() : nullptr);
+	UItemDefinition* ReturnDefinition = PlacementOccupant ? PlacementOccupant->GetReturnItemDefinition() : (SourceItemInstance ? SourceItemInstance->GetDefinition() : nullptr);
+	ItemDefinition = ReturnDefinition;
 	OwningPlacementSlotActor = PlacementOccupant ? PlacementOccupant->GetOwningPlacementSlotActor() : InOwningPlacementSlotActor;
 
 	if (ItemMesh)
 	{
-		UItemDefinition* ReturnDefinition = GetItemDefinition();
 		if (ReturnDefinition && ReturnDefinition->WorldMesh)
 		{
 			ItemMesh->SetStaticMesh(ReturnDefinition->WorldMesh);
 		}
+	}
+
+	InitializeRemainingVisualComponent(ReturnDefinition);
+	if (RemainingComponent)
+	{
+		RemainingComponent->InitializeFromPlacement(SourceItemInstance, ReturnDefinition, OwningPlacementSlotActor);
+	}
+	if (RuntimeRemainingVisualComponent)
+	{
+		RuntimeRemainingVisualComponent->ApplyRemainingRatio(RemainingComponent ? RemainingComponent->GetRemainingRatio() : 0.0f);
 	}
 
 	ReceivePlacedItemInitialized(SourceItemInstance);
@@ -89,4 +102,45 @@ AActor* APlacedItemActor::GetOwningPlacementSlotActor() const
 FText APlacedItemActor::GetPlacedItemDisplayName() const
 {
 	return GetItemDefinition() ? GetItemDefinition()->DisplayName : FText::GetEmpty();
+}
+
+void APlacedItemActor::InitializeRemainingVisualComponent(UItemDefinition* ReturnItemDefinition)
+{
+	if (RuntimeRemainingVisualComponent)
+	{
+		RuntimeRemainingVisualComponent->DestroyComponent();
+		RuntimeRemainingVisualComponent = nullptr;
+	}
+
+	if (!ReturnItemDefinition)
+	{
+		return;
+	}
+
+	if (!ReturnItemDefinition->PlacedRemainingSpec.bUseDurabilityAsPlacedRemaining)
+	{
+		return;
+	}
+
+	UClass* VisualComponentClass = ReturnItemDefinition->PlacedRemainingSpec.VisualComponentClass.Get();
+	if (!VisualComponentClass)
+	{
+		return;
+	}
+
+	if (!VisualComponentClass->IsChildOf(UPlacedItemRemainingVisualComponent::StaticClass()))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s has invalid placed remaining visual class '%s'. Expected UPlacedItemRemainingVisualComponent subclass."), *GetNameSafe(ReturnItemDefinition), *GetNameSafe(VisualComponentClass));
+		return;
+	}
+
+	RuntimeRemainingVisualComponent = NewObject<UPlacedItemRemainingVisualComponent>(this, VisualComponentClass, TEXT("RuntimeRemainingVisualComponent"));
+	if (!RuntimeRemainingVisualComponent)
+	{
+		return;
+	}
+
+	AddInstanceComponent(RuntimeRemainingVisualComponent);
+	RuntimeRemainingVisualComponent->RegisterComponent();
+	RuntimeRemainingVisualComponent->InitializeRemainingVisual(this, RemainingComponent);
 }

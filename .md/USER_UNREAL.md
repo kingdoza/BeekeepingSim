@@ -231,7 +231,7 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 화분떡 아이템 action:
   - `UItemPlacementUseAction` 또는 `UPollenPattyUseAction` 사용
   - `UseAreaTagQuery`는 `Item.UseArea.Beehive.PollenPatty` 매칭
-  - `PlacedActorClass`는 `APollenPattyActor` 기반 BP 지정
+  - `PlacedActorClass`는 `APlacedItemActor`(또는 해당 BP child) 사용
 - occupied 상태(`PlacedActor` 유효)가 되면 슬롯 actor가 descriptor를 반환하지 않으므로 use-area가 자동 비활성화된다.
 
 ## Beehive Comb Delegate 위임
@@ -313,7 +313,7 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 
 3. 화분떡 배치 class 교체
 - 화분떡 placement action(`UItemPlacementUseAction`/`UPollenPattyUseAction`)의 `PlacedActorClass`를 `APlacedItemActor` 기반 BP로 지정한다.
-- 기존 `APollenPattyActor` native class rename은 하지 않는다.
+- 기존 `APollenPattyActor` 기반 BP/asset은 `APlacedItemActor` 기반으로 교체 후 compile/save한다.
 
 4. PIE 검증
 - 배치 성공 시 hotbar stack이 1 감소하고 slot이 occupied 상태가 되는지 확인한다.
@@ -444,6 +444,54 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
   - comb item 배치 성공
   - LMB lift/return 기존 동작 유지
   - secondary retrieve:
-    - `TargetBeeCount == 0` + queen 미부착 -> 회수 성공
-    - `TargetBeeCount > 0` 또는 queen 부착 -> 회수 실패, slot/actor 유지
-  - 회수 후 재배치 시 꿀 양/visible face가 item state를 통해 복원되는지 확인
+    - `TotalTargetBeeCount == 0` + queen 미부착 -> 회수 성공
+    - `TotalTargetBeeCount > 0` 또는 queen 부착 -> 회수 실패, slot/actor 유지
+ - 회수 후 재배치 시 꿀 양/visible face가 item state를 통해 복원되는지 확인
+
+## Placed Item Durability Remaining 설정 (2026-05-31)
+
+1. 화분떡 item definition 설정
+- `bUsesDurability = true`
+- `MaxDurability = 원하는 최대 잔량`
+- `PlacedRemainingSpec.bUseDurabilityAsPlacedRemaining = true`
+- `PlacedRemainingSpec.bClearOwningSlotWhenDepleted = true`
+- `PlacedRemainingSpec.VisualComponentClass = UPlacedItemAreaScaleRemainingVisualComponent`
+
+2. 배치 action 설정
+- `UPollenPattyUseAction.PlacedActorClass`는 기본값(`APlacedItemActor`) 사용 또는 `APlacedItemActor` 기반 BP child 지정
+
+3. 기존 에셋 마이그레이션
+- 기존 `APollenPattyActor` 기반 BP/asset이 있으면 parent를 `APlacedItemActor`(또는 해당 BP child)로 교체
+- Editor 재시작 후 Blueprint compile/save 수행
+
+4. 검증 포인트
+- source durability가 배치 후 `UPlacedItemRemainingComponent`에 복사되는지
+- ratio `0.5`일 때 mesh scale이 `(sqrt(0.5), sqrt(0.5), 1)`인지
+- 회수 성공 시 반환 item durability가 placed remaining 값으로 보존되는지
+- 회수 실패 시 placed actor/잔량 상태가 유지되는지
+
+## Pollen Patty Fixed Consumption 설정 (2026-05-31)
+
+1. 벌통(`ABeehive`) 설정
+- `PollenPattyConsumptionAreaTags`를 반드시 설정한다.
+  - 권장값: `{ Item.UseArea.Beehive.PollenPatty }`
+- 필요 시 주기/소모량/방향을 조정한다.
+  - `PollenPattyConsumptionBucketMinutes` (기본 60)
+  - `bApplyPollenPattyConsumptionOnBeginPlayBucket` (기본 false)
+  - `PollenPattyConsumptionAmountPerBucket` (기본 1.0)
+  - `PollenPattyConsumptionSide` (`Leftmost` 또는 `Rightmost`)
+
+2. 화분떡 slot 설정
+- 화분떡 slot actor(`AItemPlacementSlotActor` 계열)의 `SlotMeshComponent.AreaTags`가
+  `PollenPattyConsumptionAreaTags`를 모두 포함해야 소모 후보로 인식된다.
+- 권장: slot에도 `Item.UseArea.Beehive.PollenPatty` 태그를 포함한다.
+
+3. 아이템 정의 설정
+- 화분떡 item definition은 durability placed remaining 설정을 유지해야 한다.
+  - `bUsesDurability = true`
+  - `PlacedRemainingSpec.bUseDurabilityAsPlacedRemaining = true`
+
+4. 검증 포인트
+- `PollenPattyConsumptionAreaTags`가 비어 있으면 소모가 발생하지 않아야 한다.
+- 후보가 여러 개면 local Y 기준으로 설정한 방향의 slot 1개만 소모되어야 한다.
+- 같은 bucket에서 다른 화분떡으로 spillover 소모가 발생하지 않아야 한다.

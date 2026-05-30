@@ -173,14 +173,14 @@
 ## Update 2026-05-27
 
 - 배치 아이템 회수 성공 판정 규칙:
-  - `UBeekeeperHotbarComponent::TryAcquireItem(ItemDefinition, 1)` 호출
+  - `UBeekeeperHotbarComponent::TryAcquireItemBySpec(FItemAcquireSpec)` 호출
   - `bSuccess == true` 이고 `AddedQuantity == 1`일 때만 회수 성공으로 본다.
 - 회수 실패(공간 부족 포함) 시 월드 배치 actor와 slot 점유 상태는 유지한다.
 
 ## Update 2026-05-27 (PartFocus Retrieve)
 
 - placed item 회수 실행 주체는 global focus action이 아니라 PartFocus secondary action component다.
-- inventory mutation 규칙은 동일하게 hotbar authority API(`TryAcquireItem`)를 사용한다.
+- inventory mutation 규칙은 동일하게 hotbar authority API(`TryAcquireItemBySpec`)를 사용한다.
 
 ## Update 2026-05-27 (Hotbar Middle Click Toggle)
 
@@ -227,3 +227,23 @@
 - 상태 보존 범위:
   - 보존: 꿀 양(`CurrentHoney`), visible face(front/back)
   - 회수 가능 조건: `TotalTargetBeeCount == 0` 및 queen 미부착(조건 판정은 WorldActors occupant hook에서 수행)
+
+## Update 2026-05-31 (Placed Item Durability Remaining)
+
+- `UItemDefinition`에 `FPlacedItemRemainingSpec`을 추가했다.
+  - `bUseDurabilityAsPlacedRemaining`
+  - `bClearOwningSlotWhenDepleted`
+  - `VisualComponentClass` (`TSubclassOf<UActorComponent>`)
+- 배치 잔량 수치는 durability를 재사용한다.
+  - max: `UItemDefinition::MaxDurability`
+  - current: `UItemInstance::Durability`
+- hotbar acquire에 state-aware API를 추가했다.
+  - `FItemAcquireSpec`
+  - `TryAcquireItemBySpec(const FItemAcquireSpec&)`
+  - 기존 `TryAcquireItem(UItemDefinition*, int32)`는 wrapper로 유지한다.
+- durability 아이템 stack merge 규칙:
+  - same definition + same durability(`0.0001f` tolerance)만 병합 가능
+  - durability가 다르면 병합하지 않는다.
+  - split/create 경로에서 새 instance는 source durability를 복사한다.
+- 1차 범위 제외:
+  - hotbar/storage UI 잔량 bar/overlay/tooltip 표시는 제외한다.

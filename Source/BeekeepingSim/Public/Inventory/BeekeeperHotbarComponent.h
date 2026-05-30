@@ -59,6 +59,24 @@ struct FHotbarItemAcquireResult
 	FText Message;
 };
 
+USTRUCT(BlueprintType)
+struct FItemAcquireSpec
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Acquire")
+	TObjectPtr<UItemDefinition> ItemDefinition = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Acquire")
+	int32 Quantity = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Acquire")
+	bool bOverrideDurability = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item Acquire", meta = (EditCondition = "bOverrideDurability"))
+	float Durability = 0.0f;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeekeeperHotbarChangedSignature);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -100,6 +118,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	FHotbarItemAcquireResult TryAcquireItem(UItemDefinition* ItemDefinition, int32 Quantity);
+
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	FHotbarItemAcquireResult TryAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec);
 
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
 	const TArray<FHotbarSlotData>& GetSlots() const { return Slots; }
@@ -171,6 +192,7 @@ protected:
 	int32 ResolveToggleFallbackSelectionIndex() const;
 
 	UItemInstance* CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount);
+	UItemInstance* CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hotbar")

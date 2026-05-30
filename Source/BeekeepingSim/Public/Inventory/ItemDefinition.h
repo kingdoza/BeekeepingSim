@@ -9,6 +9,22 @@
 class UTexture2D;
 class UStaticMesh;
 class AItemPresentationActor;
+class UActorComponent;
+
+USTRUCT(BlueprintType)
+struct FPlacedItemRemainingSpec
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Placed Remaining")
+	bool bUseDurabilityAsPlacedRemaining = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Placed Remaining", meta = (EditCondition = "bUseDurabilityAsPlacedRemaining"))
+	bool bClearOwningSlotWhenDepleted = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Placed Remaining", meta = (EditCondition = "bUseDurabilityAsPlacedRemaining"))
+	TSubclassOf<UActorComponent> VisualComponentClass;
+};
 
 UCLASS(BlueprintType)
 class BEEKEEPINGSIM_API UItemDefinition : public UPrimaryDataAsset
@@ -45,6 +61,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (ClampMin = "0.0", EditCondition = "bUsesDurability", EditConditionHides))
 	float MaxDurability = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Placed Remaining")
+	FPlacedItemRemainingSpec PlacedRemainingSpec;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	TArray<FItemActionSpec> ActionSpecs;

@@ -6,6 +6,7 @@
 #include "Environment/GameTimeBucketListener.h"
 #include "GameFramework/Actor.h"
 #include "Focus/FocusInteractable.h"
+#include "GameplayTagContainer.h"
 #include "WorldActors/BeeSwarmTypes.h"
 #include "Beehive.generated.h"
 
@@ -29,6 +30,15 @@ class UCursorItemUseAreaScopeComponent;
 class UItemUseAreaMeshProviderComponent;
 class UCursorPartFocusRegistrationComponent;
 class UChildCursorPartFocusProviderComponent;
+class AItemPlacementSlotActor;
+class UPlacedItemRemainingComponent;
+
+UENUM(BlueprintType)
+enum class EPollenPattyConsumptionSide : uint8
+{
+	Leftmost,
+	Rightmost
+};
 
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
@@ -136,6 +146,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
 	float CalculateTotalHoneyIncreaseAmount() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Pollen Patty")
+	void ApplyPollenPattyConsumptionUpdate();
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Sanitation")
 	void IncreaseSanitation(float Delta);
@@ -276,6 +289,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HoneyDistributionDeviationRatio = 0.5f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty Time", meta = (ClampMin = "1", ClampMax = "1440"))
+	int32 PollenPattyConsumptionBucketMinutes = 60;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty Time")
+	bool bApplyPollenPattyConsumptionOnBeginPlayBucket = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty", meta = (ClampMin = "0.0"))
+	float PollenPattyConsumptionAmountPerBucket = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty")
+	EPollenPattyConsumptionSide PollenPattyConsumptionSide = EPollenPattyConsumptionSide::Leftmost;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty")
+	FGameplayTagContainer PollenPattyConsumptionAreaTags;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation", meta = (ClampMin = "0.0"))
 	float MaxSanitationValue = 100.0f;
 
@@ -349,6 +377,8 @@ private:
 	void RebuildItemUseAreaDescriptorsIfAvailable();
 	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);
 	bool IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const;
+	AItemPlacementSlotActor* FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const;
+	bool DoesSlotMatchPollenPattyConsumptionTags(const AItemPlacementSlotActor* SlotActor) const;
 	UPrimitiveComponent* FindPrimitiveComponentByTag(FName ComponentTag) const;
 
 	UFUNCTION()

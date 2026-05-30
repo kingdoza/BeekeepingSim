@@ -179,7 +179,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int3
 	if (!TargetItem)
 	{
 		const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 		if (!NewItem)
 		{
 			return Result;
@@ -190,7 +190,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int3
 	}
 	else
 	{
-		if (!ItemStackMoveUtils::HasMatchingDefinition(TargetItem, Definition))
+		if (!ItemStackMoveUtils::CanMergeItemStacks(TargetItem, SourceItem))
 		{
 			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
 			return Result;
@@ -212,7 +212,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int3
 			}
 
 			const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 			if (!NewItem)
 			{
 				break;
@@ -268,7 +268,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
 	if (!TargetItem)
 	{
 		const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-		UItemInstance* NewItem = ItemStackMoveUtils::CreateItemInstance(HotbarComponent, Definition, CreateCount);
+		UItemInstance* NewItem = ItemStackMoveUtils::CreateItemInstance(HotbarComponent, Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 		if (!NewItem)
 		{
 			return Result;
@@ -279,7 +279,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
 	}
 	else
 	{
-		if (!ItemStackMoveUtils::HasMatchingDefinition(TargetItem, Definition))
+		if (!ItemStackMoveUtils::CanMergeItemStacks(TargetItem, SourceItem))
 		{
 			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
 			return Result;
@@ -303,7 +303,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
 				}
 
 				const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-				UItemInstance* NewItem = ItemStackMoveUtils::CreateItemInstance(HotbarComponent, Definition, CreateCount);
+				UItemInstance* NewItem = ItemStackMoveUtils::CreateItemInstance(HotbarComponent, Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 				if (!NewItem)
 				{
 					break;
@@ -361,7 +361,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
 	if (!TargetItem)
 	{
 		const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+		UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 		if (!NewItem)
 		{
 			return Result;
@@ -373,7 +373,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
 	}
 	else
 	{
-		if (!ItemStackMoveUtils::HasMatchingDefinition(TargetItem, Definition))
+		if (!ItemStackMoveUtils::CanMergeItemStacks(TargetItem, SourceItem))
 		{
 			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
 			return Result;
@@ -395,7 +395,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
 			}
 
 			const int32 CreateCount = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount);
+			UItemInstance* NewItem = CreateStorageItemInstance(Definition, CreateCount, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 			if (!NewItem)
 			{
 				break;
@@ -468,5 +468,10 @@ int32 UStorageBoxComponent::FindFirstEmptyStorageSlot() const
 
 UItemInstance* UStorageBoxComponent::CreateStorageItemInstance(UItemDefinition* ItemDefinition, const int32 StackCount)
 {
-	return ItemStackMoveUtils::CreateItemInstance(this, ItemDefinition, StackCount);
+	return CreateStorageItemInstance(ItemDefinition, StackCount, false, 0.0f);
+}
+
+UItemInstance* UStorageBoxComponent::CreateStorageItemInstance(UItemDefinition* ItemDefinition, int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride)
+{
+	return ItemStackMoveUtils::CreateItemInstance(this, ItemDefinition, StackCount, bHasDurabilityOverride, DurabilityOverride);
 }

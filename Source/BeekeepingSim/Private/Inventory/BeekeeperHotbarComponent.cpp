@@ -191,8 +191,22 @@ void UBeekeeperHotbarComponent::NotifyHotbarItemsChanged()
 
 FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefinition* ItemDefinition, int32 Quantity)
 {
+	FItemAcquireSpec AcquireSpec;
+	AcquireSpec.ItemDefinition = ItemDefinition;
+	AcquireSpec.Quantity = Quantity;
+	if (ItemDefinition && ItemDefinition->bUsesDurability)
+	{
+		AcquireSpec.bOverrideDurability = true;
+		AcquireSpec.Durability = FMath::Max(0.0f, ItemDefinition->MaxDurability);
+	}
+
+	return TryAcquireItemBySpec(AcquireSpec);
+}
+
+FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec)
+{
 	FHotbarItemAcquireResult Result;
-	Result.RequestedQuantity = FMath::Max(0, Quantity);
+	Result.RequestedQuantity = FMath::Max(0, AcquireSpec.Quantity);
 	Result.RemainingQuantity = Result.RequestedQuantity;
 
 	if (Slots.Num() != SlotCount)
@@ -200,6 +214,7 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 		Slots.SetNum(SlotCount);
 	}
 
+	UItemDefinition* ItemDefinition = AcquireSpec.ItemDefinition.Get();
 	if (!ItemDefinition)
 	{
 		Result.Message = FText::FromString(TEXT("Cannot acquire an item without a definition."));
@@ -212,6 +227,11 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 		return Result;
 	}
 
+	const bool bHasDurabilityOverride = ItemDefinition->bUsesDurability;
+	const float DurabilityOverride = ItemDefinition->bUsesDurability
+		? (AcquireSpec.bOverrideDurability ? AcquireSpec.Durability : FMath::Max(0.0f, ItemDefinition->MaxDurability))
+		: 0.0f;
+
 	const int32 MaxStack = ItemStackMoveUtils::ResolveMaxStack(ItemDefinition);
 	bool bHotbarChanged = false;
 
@@ -219,7 +239,7 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 	{
 		FHotbarSlotData& Slot = Slots[SlotIndex];
 		UItemInstance* ExistingItemInstance = Cast<UItemInstance>(Slot.ItemInstance);
-		if (!ItemStackMoveUtils::HasMatchingDefinition(ExistingItemInstance, ItemDefinition))
+		if (!ItemStackMoveUtils::HasCompatibleStackState(ExistingItemInstance, ItemDefinition, bHasDurabilityOverride, DurabilityOverride))
 		{
 			continue;
 		}
@@ -251,7 +271,7 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 		}
 
 		const int32 StackQuantity = ItemStackMoveUtils::ClampQuantityToAvailable(Result.RemainingQuantity, MaxStack);
-		UItemInstance* NewItemInstance = CreateItemInstance(ItemDefinition, StackQuantity);
+		UItemInstance* NewItemInstance = CreateItemInstance(ItemDefinition, StackQuantity, bHasDurabilityOverride, DurabilityOverride);
 		if (!NewItemInstance)
 		{
 			Result.Message = FText::FromString(TEXT("Failed to create a new item instance for the hotbar."));
@@ -416,7 +436,7 @@ FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 Fro
 	if (!TargetItem)
 	{
 		const int32 StackToCreate = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-		UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate);
+		UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 		if (!NewItem)
 		{
 			return Result;
@@ -428,7 +448,7 @@ FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 Fro
 	}
 	else
 	{
-		if (!ItemStackMoveUtils::HasMatchingDefinition(TargetItem, SourceDefinition))
+		if (!ItemStackMoveUtils::CanMergeItemStacks(TargetItem, SourceItem))
 		{
 			Result.Message = FText::FromString(TEXT("Partial move failed: target has a different item type."));
 			return Result;
@@ -450,7 +470,7 @@ FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 Fro
 			}
 
 			const int32 StackToCreate = ItemStackMoveUtils::ClampQuantityToAvailable(QuantityToMove, MaxStack);
-			UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate);
+			UItemInstance* NewItem = CreateItemInstance(SourceDefinition, StackToCreate, SourceItem->HasDurability(), SourceItem->GetCurrentDurability());
 			if (!NewItem)
 			{
 				break;
@@ -681,5 +701,10 @@ int32 UBeekeeperHotbarComponent::ResolveToggleFallbackSelectionIndex() const
 
 UItemInstance* UBeekeeperHotbarComponent::CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount)
 {
-	return ItemStackMoveUtils::CreateItemInstance(this, ItemDefinition, StackCount);
+	return CreateItemInstance(ItemDefinition, StackCount, false, 0.0f);
+}
+
+UItemInstance* UBeekeeperHotbarComponent::CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride)
+{
+	return ItemStackMoveUtils::CreateItemInstance(this, ItemDefinition, StackCount, bHasDurabilityOverride, DurabilityOverride);
 }

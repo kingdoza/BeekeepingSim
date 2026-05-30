@@ -23,6 +23,8 @@
 #include "WorldActors/BeehiveCombSlotActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
 #include "WorldActors/ItemPlacementSlot.h"
+#include "WorldActors/ItemPlacementSlotActor.h"
+#include "WorldActors/PlacedItemRemainingComponent.h"
 #include "WorldActors/QueenBeeActor.h"
 #include "Curves/CurveFloat.h"
 
@@ -277,6 +279,24 @@ float ABeehive::CalculateTotalHoneyIncreaseAmount() const
 	const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
 	const float SafeCoefficient = FMath::Max(0.0f, HoneyProductionCoefficient);
 	return static_cast<float>(SafeBeeCount) * SafeCoefficient;
+}
+
+void ABeehive::ApplyPollenPattyConsumptionUpdate()
+{
+	const float Amount = FMath::Max(0.0f, PollenPattyConsumptionAmountPerBucket);
+	if (Amount <= 0.0f)
+	{
+		return;
+	}
+
+	UPlacedItemRemainingComponent* RemainingComponent = nullptr;
+	AItemPlacementSlotActor* TargetSlot = FindPollenPattyConsumptionTargetSlot(RemainingComponent);
+	if (!TargetSlot || !RemainingComponent)
+	{
+		return;
+	}
+
+	RemainingComponent->ConsumeAmount(Amount);
 }
 
 void ABeehive::IncreaseSanitation(float Delta)
@@ -570,6 +590,13 @@ void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBuc
 	PopulationSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
 	PopulationSubscription.SubscriptionTag = FName(TEXT("ColonyPopulation"));
 	OutSubscriptions.Add(PopulationSubscription);
+
+	FGameTimeBucketSubscription PollenPattySubscription;
+	PollenPattySubscription.BucketMinutes = FMath::Clamp(PollenPattyConsumptionBucketMinutes, 1, 1440);
+	PollenPattySubscription.bApplyImmediatelyOnBeginPlay = bApplyPollenPattyConsumptionOnBeginPlayBucket;
+	PollenPattySubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+	PollenPattySubscription.SubscriptionTag = FName(TEXT("PollenPattyConsumption"));
+	OutSubscriptions.Add(PollenPattySubscription);
 }
 
 void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event)
@@ -589,6 +616,10 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	else if (Event.SubscriptionTag == FName(TEXT("ColonyPopulation")))
 	{
 		ApplyColonyPopulationUpdate();
+	}
+	else if (Event.SubscriptionTag == FName(TEXT("PollenPattyConsumption")))
+	{
+		ApplyPollenPattyConsumptionUpdate();
 	}
 }
 
@@ -1237,6 +1268,80 @@ void ABeehive::BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UC
 bool ABeehive::IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const
 {
 	return FindManagedCombSlotIndex(CombActor) != INDEX_NONE;
+}
+
+AItemPlacementSlotActor* ABeehive::FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const
+{
+	OutRemainingComponent = nullptr;
+	if (PollenPattyConsumptionAreaTags.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	AItemPlacementSlotActor* BestSlot = nullptr;
+	UPlacedItemRemainingComponent* BestRemainingComponent = nullptr;
+	float BestLocalY = 0.0f;
+
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (!ChildActorComponent)
+		{
+			continue;
+		}
+
+		AItemPlacementSlotActor* SlotActor = Cast<AItemPlacementSlotActor>(ChildActorComponent->GetChildActor());
+		if (!SlotActor || !DoesSlotMatchPollenPattyConsumptionTags(SlotActor))
+		{
+			continue;
+		}
+
+		AActor* OccupiedActor = SlotActor->GetOccupiedActor();
+		if (!OccupiedActor)
+		{
+			continue;
+		}
+
+		UPlacedItemRemainingComponent* RemainingComponent = OccupiedActor->FindComponentByClass<UPlacedItemRemainingComponent>();
+		if (!RemainingComponent || !RemainingComponent->HasRemaining() || RemainingComponent->GetCurrentAmount() <= 0.0f)
+		{
+			continue;
+		}
+
+		const FVector LocalSlotLocation = GetActorTransform().InverseTransformPosition(SlotActor->GetActorLocation());
+		const float LocalY = LocalSlotLocation.Y;
+		if (!BestSlot)
+		{
+			BestSlot = SlotActor;
+			BestRemainingComponent = RemainingComponent;
+			BestLocalY = LocalY;
+			continue;
+		}
+
+		const bool bIsBetterCandidate = (PollenPattyConsumptionSide == EPollenPattyConsumptionSide::Leftmost)
+			? (LocalY < BestLocalY)
+			: (LocalY > BestLocalY);
+		if (bIsBetterCandidate)
+		{
+			BestSlot = SlotActor;
+			BestRemainingComponent = RemainingComponent;
+			BestLocalY = LocalY;
+		}
+	}
+
+	OutRemainingComponent = BestRemainingComponent;
+	return BestSlot;
+}
+
+bool ABeehive::DoesSlotMatchPollenPattyConsumptionTags(const AItemPlacementSlotActor* SlotActor) const
+{
+	if (!SlotActor || PollenPattyConsumptionAreaTags.IsEmpty())
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer SlotTags = SlotActor->GetSlotAreaTags();
+	return SlotTags.HasAll(PollenPattyConsumptionAreaTags);
 }
 
 void ABeehive::HandleCombPartFocusBegin(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)

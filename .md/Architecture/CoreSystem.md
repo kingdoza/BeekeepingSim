@@ -25,6 +25,8 @@
 - 보류 리팩토링 완료 후 drag/drop rename:
   - `StorageSlotDragDropOperation` -> `ItemSlotDragDropOperation`
   - `EStorageSlotContainerType` -> `EItemSlotContainerType`
+- placed item actor migration:
+  - `PollenPattyActor` -> `PlacedItemActor`
 
 Core Redirect는 Blueprint/asset 직렬화 호환 목적이다. 새 rename을 추가할 때는 Editor 재시작, Blueprint compile/save, 심볼 재검사를 같이 수행한다.
 
