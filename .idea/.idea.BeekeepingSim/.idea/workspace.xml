@@ -45,10 +45,16 @@
     <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/UMG/Public/Components/HorizontalBox.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../Program Files/Epic Games/UE_5.7/Engine/Source/Runtime/VerseCompiler/.editorconfig" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/Environment/EnvironmentTimeOfDayActor.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/Inventory/BeekeeperHotbarComponent.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/Beehive.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveCombSlotActor.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/BeehiveLidPartFocusActionComponent.cpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PlacedItemRetrievePartFocusActionComponent.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Private/WorldActors/PollenPattyActor.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/Beehive.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PlacedItemRetrievePartFocusActionComponent.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/BeekeepingSim/Public/WorldActors/PollenPattyActor.h" root0="FORCE_HIGHLIGHTING" />
   </component>
@@ -246,6 +252,7 @@
       <workItem from="1779905065349" duration="2573000" />
       <workItem from="1779912162470" duration="881000" />
       <workItem from="1779915364820" duration="1213000" />
+      <workItem from="1780125599286" duration="834000" />
     </task>
     <servers />
   </component>
