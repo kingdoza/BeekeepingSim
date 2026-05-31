@@ -212,6 +212,7 @@
 - Action component는 UI를 직접 제어하지 않고 정책을 반환하거나, 필요한 경우 PlayerController input mode만 적용한다.
 - `UAnchoredFocusCursorActionComponent`는 cursor/input mode를 담당하지만 crosshair 최종 브로드캐스트는 Focus component가 담당한다.
 - Focus target의 item rule은 Inventory/Hotbar가 구독하는 공통 정책 데이터다.
+- focus prompt 데이터 source는 `UBeekeeperFocusComponent::OnFocusPromptChanged` + `GetCurrentPromptData()`이며, UI는 `FFocusPromptData` 표시만 담당한다.
 
 ## PartFocus Delegate Contract
 
@@ -286,3 +287,9 @@
   - empty slot: item-use-area descriptor만 활성
   - occupied generic slot: occupant part descriptor + secondary retrieve 가능
   - comb slot: occupied descriptor는 등록하지 않고 comb part descriptor 경로만 사용
+
+## Update 2026-05-31 (Focus Prompt Widget Ownership)
+
+- Focus system은 prompt 판정/생성 owner를 계속 `UBeekeeperFocusComponent`에 둔다.
+- UI 표시 계층은 `UFocusPromptWidget`이 `OnFocusPromptChanged`를 구독해 `FFocusPromptData`를 렌더링한다.
+- Focus는 widget 생성/viewport 추가를 직접 수행하지 않는다. (character/controller 쪽 UI 생성 흐름 유지)

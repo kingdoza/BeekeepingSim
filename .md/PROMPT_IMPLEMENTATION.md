@@ -1,265 +1,246 @@
-# Pollen Patty Population Bonus 구현 프롬프트
+# WBP_FocusPrompt C++ 이관 구현 프롬프트
 
 ## 목표
 
-벌통(`ABeehive`)에 배치된 화분떡이 colony population 증가량을 가속하도록 구현한다.
+`Content/UI/WBP_FocusPrompt`의 런타임 동작을 C++ base widget으로 이관한다.
 
-화분떡 tier별 효과 수치는 일반 `UItemDefinition`이 아니라 `UPollenPattyItemDefinition : UItemDefinition` subclass에 둔다.
+`BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 유지하고, `WBP_FocusPrompt`는 레이아웃과 스타일만 담당하게 만든다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/UISystem.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- `.md/QNA_ARCHITECTURE.md`
-- `.md/QNA_IMPLEMENTATION.md`
 
-특히 `.md/QNA_ARCHITECTURE.md`의 `화분떡 인구 가속효과 설계 QnA` 27-32번 답변을 따른다.
+위 문서와 현재 Source/Blueprint 구조가 충돌하면 구현하지 말고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-## 전제
+## 현재 확인된 Blueprint 동작
 
-- 화분떡은 generic `APlacedItemActor`로 배치된다.
-- `APlacedItemActor`는 `UPlacedItemRemainingComponent`를 가진다.
-- `ABeehive`에는 이미 화분떡 고정 소모 로직이 있다.
-  - `PollenPattyConsumptionAreaTags`
-  - `PollenPattyConsumptionSide`
-  - `FindPollenPattyConsumptionTargetSlot(...)`
-  - `DoesSlotMatchPollenPattyConsumptionTags(...)`
-  - `ApplyPollenPattyConsumptionUpdate()`
-- 화분떡 소모 대상 선택은 벌통 local Y 기준 `Leftmost/Rightmost` 1개 선택 정책을 따른다.
-- `Content/` asset은 직접 수정하거나 resave하지 않는다.
+`WBP_FocusPrompt`는 현재 EventGraph에서 다음을 수행한다.
 
-위 전제가 현재 Source와 맞지 않으면 구현하지 말고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+1. `PreConstruct`에서 design preview를 위해 `Visible` 처리한다.
+2. `Construct`에서 자기 자신을 `Collapsed`로 숨긴다.
+3. `GetOwningPlayerPawn()`을 `ABeekeeperCharacter`로 cast한다.
+4. `BeekeeperFocus` 컴포넌트의 `OnFocusPromptChanged`에 custom event를 바인딩한다.
+5. `OnFocusPromptChanged(PromptData)` 수신 시 `UpdateFocusPrompt(PromptData)`를 호출한다.
+6. `PromptData.bIsValid == false`이면 위젯을 `Collapsed`로 숨긴다.
+7. `PromptData.bIsValid == true`이면 `TargetNameText`, `KeyText`를 갱신하고 위젯을 `Visible`로 보인다.
 
-## 명시적 제외 범위
+현재 위젯 트리의 필수 이름:
 
-- `UItemDefinition` 본체에 인구 가속 float 추가 금지
-- `ABeehive`에 전역 `PollenPattyEggLayingMultiplier` 추가 금지
-- `ItemLifespanBonus` 또는 감소량(`Decrease`) 수정 금지
-- 여러 화분떡 효과 중첩 금지
-- 최고 tier/최대 multiplier 화분떡을 별도로 찾아 적용하는 정책 금지
-- remaining ratio에 따라 bonus 크기를 조절하는 처리 금지
-- `Content/` asset 직접 수정 금지
+- `TargetNameText`
+- `KeyText`
 
-## 확정 정책
+이 이름은 C++ `BindWidget`에 사용하므로 변경하지 않는다.
 
-1. 화분떡 인구 가속효과는 colony population 증가 항에만 적용한다.
-2. 기존 공식의 `ItemEggLayingBonus`가 화분떡 효과를 반영한다.
-3. 감소 항 `ItemLifespanBonus`/`Decrease`에는 관여하지 않는다.
-4. active 화분떡이 여러 개여도 bonus는 중첩하지 않는다.
-5. bonus 대상은 최고 tier가 아니라 기존 화분떡 소모 대상 선택 정책과 동일하게 고른다.
-6. `PollenPattyConsumptionSide` 기준 leftmost/rightmost active 화분떡 1개를 선택한다.
-7. 선택된 화분떡의 `EggLayingMultiplier`만 적용한다.
-8. remaining amount가 0보다 크면 full bonus를 적용한다.
-9. remaining ratio는 bonus 크기에 관여하지 않는다.
-10. `ColonyPopulation` bucket이 먼저 처리되고, 이후 `PollenPattyConsumption` bucket이 처리된다.
-11. bonus 대상 식별은 `PollenPattyConsumptionAreaTags` + active `UPlacedItemRemainingComponent` 기준을 재사용한다.
-12. 선택된 occupied actor의 item definition이 `UPollenPattyItemDefinition`이 아니면 bonus는 `1.0f`다.
+## 확정 설계
 
-## 주요 구현 대상
+1. `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 변경하지 않는다.
+2. `WBP_FocusPrompt`의 parent class를 새 C++ 클래스 `UFocusPromptWidget`으로 변경한다.
+3. `WBP_FocusPrompt`는 레이아웃, 폰트, 색상, 이미지, 스페이서 등 외형만 담당한다.
+4. 프롬프트 데이터 바인딩, 텍스트 갱신, visibility 갱신은 모두 C++ 책임이다.
+5. C++은 `NativeConstruct()`에서 자동으로 `OwningPlayerPawn`을 통해 `ABeekeeperCharacter`를 찾는다.
+6. `ABeekeeperCharacter::GetBeekeeperFocus()`로 `UBeekeeperFocusComponent`를 얻고 `OnFocusPromptChanged`에 바인딩한다.
+7. 바인딩 직후 `GetCurrentPromptData()`를 호출해 초기 상태를 즉시 반영한다.
+8. `NativeDestruct()`에서 델리게이트를 해제한다.
+9. `NativePreConstruct()`에서는 design-time preview가 보이도록 `Visible` 처리한다.
+10. 런타임 `NativeConstruct()` 시작 시 기본 상태는 `Collapsed`다.
+11. `TargetNameText`, `KeyText`는 `BindWidget` 필수로 둔다.
+12. 애니메이션이나 추가 Blueprint 반응 여지를 위해 `BlueprintImplementableEvent OnPromptDataApplied(PromptData, bVisible)`를 제공한다.
+13. 기본 텍스트 및 visibility 갱신 책임은 C++에서 유지한다.
 
-Inventory:
+## 구현 파일
 
-- `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
-- `Source/BeekeepingSim/Private/Inventory/PollenPattyItemDefinition.cpp`는 필요할 때만 추가한다.
+추가:
 
-WorldActors:
+- `Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`
+- `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
 
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+수정:
 
-문서:
+- `Content/UI/WBP_FocusPrompt`
 
-- `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- `.md/USER_UNREAL.md`
+수정 금지:
 
-## `UPollenPattyItemDefinition`
+- `BP_BeekeeperCharacter`의 `WBP_FocusPrompt` 생성/viewport 추가 흐름
+- `Content/UI/WBP_FocusPrompt` 외의 다른 `Content/` asset
+- Focus 판정, prompt 생성 정책, focus action 정책
 
-`UItemDefinition` subclass를 추가한다.
+## C++ 클래스 요구사항
 
-권장 header:
+`UFocusPromptWidget : public UUserWidget`를 추가한다.
+
+권장 header 형태:
 
 ```cpp
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Inventory/ItemDefinition.h"
-#include "PollenPattyItemDefinition.generated.h"
+#include "Blueprint/UserWidget.h"
+#include "Focus/FocusTargetComponent.h"
+#include "FocusPromptWidget.generated.h"
 
-UCLASS(BlueprintType)
-class BEEKEEPINGSIM_API UPollenPattyItemDefinition : public UItemDefinition
+class UBeekeeperFocusComponent;
+class UTextBlock;
+
+UCLASS(BlueprintType, Blueprintable)
+class BEEKEEPINGSIM_API UFocusPromptWidget : public UUserWidget
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Pollen Patty", meta = (ClampMin = "1.0"))
-    float EggLayingMultiplier = 1.2f;
+	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
+	void BindToFocusComponent(UBeekeeperFocusComponent* InFocusComponent);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
+	void UnbindFromFocusComponent();
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
+	void SetPromptData(const FFocusPromptData& InPromptData);
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
+	void ClearPrompt();
+
+	UFUNCTION(BlueprintPure, Category = "Focus Prompt")
+	const FFocusPromptData& GetCurrentPromptData() const { return CurrentPromptData; }
+
+protected:
+	virtual void NativePreConstruct() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Focus Prompt")
+	void OnPromptDataApplied(const FFocusPromptData& PromptData, bool bVisible);
+
+private:
+	UFUNCTION()
+	void HandleFocusPromptChanged(FFocusPromptData PromptData);
+
+private:
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> TargetNameText;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> KeyText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeekeeperFocusComponent> BoundFocusComponent;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Focus Prompt", meta = (AllowPrivateAccess = "true"))
+	FFocusPromptData CurrentPromptData;
 };
 ```
 
-정책:
+필요하면 private helper를 추가해도 된다.
 
-- 일반 item asset은 계속 `UItemDefinition`을 사용한다.
-- 화분떡 item asset만 `UPollenPattyItemDefinition`을 사용한다.
-- 여러 tier 화분떡은 `UPollenPattyItemDefinition` asset을 여러 개 만들고 `EggLayingMultiplier`만 다르게 둔다.
-- 별도 virtual function이나 interface는 이번 범위에 추가하지 않는다.
-- `UItemDefinition::GetPrimaryAssetId()` override는 건드리지 않는다. subclass는 기존 `ItemId` 정책을 그대로 상속한다.
+## C++ 동작 상세
 
-## `ABeehive::GetItemEggLayingBonus()`
+### `NativePreConstruct()`
 
-현재 구현은 `1.0f`를 반환한다.
+- `Super::NativePreConstruct()`를 호출한다.
+- `IsDesignTime()`이면 `SetVisibility(ESlateVisibility::Visible)`을 호출한다.
+- design-time 기본 텍스트는 현재 Blueprint 기본값을 유지해도 된다.
 
-변경 후 흐름:
+### `NativeConstruct()`
 
-```cpp
-float ABeehive::GetItemEggLayingBonus() const
-{
-    const UPollenPattyItemDefinition* PollenPattyDefinition = ResolveActivePollenPattyItemDefinitionForPopulationBonus();
-    if (!PollenPattyDefinition)
-    {
-        return 1.0f;
-    }
+- `Super::NativeConstruct()`를 호출한다.
+- 런타임 기본 상태로 `SetVisibility(ESlateVisibility::Collapsed)`를 호출한다.
+- `GetOwningPlayerPawn()`을 `ABeekeeperCharacter`로 cast한다.
+- 성공하면 `BeekeeperCharacter->GetBeekeeperFocus()`로 focus component를 얻는다.
+- `BindToFocusComponent(FocusComponent)`를 호출한다.
+- cast 또는 component resolve 실패 시 crash하지 말고 숨김 상태를 유지한다.
 
-    return FMath::Max(1.0f, PollenPattyDefinition->EggLayingMultiplier);
-}
-```
+### `NativeDestruct()`
 
-helper 이름은 기존 style에 맞게 조정해도 된다.
+- `UnbindFromFocusComponent()`를 호출한다.
+- `Super::NativeDestruct()`를 호출한다.
 
-## 대상 선택 helper
+### `BindToFocusComponent(UBeekeeperFocusComponent* InFocusComponent)`
 
-기존 `FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const`가 현재 Source에 있으면 재사용한다.
+- 기존 `BoundFocusComponent`가 있으면 먼저 `UnbindFromFocusComponent()`로 정리한다.
+- `InFocusComponent`가 null이면 `ClearPrompt()` 또는 숨김 상태를 유지한다.
+- 새 focus component를 저장한다.
+- `OnFocusPromptChanged.AddUniqueDynamic(this, &UFocusPromptWidget::HandleFocusPromptChanged)`로 바인딩한다.
+- 바인딩 직후 `SetPromptData(BoundFocusComponent->GetCurrentPromptData())`를 호출해 초기 상태를 즉시 반영한다.
 
-권장:
+### `UnbindFromFocusComponent()`
 
-```cpp
-const UPollenPattyItemDefinition* ABeehive::ResolveActivePollenPattyItemDefinitionForPopulationBonus() const
-{
-    UPlacedItemRemainingComponent* RemainingComponent = nullptr;
-    const AItemPlacementSlotActor* TargetSlot = FindPollenPattyConsumptionTargetSlot(RemainingComponent);
-    if (!TargetSlot || !RemainingComponent)
-    {
-        return nullptr;
-    }
+- `BoundFocusComponent`가 있으면 `OnFocusPromptChanged.RemoveDynamic(this, &UFocusPromptWidget::HandleFocusPromptChanged)`를 호출한다.
+- `BoundFocusComponent`를 null로 만든다.
 
-    AActor* OccupiedActor = TargetSlot->GetOccupiedActor();
-    if (!OccupiedActor)
-    {
-        return nullptr;
-    }
+### `HandleFocusPromptChanged(FFocusPromptData PromptData)`
 
-    const UItemDefinition* ItemDefinition = ResolvePlacedItemDefinition(OccupiedActor);
-    return Cast<UPollenPattyItemDefinition>(ItemDefinition);
-}
-```
+- `SetPromptData(PromptData)`를 호출한다.
 
-필요하면 private helper를 추가한다.
+### `SetPromptData(const FFocusPromptData& InPromptData)`
 
-```cpp
-const UItemDefinition* ResolvePlacedItemDefinitionForPopulationBonus(const AActor* OccupiedActor) const;
-```
+- `CurrentPromptData = InPromptData`로 저장한다.
+- `CurrentPromptData.bIsValid == false`이면:
+  - `SetVisibility(ESlateVisibility::Collapsed)`
+  - `OnPromptDataApplied(CurrentPromptData, false)`
+  - return
+- `CurrentPromptData.bIsValid == true`이면:
+  - `TargetNameText->SetText(CurrentPromptData.DisplayName)`
+  - `KeyText->SetText(CurrentPromptData.InteractionKeyText)`
+  - `SetVisibility(ESlateVisibility::Visible)`
+  - `OnPromptDataApplied(CurrentPromptData, true)`
 
-item definition resolve 우선순위:
+`TargetNameText` 또는 `KeyText`가 null이어도 crash하지 않게 guard한다. 다만 `BindWidget` 필수 위젯이므로 누락이 확인되면 warning log를 남기는 것은 허용한다.
 
-1. `APlacedItemActor`이면 `GetItemDefinition()`
-2. 아니면 `UPlacementOccupantComponent::GetReturnItemDefinition()`
-3. 둘 다 없으면 `nullptr`
+### `ClearPrompt()`
 
-주의:
+- `SetPromptData(FFocusPromptData())`를 호출한다.
 
-- 새 helper는 selection policy를 바꾸지 않는다.
-- 최고 tier/최대 multiplier 탐색을 하지 않는다.
-- 여러 후보가 있어도 기존 소모 대상 선택 결과 1개만 본다.
-- `PollenPattyConsumptionAreaTags`가 비어 있으면 기존 helper가 대상 없음으로 처리하므로 bonus도 `1.0f`다.
-- selected actor에 remaining이 있고 `CurrentAmount > 0`인 조건은 기존 helper 조건을 그대로 따른다.
+## Blueprint 에셋 작업
 
-## Include 지침
+`Content/UI/WBP_FocusPrompt`만 수정한다.
 
-`Beehive.cpp`에 필요한 include를 추가한다.
+필수 작업:
 
-예:
+1. Parent Class를 `UFocusPromptWidget`으로 변경한다.
+2. Designer tree의 `TargetNameText`, `KeyText` 이름을 유지한다.
+3. 기존 EventGraph의 다음 로직을 제거하거나 더 이상 실행되지 않게 정리한다.
+   - `PreConstruct` visibility 처리
+   - `Construct`의 `GetOwningPlayerPawn` / `Cast To BeekeeperCharacter` / `OnFocusPromptChanged` 바인딩
+   - `OnFocusPromptChanged` custom event
+   - `UpdateFocusPrompt`
+   - `SetText`, `SetVisibility` 갱신 노드
+4. 레이아웃, 폰트, 색상, 이미지, 스페이서 등 외형은 유지한다.
 
-```cpp
-#include "Inventory/PollenPattyItemDefinition.h"
-#include "WorldActors/PlacedItemActor.h"
-#include "WorldActors/PlacementOccupantComponent.h"
-```
-
-`Beehive.h`에는 `UPollenPattyItemDefinition`을 노출할 필요가 없으면 forward declaration만 사용하거나 아예 cpp-local helper로 둔다.
-
-## 공식 검증
-
-기존 공식:
-
-```text
-Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient
-Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore
-```
-
-변경 후:
-
-```text
-ItemEggLayingBonus =
-  selected active pollen patty가 UPollenPattyItemDefinition이면 Max(1.0, EggLayingMultiplier)
-  아니면 1.0
-```
-
-`CalculateBeeDecreaseAmount()`는 수정하지 않는다.
+`BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 변경하지 않는다.
 
 ## 문서 갱신
 
 구현 후 아래 문서를 갱신한다.
 
 - `.md/0_ARCHITECTURE.md`
-  - 화분떡 인구 가속효과가 `ItemEggLayingBonus`로 증가 항에만 적용된다고 기록
-  - 효과 수치는 `UPollenPattyItemDefinition::EggLayingMultiplier`에서 읽는다고 기록
-  - 여러 active 화분떡은 중첩하지 않고 기존 소모 대상 선택 정책과 동일한 1개만 적용한다고 기록
-- `.md/Architecture/InventorySystem.md`
-  - `UPollenPattyItemDefinition` 역할 추가
-  - 일반 `UItemDefinition`에는 인구 가속 필드를 추가하지 않는다고 기록
-- `.md/Architecture/WorldActorsSystem.md`
-  - `ABeehive::GetItemEggLayingBonus()`가 선택된 active 화분떡 definition을 참조한다고 기록
-  - `PollenPattyConsumptionAreaTags`/remaining 기준을 bonus 대상 식별에도 재사용한다고 기록
-  - `ColonyPopulation`이 먼저 bonus를 적용하고 이후 `PollenPattyConsumption`이 소모된다고 기록
-- `.md/USER_UNREAL.md`
-  - 화분떡 item definition asset은 `UPollenPattyItemDefinition` class로 만들거나 reparent해야 한다고 기록
-  - tier별 `EggLayingMultiplier` 설정 예시를 기록
-  - 기존 화분떡 durability placed remaining 설정은 유지해야 한다고 기록
+  - `WBP_FocusPrompt`의 런타임 바인딩과 표시 갱신이 `UFocusPromptWidget` C++ base class 책임이라고 기록한다.
+  - `BP_BeekeeperCharacter`는 생성/viewport 추가만 유지한다고 기록한다.
+- `.md/Architecture/UISystem.md`
+  - `UFocusPromptWidget`을 UI system scope/key class에 추가한다.
+  - prompt widget이 `UBeekeeperFocusComponent::OnFocusPromptChanged`를 구독하고 `FFocusPromptData`를 표시한다고 기록한다.
+- `.md/Architecture/FocusSystem.md`
+  - focus prompt의 데이터 source는 계속 `UBeekeeperFocusComponent`와 `FFocusPromptData`이며, UI는 표시만 담당한다고 확인한다.
 
-## 검색 검증
+## 검증
+
+### 검색 검증
 
 ```powershell
-rg "PollenPattyItemDefinition|EggLayingMultiplier|GetItemEggLayingBonus" Source/BeekeepingSim .md
-rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private
-rg "CalculateBeeDecreaseAmount|GetItemLifespanBonus" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp
+rg "UFocusPromptWidget|FocusPromptWidget|OnPromptDataApplied|BindToFocusComponent|HandleFocusPromptChanged" Source/BeekeepingSim .md
+rg "OnFocusPromptChanged|UpdateFocusPrompt|TargetNameText|KeyText" Source/BeekeepingSim Content/UI .md
 ```
 
 확인할 것:
 
-- `UItemDefinition` 본체에 인구 가속 float가 추가되지 않았다.
-- `ABeehive`에 전역 `PollenPattyEggLayingMultiplier`가 추가되지 않았다.
-- `GetItemEggLayingBonus()`가 selected active pollen patty definition만 본다.
-- `CalculateBeeDecreaseAmount()`와 `GetItemLifespanBonus()`는 기존 의미를 유지한다.
-- source에서 `Content/` asset 수정이 없다.
+- `UFocusPromptWidget`가 `Source/BeekeepingSim/Public/UI`와 `Source/BeekeepingSim/Private/UI`에 추가되었다.
+- `TargetNameText`, `KeyText`는 C++ `BindWidget` 이름과 Blueprint designer 이름이 일치한다.
+- `WBP_FocusPrompt`의 EventGraph가 더 이상 prompt binding/update 책임을 갖지 않는다.
+- `BP_BeekeeperCharacter`의 생성/viewport 추가 흐름은 유지된다.
 
-## 시나리오 검증
-
-가능하면 PIE 또는 디버그 호출로 확인한다.
-
-1. active 화분떡이 없으면 `GetItemEggLayingBonus() == 1.0f`
-2. selected active 화분떡이 `UPollenPattyItemDefinition(EggLayingMultiplier=1.2)`이면 `GetItemEggLayingBonus() == 1.2f`
-3. selected active 화분떡 remaining amount가 0이면 대상에서 제외되고 bonus는 `1.0f`
-4. 여러 화분떡이 있어도 `PollenPattyConsumptionSide` 기준 selected 1개만 적용된다.
-5. selected 화분떡이 낮은 tier이고 반대쪽에 높은 tier가 있어도 selected 낮은 tier multiplier가 적용된다.
-6. selected occupied actor의 item definition이 `UPollenPattyItemDefinition`이 아니면 bonus는 `1.0f`
-7. `CalculateBeeIncreaseAmount()`만 변하고 `CalculateBeeDecreaseAmount()`는 변하지 않는다.
-8. 같은 bucket 경계에서 population update 후 consumption이 수행되어, 소모 직전 active 화분떡이 해당 update에 bonus를 준다.
-
-## 빌드 검증
+### 빌드 검증
 
 가능하면 UBT 빌드를 수행한다.
 
@@ -269,12 +250,33 @@ rg "CalculateBeeDecreaseAmount|GetItemLifespanBonus" Source/BeekeepingSim/Privat
 
 엔진 경로가 없으면 임의 경로로 대체하지 말고 최종 보고에 빌드 미수행 사유를 적는다.
 
+### Blueprint 검증
+
+가능하면 Unreal Editor 또는 commandlet에서 `WBP_FocusPrompt`를 compile/save한다.
+
+확인할 것:
+
+1. `WBP_FocusPrompt` parent class가 `UFocusPromptWidget`이다.
+2. `TargetNameText`, `KeyText`가 정상적으로 bind된다.
+3. Blueprint compile error가 없다.
+4. `BP_BeekeeperCharacter`가 기존처럼 `WBP_FocusPrompt`를 생성하고 viewport에 추가한다.
+
+### 런타임 시나리오 검증
+
+가능하면 PIE에서 확인한다.
+
+1. 플레이 직후 focus target이 없으면 prompt는 숨김 상태다.
+2. focus target 진입 시 `TargetNameText`와 `KeyText`가 `FFocusPromptData` 값으로 갱신되고 prompt가 보인다.
+3. focus target 이탈 또는 invalid prompt 수신 시 prompt가 `Collapsed`가 된다.
+4. engaged focus prompt override가 들어오면 override의 `DisplayName`과 `InteractionKeyText`가 표시된다.
+5. 위젯 제거 또는 PIE 종료 시 delegate 해제 관련 오류가 없다.
+
 ## 중단 조건
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- `FindPollenPattyConsumptionTargetSlot(...)` 또는 동등한 기존 소모 대상 선택 helper가 없고, 선택 정책을 새로 정의해야 하는 경우
-- occupied actor에서 item definition을 안정적으로 resolve할 수 없는 경우
-- `UPollenPattyItemDefinition` subclass asset이 기존 item acquisition/stack/move 경로에서 `UItemDefinition*`로 호환되지 않는 근거가 발견되는 경우
-- primary asset scan 설정 때문에 subclass data asset을 에디터에서 만들거나 로드하는 방식이 불명확한 경우
-- QNA 27-32번 확정 답변과 현재 Source 구조가 충돌하는 경우
+- `WBP_FocusPrompt`의 designer tree에서 `TargetNameText` 또는 `KeyText`가 없거나 이름 변경이 필요한 경우
+- `WBP_FocusPrompt` parent class 변경이 다른 Blueprint 참조를 깨는 경우
+- `BP_BeekeeperCharacter`가 `CreateWidget(WBP_FocusPrompt)`에 올바른 owning player를 전달하지 않아 `GetOwningPlayerPawn()` 자동 바인딩이 성립하지 않는 경우
+- `UBeekeeperFocusComponent::OnFocusPromptChanged` 또는 `GetCurrentPromptData()`의 계약이 문서와 현재 Source에서 다르게 확인되는 경우
+- Blueprint asset compile/save 자동화가 불가능해 수동 Unreal Editor 작업이 필요한 경우

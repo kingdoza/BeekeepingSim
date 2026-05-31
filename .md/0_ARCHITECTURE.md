@@ -74,6 +74,7 @@ Source/BeekeepingSim/
 - Interaction은 FocusAction의 구체 구현이며 pickup/storage 같은 도메인별 상호작용을 실행한다.
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, runtime clock 표시, Blueprint 표시 API를 제공한다.
+- `WBP_FocusPrompt` 런타임 바인딩/텍스트/visibility 갱신은 `UFocusPromptWidget`(C++ base widget)이 담당하고, `BP_BeekeeperCharacter`는 widget 생성/viewport 추가만 유지한다.
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
@@ -236,3 +237,9 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - bonus 수치는 `UPollenPattyItemDefinition::EggLayingMultiplier`에서 읽는다.
 - 대상 선택은 기존 `PollenPattyConsumptionSide` 기반 leftmost/rightmost active 화분떡 1개 정책을 재사용한다.
 - 여러 active 화분떡이 있어도 bonus는 중첩하지 않으며, selected 1개의 multiplier만 사용한다.
+
+## Update 2026-05-31 (Focus Prompt C++ Base Widget)
+
+- `UFocusPromptWidget`를 UI 시스템에 추가했다.
+- `WBP_FocusPrompt`는 layout/style 전용 Blueprint로 유지하고, prompt data binding/표시 갱신은 C++ base widget이 처리한다.
+- `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 유지한다.

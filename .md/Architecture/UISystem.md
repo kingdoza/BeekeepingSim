@@ -15,6 +15,8 @@
 - `Source/BeekeepingSim/Public/UI/ItemSlotDragDropTypes.h`
 - `Source/BeekeepingSim/Public/UI/TimeOfDayClockWidget.h`
 - `Source/BeekeepingSim/Private/UI/TimeOfDayClockWidget.cpp`
+- `Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`
+- `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
 
 ## Responsibilities
 
@@ -23,6 +25,7 @@
 - drop target에 따른 inventory mutation API 라우팅
 - partial drag source preview와 drag visual 수량 갱신
 - runtime `Hour24`를 고정 `HH:MM` 텍스트로 표시하는 clock widget 제공
+- focus prompt widget의 런타임 binding/visibility/text 갱신
 - Blueprint Widget이 사용할 최소 C++ API 표면 제공
 
 ## Key Classes
@@ -36,6 +39,7 @@
 - `EItemSlotDragMode`: full stack / partial stack drag 구분
 - `FItemSlotMoveResult`: partial move 결과
 - `UTimeOfDayClockWidget`: controller가 주입한 `Hour24`를 normalize/floor minute 변환해 `HH:MM` 표시 이벤트를 제공
+- `UFocusPromptWidget`: focus component prompt delegate를 구독하고 `FFocusPromptData`를 `TargetNameText`/`KeyText`에 반영하는 base widget
 
 ## Drag/Drop Flow
 
@@ -70,6 +74,12 @@
 - `UTimeOfDayClockWidget::GetFormattedTimeText`
 - `UTimeOfDayClockWidget::FormatHour24AsHHMM`
 - `UTimeOfDayClockWidget::OnDisplayedTimeChanged`
+- `UFocusPromptWidget::BindToFocusComponent`
+- `UFocusPromptWidget::UnbindFromFocusComponent`
+- `UFocusPromptWidget::SetPromptData`
+- `UFocusPromptWidget::ClearPrompt`
+- `UFocusPromptWidget::GetCurrentPromptData`
+- `UFocusPromptWidget::OnPromptDataApplied`
 
 `ShouldHideItemVisualForCurrentDrag`는 legacy wrapper다. 새 Blueprint 로직은 가능하면 `ShouldHideItemVisualForPartialDragPreview`, `IsPartialDragPreviewActive`, `GetPartialDragPreviewDisplayStackCount` 조합을 우선 사용한다.
 
@@ -105,6 +115,7 @@
 - `UItemSlotDragDropOperation`의 UFUNCTION Category에 남아 있는 "Storage Drag Drop" 표기는 에디터 표시용 legacy naming이며 시스템 경계를 의미하지 않는다.
 - Quick move target selection은 현재 UI에 남아 있는 예외적 편의 로직이다. 규칙이 복잡해지면 Inventory 쪽으로 이동한다.
 - Drag visual은 별도 `UItemDragVisualWidget` 없이 `UItemVisualWidget` 계층으로 통일한다.
+- `WBP_FocusPrompt`는 `UFocusPromptWidget`을 parent로 사용하고, C++이 runtime prompt binding/update를 담당한다. Blueprint는 layout/style와 선택적 `OnPromptDataApplied` 반응만 담당한다.
 
 ## Manual Review Points
 

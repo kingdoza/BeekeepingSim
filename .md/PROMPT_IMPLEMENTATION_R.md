@@ -1,155 +1,102 @@
-# 구현 수정 프롬프트: Placed Item Durability Remaining 리뷰 Findings
+﻿# 구현 수정 프롬프트: WBP_FocusPrompt C++ 이관 리뷰 Findings
 
 ## 우선순위
 
-1. Low: `UItemInstance::InitializeFromDefinition` durability 인자 계약 정리
-2. Low: `WorldActorsSystem.md` Scope/과거 update 문구 동기화
+1. Medium: `WBP_FocusPrompt` Blueprint에 남은 `UpdateFocusPrompt`/text/visibility 갱신 그래프 제거 또는 비활성화 확인
+2. Low: `UFocusPromptWidget::NativeConstruct()`에서 runtime `Collapsed` 기본 상태를 `Super::NativeConstruct()`보다 먼저 적용
+3. 참고: UBT 빌드 실패는 이번 변경 파일 기인이 아닌 기존 unity build 충돌로 분리
 
 ## 발견 문제
 
-### 1. `InitializeFromDefinition(..., InDurability)`가 durability item에서 인자를 무시함
+### 1. `WBP_FocusPrompt` asset에 기존 prompt update 그래프 흔적이 남아 있음
 
 - 대상 파일:
-  - `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
-  - `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
-  - `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
+  - `Content/UI/WBP_FocusPrompt.uasset`
+- 확인 결과:
+  - `NativeParentClass=/Script/BeekeepingSim.FocusPromptWidget` 확인됨
+  - `TargetNameText`, `KeyText` 이름 확인됨
+  - `UpdateFocusPrompt` 문자열 4건 확인됨
+  - `SetText`, `SetVisibility`, `bIsValid`, `DisplayName`, `InteractionKeyText` 문자열 확인됨
+  - `OnFocusPromptChanged`, `GetOwningPlayerPawn` 문자열은 0건이라 기존 delegate binding은 제거된 것으로 보임
 - 원인:
-  - `UItemInstance::InitializeFromDefinition(UItemDefinition*, int32, float)`는 public/BlueprintCallable API에 `InDurability` 인자가 있다.
-  - 하지만 `Definition->bUsesDurability == true`이면 `InDurability`를 사용하지 않고 항상 `Definition->MaxDurability`로 초기화한다.
-  - 현재 state-aware 생성 경로는 이후 `SetDurability(DurabilityOverride)`를 호출해 보정하므로 C++ hotbar/storage/회수 경로는 동작한다.
+  - parent class 변경과 delegate binding 제거는 되었지만, 기존 `UpdateFocusPrompt` 함수/노드 또는 stale editor graph/search data가 asset에 남아 있다.
 - 영향:
-  - Blueprint 또는 향후 C++ 코드가 `InitializeFromDefinition(..., InDurability)`를 직접 사용하면 durability 잔량이 full durability로 덮일 수 있다.
-  - API 이름/인자와 실제 계약이 어긋나 유지보수자가 상태 보존 경로를 잘못 사용할 위험이 있다.
+  - 실제 활성 그래프라면 `WBP_FocusPrompt`가 여전히 text/visibility 갱신 책임을 일부 가진다.
+  - 단순 stale metadata라도 리뷰 기준상 EventGraph 책임 제거를 문자열 검색만으로 확정할 수 없다.
 - 수정 방향:
-  - 선택지 A: `InitializeFromDefinition`에서 durability item도 `InDurability`를 clamp 적용하도록 수정한다.
-  - 선택지 B: 현재 full durability 초기화 정책을 유지하되 인자 의미를 제거/문서화하고, explicit durability 초기화는 `SetDurability` 또는 별도 helper로만 수행한다고 명확히 한다.
-  - 권장: 선택지 A. 기존 기본값 `InDurability=1.0f`가 full durability와 다르게 해석될 수 있으므로 호출부 영향까지 확인한 뒤 적용한다. 위험하면 선택지 B로 계약을 명확히 한다.
-- 수정 예:
+  - Unreal Editor에서 `WBP_FocusPrompt`를 열고 EventGraph/Functions를 확인한다.
+  - `UpdateFocusPrompt` 함수와 prompt text/visibility 갱신 노드를 제거한다.
+  - Blueprint는 layout/style과 선택적 `OnPromptDataApplied` 반응만 유지한다.
+  - Compile/Save 후 아래 검색에서 `UpdateFocusPrompt`, `SetText`, `SetVisibility` 흔적이 사라지거나, 남는 항목이 의도된 `OnPromptDataApplied` 표시 연출뿐임을 명확히 한다.
+
+### 2. `NativeConstruct()`의 runtime collapse가 `Super::NativeConstruct()` 이후에 실행됨
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
+- 원인:
+  - 현재 구현은 `Super::NativeConstruct()` 호출 후 `SetVisibility(ESlateVisibility::Collapsed)`를 호출한다.
+  - Unreal의 `UUserWidget::NativeConstruct()`는 Blueprint `Construct` 이벤트를 실행하므로, Blueprint Construct가 먼저 실행될 수 있다.
+- 영향:
+  - 최종 반환 전에는 C++이 collapse/bind를 적용하지만, "NativeConstruct 시작 시 runtime 기본 상태 Collapsed 보장" 요구와 정확히 일치하지 않는다.
+  - Blueprint Construct나 animation이 남아 있으면 C++ 초기 상태보다 먼저 실행될 수 있다.
+- 수정 방향:
+  - runtime 기본 상태 collapse를 `Super::NativeConstruct()`보다 먼저 적용한다.
+  - 이후 `Super::NativeConstruct()` 호출, owning pawn resolve, `BindToFocusComponent()` 순서를 유지한다.
 
 ```cpp
-void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int32 InStackCount, float InDurability)
+void UFocusPromptWidget::NativeConstruct()
 {
-	Definition = InDefinition;
-	InstanceId = FGuid::NewGuid();
-	StackCount = 0;
+	SetVisibility(ESlateVisibility::Collapsed);
 
-	if (Definition && Definition->bUsesDurability)
+	Super::NativeConstruct();
+
+	ABeekeeperCharacter* BeekeeperCharacter = Cast<ABeekeeperCharacter>(GetOwningPlayerPawn());
+	if (!BeekeeperCharacter)
 	{
-		Durability = FMath::Clamp(InDurability, 0.0f, FMath::Max(0.0f, Definition->MaxDurability));
-	}
-	else
-	{
-		Durability = InDurability;
+		return;
 	}
 
-	SetStackCount(InStackCount);
-	RebuildActions();
+	BindToFocusComponent(BeekeeperCharacter->GetBeekeeperFocus());
 }
 ```
 
-적용 시 `ItemStackMoveUtils::CreateItemInstance(...)`의 full durability 기본 생성 경로가 깨지지 않도록 `InitializeFromDefinition(Definition, StackCount, Definition->MaxDurability)` 또는 현행 `SetDurability` 보정 경로를 같이 정리한다.
-
-### 2. WorldActors 문서 Scope가 신규/기존 placed item 파일과 불완전하게 동기화됨
-
-- 대상 파일:
-  - `.md/Architecture/WorldActorsSystem.md`
-- 원인:
-  - Scope 목록에는 `PlacedItemRemaining*` 파일은 추가됐지만 `PlacedItemActor.h/.cpp`가 빠져 있다.
-  - 하단 과거 update 일부에는 `UPlacedItemRetrieveFocusActionComponent`, `UPlacedItemRetrievePartFocusActionComponent` 중심 표현이 남아 있어 현재 generic retrieve 경로와 혼재되어 보인다.
-- 영향:
-  - 다음 구현/리뷰에서 `APlacedItemActor`가 WorldActors 정본 범위에서 누락될 수 있다.
-  - retrieve 실행 주체가 `UPlacementSlotRetrievePartFocusActionComponent`인지, deprecated wrapper인지 혼동될 수 있다.
-- 수정 방향:
-  - Scope에 아래 파일을 추가한다.
-    - `Source/BeekeepingSim/Public/WorldActors/PlacedItemActor.h`
-    - `Source/BeekeepingSim/Private/WorldActors/PlacedItemActor.cpp`
-    - 필요 시 현재 유지되는 retrieve wrapper 파일들도 명시한다.
-  - 2026-05-27/2026-05-28 update 문구에서 현재 신규 경로는 `UPlacementSlotRetrievePartFocusActionComponent`, 기존 `UPlacedItemRetrieve*`는 compatibility wrapper라고 분명히 구분한다.
-  - 2026-05-31 update의 durability remaining 설명은 유지한다.
-
 ## 검증 방법
 
+- 검색:
+  - `rg "UFocusPromptWidget|FocusPromptWidget|OnPromptDataApplied|BindToFocusComponent|HandleFocusPromptChanged" Source/BeekeepingSim .md`
+  - `rg -a "UpdateFocusPrompt|OnFocusPromptChanged|GetOwningPlayerPawn|SetText|SetVisibility|TargetNameText|KeyText|NativeParentClass" Content/UI/WBP_FocusPrompt.uasset`
+  - `rg -a "WBP_FocusPrompt|CreateWidget|AddToViewport|OnFocusPromptChanged|UpdateFocusPrompt" Content/Beekeeper/BP_BeekeeperCharacter.uasset`
 - UBT:
   - `BeekeepingSimEditor Win64 Development`
-- 검색:
-  - `rg -n "InitializeFromDefinition\\(" Source/BeekeepingSim`
-  - `rg -n "CreateItemInstance\\(" Source/BeekeepingSim/Private/Inventory`
-  - `rg -n "PlacedItemActor\\.h|PlacedItemActor\\.cpp|PlacedItemRetrieve|PlacementSlotRetrieve" .md/Architecture/WorldActorsSystem.md`
-- 수동 확인:
-  - durability item 생성 시 기본 full durability가 필요한 경로가 유지되는지 확인
-  - durability override 생성 시 source/remaining durability가 보존되는지 확인
-  - `APlacedItemActor`와 retrieve component 문서 설명이 현재 코드 구조와 일치하는지 확인
+  - 현재 빌드 실패 원인:
+    - `Source/BeekeepingSim/Private/Interaction/StorageBoxFocusActionComponent.cpp`
+    - `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
+    - 두 파일의 anonymous namespace `CenterMouseCursorInViewport` 함수명이 unity build에서 충돌
+  - 위 빌드 blocker는 이번 FocusPrompt 변경 파일 기인이 아니지만, 최종 검증 전에 별도 수정이 필요하다.
+- Editor/PIE:
+  - `WBP_FocusPrompt` parent가 `UFocusPromptWidget`인지 확인
+  - EventGraph/Functions에 prompt binding/update 책임이 없는지 확인
+  - 플레이 직후 focus target 없음: prompt `Collapsed`
+  - focus target 진입: `TargetNameText`, `KeyText` 갱신 + `Visible`
+  - focus 이탈/invalid prompt: `Collapsed`
+  - engaged prompt override 텍스트 반영
+  - PIE 종료 시 delegate 해제 관련 오류 없음
 
 ## 아키텍처 문서 반영 필요 여부
 
-- 필요.
-- 대상:
-  - `.md/Architecture/WorldActorsSystem.md`
-- 이유:
-  - Scope 목록과 현재 placed item retrieve 구조 설명이 실제 Source 구조와 완전히 일치해야 한다.
+- 현재 문서 반영은 대체로 완료.
+- 추가 문서 반영은 위 수정이 구조/API를 바꾸지 않는 한 불필요.
 
 ## 참고 리뷰 결과
 
 - High: 없음
-- Medium: 없음
+- Medium:
+  - `WBP_FocusPrompt` asset에 기존 `UpdateFocusPrompt`/text/visibility update graph 흔적이 남아 있어 Blueprint 책임 제거를 확정할 수 없음
 - Low:
-  - `UItemInstance::InitializeFromDefinition` durability 인자 계약 불일치
-  - `WorldActorsSystem.md` Scope/update 문구 동기화 누락
+  - `NativeConstruct()` runtime collapse 순서가 요구사항의 "시작 시 Collapsed"와 불일치
 - UBT/UHT:
-  - `BeekeepingSimEditor Win64 Development` 성공
-- 제외 범위 확인:
-  - `ABeehive` 화분떡 자동 소모 tick/bucket 로직 없음
-  - 화분떡 colony population/산란력/수명 보너스 효과 없음
-  - hotbar/storage UI 잔량 bar/overlay/tooltip 없음
-  - C++ 구현은 Content asset 직접 수정에 의존하지 않음
+  - UHT 통과
+  - UBT 실패: 기존 unity build anonymous namespace 함수명 충돌
 
 ---
 
-# 구현 수정 프롬프트: Pollen Patty Population Bonus 리뷰 Findings
-
-## 우선순위
-
-1. Low: `PopulationBonus` helper 명칭 정리
-
-## 발견 문제
-
-### 1. `PopulationBonus` 문자열이 private helper 이름에 남아 있음
-
-- 대상 파일:
-  - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-  - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- 원인:
-  - 리뷰 프롬프트의 금지 검색 기준은 `PopulationBonus`를 임의 전역 개념 추가로 보지 않기 위해 소스에 남기지 않는 것이다.
-  - 현재 구현은 전역 multiplier 필드나 별도 bonus 시스템을 만들지는 않았지만, private helper 이름에 `ResolveActivePollenPattyItemDefinitionForPopulationBonus`, `ResolvePlacedItemDefinitionForPopulationBonus`가 남아 있다.
-- 영향:
-  - 런타임 동작 결함은 없다.
-  - 다만 검색 기준상 `rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/...`가 실패하며, `ItemEggLayingBonus`라는 기존 공식 항에만 적용한다는 정책 표현과 이름이 어긋난다.
-- 수정 방향:
-  - helper 이름에서 `PopulationBonus`를 제거하고 기존 공식 항 이름과 맞춘다.
-  - 권장 이름:
-    - `ResolveActivePollenPattyItemDefinitionForEggLayingBonus`
-    - `ResolvePlacedItemDefinitionForEggLayingBonus`
-  - 또는 더 짧게:
-    - `ResolveSelectedPollenPattyItemDefinition`
-    - `ResolveOccupiedItemDefinition`
-  - 함수 동작은 변경하지 않는다.
-
-## 검증 방법
-
-- UBT:
-  - `BeekeepingSimEditor Win64 Development`
-- 검색:
-  - `rg "PollenPattyItemDefinition|EggLayingMultiplier|GetItemEggLayingBonus" Source/BeekeepingSim .md`
-  - `rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private`
-  - `rg "CalculateBeeDecreaseAmount|GetItemLifespanBonus" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- 기대 결과:
-  - `PopulationBonus` 검색은 Source에서 0건이어야 한다.
-  - `GetItemEggLayingBonus()`는 selected active pollen patty definition만 보고 `Max(1.0f, EggLayingMultiplier)`를 반환해야 한다.
-  - `CalculateBeeDecreaseAmount()`와 `GetItemLifespanBonus()` 의미는 그대로 유지되어야 한다.
-
-## 아키텍처 문서 반영 필요 여부
-
-- 불필요.
-- 이유:
-  - 문서에는 해당 private helper 이름이 정본 계약으로 노출되어 있지 않다.
-  - 동작/정책 변경 없이 소스 내부 명칭만 정리하는 작업이다.
