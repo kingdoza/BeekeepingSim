@@ -8,6 +8,27 @@
 #include "Inventory/StorageBoxComponent.h"
 #include "UI/StorageBoxWidget.h"
 
+namespace
+{
+void CenterMouseCursorInViewport(APlayerController* PlayerController)
+{
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
+	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	{
+		return;
+	}
+
+	PlayerController->SetMouseLocation(ViewportSizeX / 2, ViewportSizeY / 2);
+}
+}
+
 bool UStorageBoxFocusActionComponent::CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const
 {
 	if (!Super::CanBeginFocusAction(InteractingCharacter))
@@ -70,6 +91,7 @@ bool UStorageBoxFocusActionComponent::BeginFocusAction(ABeekeeperCharacter* Inte
 	PlayerController->bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
 	PlayerController->SetInputMode(InputMode);
+	CenterMouseCursorInViewport(PlayerController);
 	bAppliedInputMode = true;
 
 	ActiveWidget = CreateWidget<UStorageBoxWidget>(PlayerController, StorageWidgetClass);

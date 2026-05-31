@@ -9,6 +9,27 @@
 #include "Character/BeekeeperCharacter.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 
+namespace
+{
+void CenterMouseCursorInViewport(APlayerController* PlayerController)
+{
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
+	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	{
+		return;
+	}
+
+	PlayerController->SetMouseLocation(ViewportSizeX / 2, ViewportSizeY / 2);
+}
+}
+
 bool UAnchoredFocusCursorActionComponent::WantsCrosshairHiddenWhileEngaged() const
 {
 	return true;
@@ -161,6 +182,7 @@ void UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(ABeekeeperCharac
 
 	PlayerController->bShowMouseCursor = true;
 	ApplyEngagedInputMode(PlayerController);
+	CenterMouseCursorInViewport(PlayerController);
 
 	if (GetOwner())
 	{
