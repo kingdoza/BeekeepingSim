@@ -19,6 +19,13 @@ struct FFocusItemRule
 	FGameplayTagContainer AllowedItemTags;
 };
 
+UENUM(BlueprintType)
+enum class EFocusPromptAnchorMode : uint8
+{
+	ScreenCenter,
+	MouseCursor
+};
+
 USTRUCT(BlueprintType)
 struct FFocusPromptData
 {
@@ -32,6 +39,9 @@ struct FFocusPromptData
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
 	FText InteractionKeyText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	EFocusPromptAnchorMode AnchorMode = EFocusPromptAnchorMode::ScreenCenter;
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))

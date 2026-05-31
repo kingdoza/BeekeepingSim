@@ -516,3 +516,28 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - active 화분떡이 없으면 colony population bonus가 `1.0`인지
 - selected active 화분떡의 `EggLayingMultiplier`가 `ItemEggLayingBonus`로 적용되는지
 - 여러 화분떡이 있어도 selected 1개만 적용되고 중첩되지 않는지
+
+## Focus Prompt Anchor Mode UI 설정 (2026-06-01)
+
+1. `WBP_FocusPrompt` parent 확인
+- parent class가 `UFocusPromptWidget`인지 확인한다.
+
+2. PromptContent 바인딩
+- prompt 전체 컨테이너(기존 `VerticalBox_52`) 이름을 `PromptContent`로 변경한다.
+- `PromptContent`를 variable로 노출해 C++ `BindWidget`과 연결한다.
+- `TargetNameText`, `KeyText` 이름은 그대로 유지한다.
+
+3. Canvas slot 설정
+- `PromptContent`가 `CanvasPanel` direct child인지 확인한다.
+- `PromptContent` slot 값을 아래처럼 맞춘다.
+  - Anchors: Top-Left (`0,0`)-( `0,0`)
+  - Auto Size: true
+  - Alignment: `(0, 0.5)` 권장
+
+4. Compile/Save
+- `WBP_FocusPrompt` compile/save를 수행한다.
+- `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 그래프는 수정하지 않는다.
+
+5. PIE 확인
+- 일반 Focus prompt: 화면 중앙 근처에 표시되는지 확인한다.
+- PartFocus prompt: 커서 근처를 따라가고 viewport edge에서 잘리지 않는지 확인한다.

@@ -10,7 +10,7 @@
 
 namespace
 {
-void CenterMouseCursorInViewport(APlayerController* PlayerController)
+void CenterMouseCursorInViewportForStorageBox(APlayerController* PlayerController)
 {
 	if (!PlayerController)
 	{
@@ -91,7 +91,7 @@ bool UStorageBoxFocusActionComponent::BeginFocusAction(ABeekeeperCharacter* Inte
 	PlayerController->bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
 	PlayerController->SetInputMode(InputMode);
-	CenterMouseCursorInViewport(PlayerController);
+	CenterMouseCursorInViewportForStorageBox(PlayerController);
 	bAppliedInputMode = true;
 
 	ActiveWidget = CreateWidget<UStorageBoxWidget>(PlayerController, StorageWidgetClass);

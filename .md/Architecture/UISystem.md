@@ -25,7 +25,7 @@
 - drop target에 따른 inventory mutation API 라우팅
 - partial drag source preview와 drag visual 수량 갱신
 - runtime `Hour24`를 고정 `HH:MM` 텍스트로 표시하는 clock widget 제공
-- focus prompt widget의 런타임 binding/visibility/text 갱신
+- focus prompt widget의 런타임 binding/visibility/text/position 갱신
 - Blueprint Widget이 사용할 최소 C++ API 표면 제공
 
 ## Key Classes
@@ -39,7 +39,7 @@
 - `EItemSlotDragMode`: full stack / partial stack drag 구분
 - `FItemSlotMoveResult`: partial move 결과
 - `UTimeOfDayClockWidget`: controller가 주입한 `Hour24`를 normalize/floor minute 변환해 `HH:MM` 표시 이벤트를 제공
-- `UFocusPromptWidget`: focus component prompt delegate를 구독하고 `FFocusPromptData`를 `TargetNameText`/`KeyText`에 반영하는 base widget
+- `UFocusPromptWidget`: focus component prompt delegate를 구독하고 `FFocusPromptData`를 `TargetNameText`/`KeyText`에 반영하며, `AnchorMode` 기반 위치를 갱신하는 base widget
 
 ## Drag/Drop Flow
 
@@ -116,6 +116,16 @@
 - Quick move target selection은 현재 UI에 남아 있는 예외적 편의 로직이다. 규칙이 복잡해지면 Inventory 쪽으로 이동한다.
 - Drag visual은 별도 `UItemDragVisualWidget` 없이 `UItemVisualWidget` 계층으로 통일한다.
 - `WBP_FocusPrompt`는 `UFocusPromptWidget`을 parent로 사용하고, C++이 runtime prompt binding/update를 담당한다. Blueprint는 layout/style와 선택적 `OnPromptDataApplied` 반응만 담당한다.
+- `UFocusPromptWidget`은 `PromptContent`(BindWidget, Canvas slot)와 `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding` layout contract를 소유한다.
+- `UFocusPromptWidget::NativeTick()`의 visible 상태 위치 갱신은 PartFocus cursor-follow 표시 책임에 포함된다.
+
+## Update 2026-06-01 (Focus Prompt Position Policy)
+
+- `UFocusPromptWidget`은 `FFocusPromptData::AnchorMode`에 따라 prompt anchor를 계산한다.
+- `ScreenCenter` mode anchor는 `viewport center + ScreenCenterOffset`이다.
+- `MouseCursor` mode anchor는 `mouse position + MouseCursorOffset`이다.
+- 위치 적용 대상은 `PromptContent`이며, `ViewportPadding` 기준 clamp로 viewport 바깥 이탈을 방지한다.
+- Focus 설정(`UBeekeepingSimFocusSettings`)은 prompt spacing 값을 소유하지 않는다.
 
 ## Manual Review Points
 

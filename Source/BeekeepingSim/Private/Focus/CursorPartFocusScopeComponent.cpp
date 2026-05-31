@@ -563,6 +563,7 @@ void UCursorPartFocusScopeComponent::BroadcastPartPrompt()
 		FocusPromptData.bIsValid = PromptData.bIsValid;
 		FocusPromptData.DisplayName = PromptData.DisplayName;
 		FocusPromptData.InteractionKeyText = PromptData.InteractionKeyText;
+		FocusPromptData.AnchorMode = EFocusPromptAnchorMode::MouseCursor;
 		OwnerFocusComponent->SetEngagedFocusPromptOverride(FocusPromptData);
 	}
 }

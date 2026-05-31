@@ -212,7 +212,10 @@
 - Action component는 UI를 직접 제어하지 않고 정책을 반환하거나, 필요한 경우 PlayerController input mode만 적용한다.
 - `UAnchoredFocusCursorActionComponent`는 cursor/input mode를 담당하지만 crosshair 최종 브로드캐스트는 Focus component가 담당한다.
 - Focus target의 item rule은 Inventory/Hotbar가 구독하는 공통 정책 데이터다.
-- focus prompt 데이터 source는 `UBeekeeperFocusComponent::OnFocusPromptChanged` + `GetCurrentPromptData()`이며, UI는 `FFocusPromptData` 표시만 담당한다.
+- focus prompt 데이터 source는 `UBeekeeperFocusComponent::OnFocusPromptChanged` + `GetCurrentPromptData()`이며, UI는 `FFocusPromptData`(text + `AnchorMode`) 표시만 담당한다.
+- 일반 focus prompt(`UFocusTargetComponent::GetPromptData`)의 기본 anchor mode는 `ScreenCenter`다.
+- `UCursorPartFocusScopeComponent`는 engaged prompt override 변환 시 part prompt를 `MouseCursor` anchor mode로 설정한다.
+- Focus system은 widget 위치를 직접 조작하지 않는다.
 
 ## PartFocus Delegate Contract
 
@@ -293,3 +296,9 @@
 - Focus system은 prompt 판정/생성 owner를 계속 `UBeekeeperFocusComponent`에 둔다.
 - UI 표시 계층은 `UFocusPromptWidget`이 `OnFocusPromptChanged`를 구독해 `FFocusPromptData`를 렌더링한다.
 - Focus는 widget 생성/viewport 추가를 직접 수행하지 않는다. (character/controller 쪽 UI 생성 흐름 유지)
+
+## Update 2026-06-01 (Focus Prompt Anchor Mode Routing)
+
+- `FFocusPromptData`에 `EFocusPromptAnchorMode`를 추가해 prompt 위치 정책을 데이터로 전달한다.
+- `UFocusTargetComponent`가 생성하는 일반 focus prompt는 `ScreenCenter`를 사용한다.
+- `UCursorPartFocusScopeComponent`의 engaged prompt override 경로는 part prompt를 `MouseCursor`로 변환해 전달한다.

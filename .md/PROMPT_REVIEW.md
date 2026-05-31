@@ -1,14 +1,15 @@
-# 리뷰 프롬프트: WBP_FocusPrompt C++ 이관
+# 리뷰 프롬프트: Focus Prompt 위치 정책(AnchorMode) 구현
 
 ## 리뷰 목적
 
-이번 리뷰는 `WBP_FocusPrompt`의 런타임 책임이 Blueprint EventGraph에서 C++ base widget(`UFocusPromptWidget`)으로 안전하게 이관되었는지 검증한다.
+이번 리뷰는 `WBP_FocusPrompt` / `UFocusPromptWidget`에 추가된 위치 정책이 아키텍처 합의(`QNA_ARCHITECTURE` Focus Prompt 위치 정책 QnA 1~6 옵션 A)와 일치하는지 검증한다.
 
 핵심 목표:
-- `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름이 유지되었는지
-- `WBP_FocusPrompt`가 layout/style 위주로 남고, binding/text/visibility 갱신은 C++이 담당하는지
-- delegate lifecycle(bind/unbind)과 null-safe 처리로 런타임 안정성이 확보되었는지
-- 아키텍처 문서(`0_ARCHITECTURE`, `UISystem`, `FocusSystem`)가 변경 사항과 일치하는지
+- `FFocusPromptData`가 prompt 위치 정책(`AnchorMode`)를 데이터로 전달하는지
+- 일반 Focus는 `ScreenCenter`, PartFocus는 `MouseCursor`로 동작하는지
+- 위치 갱신 책임이 Focus 시스템이 아니라 `UFocusPromptWidget` UI 계층에 유지되는지
+- viewport clamp/DPI 좌표 변환/Canvas slot alignment 반영이 안전한지
+- 문서(`0_ARCHITECTURE`, `FocusSystem`, `UISystem`)가 구현과 동기화되어 있는지
 
 중요: 워크트리에 다른 변경이 있을 수 있으므로 **최종 코드 상태 기준**으로 판단한다.
 
@@ -22,8 +23,7 @@
 - `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/UISystem.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/QNA_REVIEW.md`
-- `.md/QNA_IMPLEMENTATION.md`
+- `.md/QNA_ARCHITECTURE.md`
 
 필요 시:
 - `.md/USER_UNREAL.md`
@@ -33,6 +33,8 @@
 ## 리뷰 범위 (우선 파일)
 
 ### Source
+- `Source/BeekeepingSim/Public/Focus/FocusTargetComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - `Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`
 - `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
 
@@ -41,47 +43,54 @@
 
 ### 문서
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/UISystem.md`
 - `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/UISystem.md`
 
 ---
 
 ## 핵심 검증 질문
 
-1. `UFocusPromptWidget`가 `UUserWidget` 기반으로 추가되었고 공개 API가 요구사항과 일치하는가?
-2. `NativePreConstruct()`에서 design-time에 `Visible`을 적용하는가?
-3. `NativeConstruct()` 시작 시 런타임 기본 상태 `Collapsed`를 보장하는가?
-4. `GetOwningPlayerPawn() -> ABeekeeperCharacter -> GetBeekeeperFocus()` 자동 바인딩이 정상인가?
-5. `BindToFocusComponent()`에서 기존 바인딩 정리 후 `AddUniqueDynamic` + `GetCurrentPromptData()` 즉시 반영을 수행하는가?
-6. `NativeDestruct()`/`UnbindFromFocusComponent()`에서 delegate 해제가 보장되는가?
-7. `SetPromptData()`가 `bIsValid` false 시 `Collapsed`, true 시 text + `Visible`을 적용하는가?
-8. `TargetNameText`, `KeyText`가 `BindWidget` 이름으로 유지되는가?
-9. `WBP_FocusPrompt` parent class가 `UFocusPromptWidget`으로 변경되었는가?
-10. `WBP_FocusPrompt` EventGraph가 prompt binding/update 책임을 더 이상 가지지 않는가?
+1. `FFocusPromptData`에 `EFocusPromptAnchorMode`/`AnchorMode`가 additive 방식으로 추가되었는가?
+2. 기본 prompt 경로(`UFocusTargetComponent::GetPromptData`)는 `ScreenCenter` 기본값을 유지하는가?
+3. PartFocus override 경로(`BroadcastPartPrompt`)에서 `AnchorMode=MouseCursor`를 명시하는가?
+4. `UFocusPromptWidget`에 `PromptContent` 필수 `BindWidget` 계약이 추가되었는가?
+5. `SetPromptData(valid)` 직후 `UpdatePromptPosition()` 호출로 첫 프레임 위치가 즉시 반영되는가?
+6. `NativeTick()`에서 visible + valid 상태일 때 위치를 매 프레임 갱신하는가?
+7. viewport/mouse 좌표가 UMG 단위(DPI 보정)로 통일되어 적용되는가?
+8. clamp가 `ViewportPadding + DesiredSize + Alignment`를 반영하고 역전 구간(`Max < Min`)을 안전 처리하는가?
+9. Focus system이 widget 위치를 직접 조작하지 않고 prompt data source owner 역할만 유지하는가?
+10. `WBP_FocusPrompt`에서 `PromptContent`, `TargetNameText`, `KeyText` 바인딩 계약이 실제로 충족되는가?
 
 ---
 
 ## 상세 체크리스트
 
-### 1) C++ 계약 및 책임
-- `BindToFocusComponent`, `UnbindFromFocusComponent`, `SetPromptData`, `ClearPrompt`, `HandleFocusPromptChanged` 구현 유무
-- `CurrentPromptData` 캐시와 `OnPromptDataApplied(PromptData, bVisible)` 이벤트 호출 시점 적절성
-- `UTextBlock*` null guard 처리 여부
+### 1) Focus 데이터 계약
+- `EFocusPromptAnchorMode { ScreenCenter, MouseCursor }` 존재
+- `FFocusPromptData::AnchorMode` 기본값 `ScreenCenter`
+- Core Redirect 필요 없는 additive 변경인지
 
-### 2) 라이프사이클/안정성
-- Construct/Destruct 시점 중복 바인딩, dangling delegate 가능성 없는지
-- owning pawn/focus component 미해결 시 crash 없이 숨김 유지되는지
-- local player 전용 흐름에서 안전한지
+### 2) PartFocus 변환 계약
+- `UCursorPartFocusScopeComponent::BroadcastPartPrompt()`에서 engaged override 변환 시 `MouseCursor` 지정
+- `FCursorPartFocusPromptData` 자체는 확장하지 않았는지
 
-### 3) Blueprint 계약
-- `WBP_FocusPrompt` parent: `UFocusPromptWidget`
-- `TargetNameText`, `KeyText` Designer 이름 유지
-- 기존 EventGraph 바인딩/갱신 노드 제거(또는 비활성) 여부
+### 3) UI 위치 계산 책임
+- `PromptContent`가 `CanvasPanelSlot`이 아닐 때 crash 없이 no-op
+- `ForceLayoutPrepass()` + `PromptContent->GetDesiredSize()` 사용 여부
+- `CanvasSlot->GetAlignment()` 반영 여부
+- `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding`가 widget layout property로 존재하는지
+- `UBeekeepingSimFocusSettings`에 prompt spacing 값이 추가되지 않았는지
 
-### 4) 아키텍처 일치성
-- Focus는 prompt data source owner(`OnFocusPromptChanged`, `GetCurrentPromptData`) 유지
-- UI는 표시 책임(`UFocusPromptWidget`)으로 분리
-- Character의 widget 생성/viewport 추가 책임 유지
+### 4) Blueprint 계약
+- `WBP_FocusPrompt` parent class가 `UFocusPromptWidget`인지
+- `PromptContent` 변수 바인딩, `TargetNameText`/`KeyText` 이름 유지
+- `PromptContent`가 `CanvasPanelSlot` 하위인지
+- EventGraph가 prompt binding/text/visibility/position 책임을 재소유하지 않는지
+
+### 5) 문서 동기화
+- `0_ARCHITECTURE`: AnchorMode 포함 및 ScreenCenter/MouseCursor 정책 명시
+- `FocusSystem`: data source owner 유지 + PartFocus 변환 정책 명시
+- `UISystem`: 위치 갱신 책임/레이아웃 계약/NativeTick 역할 명시
 
 ---
 
@@ -90,32 +99,32 @@
 권장 검색:
 
 ```powershell
-rg "UFocusPromptWidget|FocusPromptWidget|OnPromptDataApplied|BindToFocusComponent|HandleFocusPromptChanged" Source/BeekeepingSim .md
-rg "OnFocusPromptChanged|UpdateFocusPrompt|TargetNameText|KeyText" Source/BeekeepingSim Content/UI .md
+rg "EFocusPromptAnchorMode|AnchorMode|ScreenCenterOffset|MouseCursorOffset|ViewportPadding|PromptContent|UpdatePromptPosition" Source/BeekeepingSim .md
+rg "SetEngagedFocusPromptOverride|BroadcastPartPrompt|GetPromptData" Source/BeekeepingSim/Public/Focus Source/BeekeepingSim/Private/Focus
+rg "FocusPromptWidget|WBP_FocusPrompt|TargetNameText|KeyText|PromptContent" Source/BeekeepingSim Content/UI .md
 ```
-
-확인 포인트:
-- 새 클래스가 `Public/UI`, `Private/UI`에 존재
-- `WBP_FocusPrompt` 관련 런타임 업데이트가 C++ 경로로 이동
 
 ---
 
 ## 수동 검증 포인트 (가능하면 PIE/Editor)
 
-1. 플레이 직후 focus target 없음: prompt `Collapsed`
-2. focus target 진입: `TargetNameText`, `KeyText` 갱신 + `Visible`
-3. focus 이탈/invalid prompt: `Collapsed`
-4. engaged prompt override: override 텍스트 반영
-5. 위젯 제거/PIE 종료 시 delegate 해제 관련 에러 없음
+1. 플레이 직후 target 없음: prompt 숨김
+2. 일반 Focus target 진입: 화면 중앙 근처 표시
+3. 일반 Focus 이탈: 숨김
+4. PartFocus hover 진입: 커서 근처 표시
+5. PartFocus 유지 + 마우스 이동: prompt가 커서를 따라감
+6. viewport edge 근처: prompt가 화면 밖으로 이탈하지 않음
+7. invalid prompt/hover 해제: 숨김
+8. PIE 종료 시 delegate 해제 관련 에러 없음
 
 ---
 
 ## 빌드/검증
 
-- 가능하면 UBT 빌드 결과 확인:
+- 가능하면 UBT 빌드:
   - `BeekeepingSimEditor Win64 Development`
 - 빌드 실패 시:
-  - 변경분 기인 오류 vs 기존 워크트리/환경 오류를 분리해 보고
+  - 이번 변경 기인 오류 vs 기존 워크트리 오류를 분리 보고
 
 ---
 

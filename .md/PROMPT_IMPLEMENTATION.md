@@ -1,10 +1,13 @@
-# WBP_FocusPrompt C++ 이관 구현 프롬프트
+# Focus Prompt 위치 추적 기능 구현 프롬프트
 
 ## 목표
 
-`Content/UI/WBP_FocusPrompt`의 런타임 동작을 C++ base widget으로 이관한다.
+`WBP_FocusPrompt` / `UFocusPromptWidget`에 prompt 위치 정책을 추가한다.
 
-`BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 유지하고, `WBP_FocusPrompt`는 레이아웃과 스타일만 담당하게 만든다.
+- 전체 Focus 대상 prompt는 화면 중앙 근처에 표시한다.
+- PartFocus 대상 prompt는 마우스 커서 근처를 따라다니게 한다.
+
+현재 `UFocusPromptWidget`은 이미 C++ base widget으로 존재하며, prompt text/visibility 갱신을 담당한다. 이번 작업은 그 구조를 유지하면서 위치 갱신 책임을 추가한다.
 
 ## 반드시 읽을 문서
 
@@ -13,201 +16,283 @@
 - `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/UISystem.md`
 - `.md/Architecture/CoreSystem.md`
+- `.md/QNA_ARCHITECTURE.md`
 
-위 문서와 현재 Source/Blueprint 구조가 충돌하면 구현하지 말고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
+특히 `.md/QNA_ARCHITECTURE.md`의 `Focus Prompt 위치 정책 QnA` 답변을 따른다. 1-6번 모두 `옵션 A`로 확정되어 있다.
 
-## 현재 확인된 Blueprint 동작
+## 확정 정책
 
-`WBP_FocusPrompt`는 현재 EventGraph에서 다음을 수행한다.
+1. Prompt 위치 정책은 `FFocusPromptData`에 싣는다.
+2. `FFocusPromptData`에 `EFocusPromptAnchorMode` enum property를 추가한다.
+3. 전체 Focus prompt는 `ScreenCenter` mode로 표시한다.
+4. PartFocus prompt는 `MouseCursor` mode로 표시한다.
+5. 전체 Focus 기준점은 world projection이 아니라 viewport center다.
+6. PartFocus prompt는 `UFocusPromptWidget::NativeTick()`에서 visible 상태 동안 매 프레임 위치를 갱신한다.
+7. 위치 갱신을 위한 전체 prompt 컨테이너는 `PromptContent` 필수 `BindWidget`으로 참조한다.
+8. prompt가 viewport 밖으로 나가지 않도록 `ViewportPadding` 기준 clamp를 적용한다.
+9. `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding`은 `UFocusPromptWidget` 소속 UI layout property다.
+10. `UBeekeepingSimFocusSettings`에는 이 UI spacing 값을 추가하지 않는다.
 
-1. `PreConstruct`에서 design preview를 위해 `Visible` 처리한다.
-2. `Construct`에서 자기 자신을 `Collapsed`로 숨긴다.
-3. `GetOwningPlayerPawn()`을 `ABeekeeperCharacter`로 cast한다.
-4. `BeekeeperFocus` 컴포넌트의 `OnFocusPromptChanged`에 custom event를 바인딩한다.
-5. `OnFocusPromptChanged(PromptData)` 수신 시 `UpdateFocusPrompt(PromptData)`를 호출한다.
-6. `PromptData.bIsValid == false`이면 위젯을 `Collapsed`로 숨긴다.
-7. `PromptData.bIsValid == true`이면 `TargetNameText`, `KeyText`를 갱신하고 위젯을 `Visible`로 보인다.
+## 구현 대상
 
-현재 위젯 트리의 필수 이름:
+Source:
 
-- `TargetNameText`
-- `KeyText`
-
-이 이름은 C++ `BindWidget`에 사용하므로 변경하지 않는다.
-
-## 확정 설계
-
-1. `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 변경하지 않는다.
-2. `WBP_FocusPrompt`의 parent class를 새 C++ 클래스 `UFocusPromptWidget`으로 변경한다.
-3. `WBP_FocusPrompt`는 레이아웃, 폰트, 색상, 이미지, 스페이서 등 외형만 담당한다.
-4. 프롬프트 데이터 바인딩, 텍스트 갱신, visibility 갱신은 모두 C++ 책임이다.
-5. C++은 `NativeConstruct()`에서 자동으로 `OwningPlayerPawn`을 통해 `ABeekeeperCharacter`를 찾는다.
-6. `ABeekeeperCharacter::GetBeekeeperFocus()`로 `UBeekeeperFocusComponent`를 얻고 `OnFocusPromptChanged`에 바인딩한다.
-7. 바인딩 직후 `GetCurrentPromptData()`를 호출해 초기 상태를 즉시 반영한다.
-8. `NativeDestruct()`에서 델리게이트를 해제한다.
-9. `NativePreConstruct()`에서는 design-time preview가 보이도록 `Visible` 처리한다.
-10. 런타임 `NativeConstruct()` 시작 시 기본 상태는 `Collapsed`다.
-11. `TargetNameText`, `KeyText`는 `BindWidget` 필수로 둔다.
-12. 애니메이션이나 추가 Blueprint 반응 여지를 위해 `BlueprintImplementableEvent OnPromptDataApplied(PromptData, bVisible)`를 제공한다.
-13. 기본 텍스트 및 visibility 갱신 책임은 C++에서 유지한다.
-
-## 구현 파일
-
-추가:
-
+- `Source/BeekeepingSim/Public/Focus/FocusTargetComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - `Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`
 - `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
 
-수정:
+Content:
 
 - `Content/UI/WBP_FocusPrompt`
 
+문서:
+
+- `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/UISystem.md`
+- 필요 시 `.md/USER_UNREAL.md`
+
 수정 금지:
 
-- `BP_BeekeeperCharacter`의 `WBP_FocusPrompt` 생성/viewport 추가 흐름
+- `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름
 - `Content/UI/WBP_FocusPrompt` 외의 다른 `Content/` asset
-- Focus 판정, prompt 생성 정책, focus action 정책
+- Focus target 판정 방식
+- PartFocus hover/trace/action 정책
+- `UBeekeepingSimFocusSettings`에 prompt visual spacing 추가
 
-## C++ 클래스 요구사항
+## `FFocusPromptData` 변경
 
-`UFocusPromptWidget : public UUserWidget`를 추가한다.
+`Source/BeekeepingSim/Public/Focus/FocusTargetComponent.h`에 prompt anchor enum을 추가한다.
 
-권장 header 형태:
+권장 형태:
 
 ```cpp
-#pragma once
-
-#include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
-#include "Focus/FocusTargetComponent.h"
-#include "FocusPromptWidget.generated.h"
-
-class UBeekeeperFocusComponent;
-class UTextBlock;
-
-UCLASS(BlueprintType, Blueprintable)
-class BEEKEEPINGSIM_API UFocusPromptWidget : public UUserWidget
+UENUM(BlueprintType)
+enum class EFocusPromptAnchorMode : uint8
 {
-	GENERATED_BODY()
-
-public:
-	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
-	void BindToFocusComponent(UBeekeeperFocusComponent* InFocusComponent);
-
-	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
-	void UnbindFromFocusComponent();
-
-	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
-	void SetPromptData(const FFocusPromptData& InPromptData);
-
-	UFUNCTION(BlueprintCallable, Category = "Focus Prompt")
-	void ClearPrompt();
-
-	UFUNCTION(BlueprintPure, Category = "Focus Prompt")
-	const FFocusPromptData& GetCurrentPromptData() const { return CurrentPromptData; }
-
-protected:
-	virtual void NativePreConstruct() override;
-	virtual void NativeConstruct() override;
-	virtual void NativeDestruct() override;
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Focus Prompt")
-	void OnPromptDataApplied(const FFocusPromptData& PromptData, bool bVisible);
-
-private:
-	UFUNCTION()
-	void HandleFocusPromptChanged(FFocusPromptData PromptData);
-
-private:
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> TargetNameText;
-
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> KeyText;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBeekeeperFocusComponent> BoundFocusComponent;
-
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Focus Prompt", meta = (AllowPrivateAccess = "true"))
-	FFocusPromptData CurrentPromptData;
+	ScreenCenter,
+	MouseCursor
 };
 ```
 
-필요하면 private helper를 추가해도 된다.
+`FFocusPromptData`에 property를 추가한다.
 
-## C++ 동작 상세
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+EFocusPromptAnchorMode AnchorMode = EFocusPromptAnchorMode::ScreenCenter;
+```
 
-### `NativePreConstruct()`
+정책:
 
-- `Super::NativePreConstruct()`를 호출한다.
-- `IsDesignTime()`이면 `SetVisibility(ESlateVisibility::Visible)`을 호출한다.
-- design-time 기본 텍스트는 현재 Blueprint 기본값을 유지해도 된다.
+- 기본값은 `ScreenCenter`다.
+- 기존 `UFocusTargetComponent::GetPromptData()`는 별도 anchor 설정 없이 기본값을 사용한다.
+- additive USTRUCT property 추가이므로 class/struct rename이나 Core Redirect는 필요하지 않다.
+
+## PartFocus prompt 변환 변경
+
+`Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`의 `BroadcastPartPrompt()`에서 `FCursorPartFocusPromptData`를 `FFocusPromptData`로 변환할 때 anchor mode를 지정한다.
+
+권장:
+
+```cpp
+FFocusPromptData FocusPromptData;
+FocusPromptData.bIsValid = PromptData.bIsValid;
+FocusPromptData.DisplayName = PromptData.DisplayName;
+FocusPromptData.InteractionKeyText = PromptData.InteractionKeyText;
+FocusPromptData.AnchorMode = EFocusPromptAnchorMode::MouseCursor;
+OwnerFocusComponent->SetEngagedFocusPromptOverride(FocusPromptData);
+```
+
+정책:
+
+- `FCursorPartFocusPromptData`에는 anchor mode를 추가하지 않는다.
+- 모든 PartFocus prompt는 `MouseCursor`로 변환한다.
+- invalid prompt의 anchor mode는 표시되지 않으므로 실질 동작에 영향이 없어야 한다.
+
+## `UFocusPromptWidget` Header 변경
+
+`Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`에 prompt content와 layout property를 추가한다.
+
+필요한 forward declaration:
+
+```cpp
+class UWidget;
+```
+
+필수 `BindWidget`:
+
+```cpp
+UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
+TObjectPtr<UWidget> PromptContent;
+```
+
+layout property:
+
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus Prompt|Layout", meta = (AllowPrivateAccess = "true"))
+FVector2D ScreenCenterOffset = FVector2D(20.0f, 0.0f);
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus Prompt|Layout", meta = (AllowPrivateAccess = "true"))
+FVector2D MouseCursorOffset = FVector2D(18.0f, 0.0f);
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus Prompt|Layout", meta = (AllowPrivateAccess = "true"))
+FVector2D ViewportPadding = FVector2D(8.0f, 8.0f);
+```
+
+tick override:
+
+```cpp
+virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+```
+
+권장 private helper:
+
+```cpp
+void UpdatePromptPosition();
+bool TryGetPromptAnchorPosition(FVector2D& OutPosition) const;
+bool TryGetViewportSizeInWidgetUnits(FVector2D& OutViewportSize) const;
+bool TryGetMousePositionInWidgetUnits(FVector2D& OutMousePosition) const;
+static FVector2D ClampPromptAnchorToViewport(
+	const FVector2D& AnchorPosition,
+	const FVector2D& ViewportSize,
+	const FVector2D& DesiredSize,
+	const FVector2D& Alignment,
+	const FVector2D& Padding);
+```
+
+helper 이름과 분할은 기존 style에 맞게 조정해도 된다.
+
+## `UFocusPromptWidget` CPP 동작
+
+필요 include 예:
+
+```cpp
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/Widget.h"
+```
 
 ### `NativeConstruct()`
 
-- `Super::NativeConstruct()`를 호출한다.
-- 런타임 기본 상태로 `SetVisibility(ESlateVisibility::Collapsed)`를 호출한다.
-- `GetOwningPlayerPawn()`을 `ABeekeeperCharacter`로 cast한다.
-- 성공하면 `BeekeeperCharacter->GetBeekeeperFocus()`로 focus component를 얻는다.
-- `BindToFocusComponent(FocusComponent)`를 호출한다.
-- cast 또는 component resolve 실패 시 crash하지 말고 숨김 상태를 유지한다.
+기존 focus binding 동작은 유지한다.
 
-### `NativeDestruct()`
+추가 정책:
 
-- `UnbindFromFocusComponent()`를 호출한다.
-- `Super::NativeDestruct()`를 호출한다.
-
-### `BindToFocusComponent(UBeekeeperFocusComponent* InFocusComponent)`
-
-- 기존 `BoundFocusComponent`가 있으면 먼저 `UnbindFromFocusComponent()`로 정리한다.
-- `InFocusComponent`가 null이면 `ClearPrompt()` 또는 숨김 상태를 유지한다.
-- 새 focus component를 저장한다.
-- `OnFocusPromptChanged.AddUniqueDynamic(this, &UFocusPromptWidget::HandleFocusPromptChanged)`로 바인딩한다.
-- 바인딩 직후 `SetPromptData(BoundFocusComponent->GetCurrentPromptData())`를 호출해 초기 상태를 즉시 반영한다.
-
-### `UnbindFromFocusComponent()`
-
-- `BoundFocusComponent`가 있으면 `OnFocusPromptChanged.RemoveDynamic(this, &UFocusPromptWidget::HandleFocusPromptChanged)`를 호출한다.
-- `BoundFocusComponent`를 null로 만든다.
-
-### `HandleFocusPromptChanged(FFocusPromptData PromptData)`
-
-- `SetPromptData(PromptData)`를 호출한다.
+- runtime 시작 시 `Collapsed` 유지
+- 필요하면 widget tick이 실제로 호출되도록 engine-supported API를 사용한다.
+- `PromptContent`의 slot이 `UCanvasPanelSlot`인지 확인하되, 없다고 crash하지 않는다.
 
 ### `SetPromptData(const FFocusPromptData& InPromptData)`
 
-- `CurrentPromptData = InPromptData`로 저장한다.
-- `CurrentPromptData.bIsValid == false`이면:
-  - `SetVisibility(ESlateVisibility::Collapsed)`
-  - `OnPromptDataApplied(CurrentPromptData, false)`
-  - return
-- `CurrentPromptData.bIsValid == true`이면:
-  - `TargetNameText->SetText(CurrentPromptData.DisplayName)`
-  - `KeyText->SetText(CurrentPromptData.InteractionKeyText)`
-  - `SetVisibility(ESlateVisibility::Visible)`
-  - `OnPromptDataApplied(CurrentPromptData, true)`
+기존 text/visibility 갱신을 유지한다.
 
-`TargetNameText` 또는 `KeyText`가 null이어도 crash하지 않게 guard한다. 다만 `BindWidget` 필수 위젯이므로 누락이 확인되면 warning log를 남기는 것은 허용한다.
+변경:
 
-### `ClearPrompt()`
+- valid prompt를 `Visible`로 만든 뒤 `UpdatePromptPosition()`을 호출한다.
+- invalid prompt는 기존처럼 `Collapsed`로 숨긴다.
 
-- `SetPromptData(FFocusPromptData())`를 호출한다.
+권장 흐름:
+
+```cpp
+CurrentPromptData = InPromptData;
+
+if (!CurrentPromptData.bIsValid)
+{
+	SetVisibility(ESlateVisibility::Collapsed);
+	OnPromptDataApplied(CurrentPromptData, false);
+	return;
+}
+
+TargetNameText->SetText(...);
+KeyText->SetText(...);
+SetVisibility(ESlateVisibility::Visible);
+UpdatePromptPosition();
+OnPromptDataApplied(CurrentPromptData, true);
+```
+
+### `NativeTick()`
+
+visible prompt만 위치를 반복 갱신한다.
+
+권장:
+
+```cpp
+Super::NativeTick(MyGeometry, InDeltaTime);
+
+if (CurrentPromptData.bIsValid && GetVisibility() != ESlateVisibility::Collapsed)
+{
+	UpdatePromptPosition();
+}
+```
+
+`Hidden`/`Collapsed`/비표시 상태 판정은 더 엄밀하게 조정해도 된다.
+
+### 위치 계산
+
+좌표계는 반드시 하나로 통일한다.
+
+권장:
+
+- viewport size와 mouse position을 UMG layout 단위로 변환한다.
+- raw pixel 좌표를 그대로 `CanvasPanelSlot::SetPosition()`에 넣지 않는다.
+- `UWidgetLayoutLibrary::GetViewportScale()`을 사용하거나 `GetMousePositionScaledByDPI()`/동등 API를 사용한다.
+
+권장 기준점:
+
+```text
+ScreenCenter:
+  ViewportSize * 0.5 + ScreenCenterOffset
+
+MouseCursor:
+  MousePosition + MouseCursorOffset
+```
+
+`PromptContent` 크기:
+
+- text 변경 후 `ForceLayoutPrepass()`를 호출하고 `PromptContent->GetDesiredSize()`를 사용한다.
+- 원하는 크기를 얻지 못하면 clamp 없이 anchor 위치를 사용하거나 안전한 fallback을 둔다.
+
+clamp:
+
+- `PromptContent`가 `UCanvasPanelSlot`에 있어야 한다.
+- slot alignment를 반영한다.
+- 현재 WBP의 vertical center alignment를 유지할 수 있도록 `CanvasSlot->GetAlignment()` 값을 사용한다.
+
+권장 clamp 공식:
+
+```text
+MinAnchor = ViewportPadding + DesiredSize * Alignment
+MaxAnchor = ViewportSize - ViewportPadding - DesiredSize * (1 - Alignment)
+ClampedAnchor.X = Clamp(Anchor.X, MinAnchor.X, MaxAnchor.X)
+ClampedAnchor.Y = Clamp(Anchor.Y, MinAnchor.Y, MaxAnchor.Y)
+```
+
+content가 viewport보다 커서 `MaxAnchor < MinAnchor`가 되는 경우도 crash 없이 처리한다.
+
+마지막 적용:
+
+```cpp
+CanvasSlot->SetPosition(ClampedAnchor);
+```
 
 ## Blueprint 에셋 작업
 
 `Content/UI/WBP_FocusPrompt`만 수정한다.
 
-필수 작업:
+필수:
 
-1. Parent Class를 `UFocusPromptWidget`으로 변경한다.
-2. Designer tree의 `TargetNameText`, `KeyText` 이름을 유지한다.
-3. 기존 EventGraph의 다음 로직을 제거하거나 더 이상 실행되지 않게 정리한다.
-   - `PreConstruct` visibility 처리
-   - `Construct`의 `GetOwningPlayerPawn` / `Cast To BeekeeperCharacter` / `OnFocusPromptChanged` 바인딩
-   - `OnFocusPromptChanged` custom event
-   - `UpdateFocusPrompt`
-   - `SetText`, `SetVisibility` 갱신 노드
-4. 레이아웃, 폰트, 색상, 이미지, 스페이서 등 외형은 유지한다.
+1. parent class는 계속 `UFocusPromptWidget`으로 유지한다.
+2. 현재 prompt 전체를 감싸는 root content widget을 `PromptContent`로 이름 변경한다.
+   - 현재 구조 기준으로 `CanvasPanel`의 direct child인 기존 `VerticalBox_52`가 대상이다.
+3. `PromptContent`는 variable로 노출되어 C++ `BindWidget`과 연결되어야 한다.
+4. `TargetNameText`, `KeyText` 이름은 유지한다.
+5. `PromptContent`는 `CanvasPanelSlot` 아래에 있어야 한다.
+6. `PromptContent` slot은 runtime 위치 제어에 맞게 설정한다.
+   - Anchors: top-left `(0, 0)` / `(0, 0)`
+   - Auto Size: true 유지 권장
+   - Alignment: 기존 vertical center 느낌을 유지하려면 `(0, 0.5)` 권장
+7. 기존 prompt text/visibility EventGraph 로직은 다시 추가하지 않는다.
 
 `BP_BeekeeperCharacter`의 `CreateWidget(WBP_FocusPrompt)` / `AddToViewport` 흐름은 변경하지 않는다.
 
@@ -215,32 +300,43 @@ private:
 
 구현 후 아래 문서를 갱신한다.
 
-- `.md/0_ARCHITECTURE.md`
-  - `WBP_FocusPrompt`의 런타임 바인딩과 표시 갱신이 `UFocusPromptWidget` C++ base class 책임이라고 기록한다.
-  - `BP_BeekeeperCharacter`는 생성/viewport 추가만 유지한다고 기록한다.
-- `.md/Architecture/UISystem.md`
-  - `UFocusPromptWidget`을 UI system scope/key class에 추가한다.
-  - prompt widget이 `UBeekeeperFocusComponent::OnFocusPromptChanged`를 구독하고 `FFocusPromptData`를 표시한다고 기록한다.
-- `.md/Architecture/FocusSystem.md`
-  - focus prompt의 데이터 source는 계속 `UBeekeeperFocusComponent`와 `FFocusPromptData`이며, UI는 표시만 담당한다고 확인한다.
+### `.md/0_ARCHITECTURE.md`
 
-## 검증
+- `FFocusPromptData`에 prompt anchor mode가 포함된다고 기록한다.
+- 전체 Focus prompt는 screen center 기준, PartFocus prompt는 mouse cursor 기준으로 표시된다고 기록한다.
+- 위치 갱신은 `UFocusPromptWidget`이 담당한다고 기록한다.
 
-### 검색 검증
+### `.md/Architecture/FocusSystem.md`
+
+- Focus prompt data source는 계속 `UBeekeeperFocusComponent`라고 기록한다.
+- `UFocusTargetComponent`가 만드는 일반 focus prompt는 `ScreenCenter` mode라고 기록한다.
+- `UCursorPartFocusScopeComponent`가 engaged prompt override를 만들 때 `MouseCursor` mode로 변환한다고 기록한다.
+- Focus system은 widget 위치를 직접 조작하지 않는다고 기록한다.
+
+### `.md/Architecture/UISystem.md`
+
+- `UFocusPromptWidget`이 `FFocusPromptData::AnchorMode`에 따라 prompt 위치를 갱신한다고 기록한다.
+- `PromptContent`, `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding` 계약을 기록한다.
+- `NativeTick()` 위치 갱신은 PartFocus cursor follow를 위한 UI 표시 책임이라고 기록한다.
+
+## 검색 검증
 
 ```powershell
-rg "UFocusPromptWidget|FocusPromptWidget|OnPromptDataApplied|BindToFocusComponent|HandleFocusPromptChanged" Source/BeekeepingSim .md
-rg "OnFocusPromptChanged|UpdateFocusPrompt|TargetNameText|KeyText" Source/BeekeepingSim Content/UI .md
+rg "EFocusPromptAnchorMode|AnchorMode|ScreenCenterOffset|MouseCursorOffset|ViewportPadding|PromptContent|UpdatePromptPosition" Source/BeekeepingSim .md
+rg "SetEngagedFocusPromptOverride|BroadcastPartPrompt|GetPromptData" Source/BeekeepingSim/Public/Focus Source/BeekeepingSim/Private/Focus
+rg "FocusPromptWidget|WBP_FocusPrompt|TargetNameText|KeyText|PromptContent" Source/BeekeepingSim Content/UI .md
 ```
 
 확인할 것:
 
-- `UFocusPromptWidget`가 `Source/BeekeepingSim/Public/UI`와 `Source/BeekeepingSim/Private/UI`에 추가되었다.
-- `TargetNameText`, `KeyText`는 C++ `BindWidget` 이름과 Blueprint designer 이름이 일치한다.
-- `WBP_FocusPrompt`의 EventGraph가 더 이상 prompt binding/update 책임을 갖지 않는다.
-- `BP_BeekeeperCharacter`의 생성/viewport 추가 흐름은 유지된다.
+- `FFocusPromptData`에 `AnchorMode`가 추가되었다.
+- 일반 focus prompt는 기본 `ScreenCenter`를 사용한다.
+- PartFocus prompt override는 `MouseCursor`로 설정된다.
+- `PromptContent`, `TargetNameText`, `KeyText`가 모두 C++ `BindWidget`과 Blueprint designer 이름으로 일치한다.
+- `WBP_FocusPrompt`의 EventGraph가 prompt binding/text/visibility/position 책임을 다시 갖지 않는다.
+- `UBeekeepingSimFocusSettings`에 prompt offset/padding 값이 추가되지 않았다.
 
-### 빌드 검증
+## 빌드 검증
 
 가능하면 UBT 빌드를 수행한다.
 
@@ -250,33 +346,38 @@ rg "OnFocusPromptChanged|UpdateFocusPrompt|TargetNameText|KeyText" Source/Beekee
 
 엔진 경로가 없으면 임의 경로로 대체하지 말고 최종 보고에 빌드 미수행 사유를 적는다.
 
-### Blueprint 검증
+## Blueprint 검증
 
 가능하면 Unreal Editor 또는 commandlet에서 `WBP_FocusPrompt`를 compile/save한다.
 
 확인할 것:
 
 1. `WBP_FocusPrompt` parent class가 `UFocusPromptWidget`이다.
-2. `TargetNameText`, `KeyText`가 정상적으로 bind된다.
+2. `PromptContent`, `TargetNameText`, `KeyText`가 정상 bind된다.
 3. Blueprint compile error가 없다.
-4. `BP_BeekeeperCharacter`가 기존처럼 `WBP_FocusPrompt`를 생성하고 viewport에 추가한다.
+4. `PromptContent`가 `CanvasPanelSlot` 아래에 있고 runtime 위치 이동이 가능하다.
+5. `BP_BeekeeperCharacter`가 기존처럼 `WBP_FocusPrompt`를 생성하고 viewport에 추가한다.
 
-### 런타임 시나리오 검증
+## 런타임 시나리오 검증
 
 가능하면 PIE에서 확인한다.
 
 1. 플레이 직후 focus target이 없으면 prompt는 숨김 상태다.
-2. focus target 진입 시 `TargetNameText`와 `KeyText`가 `FFocusPromptData` 값으로 갱신되고 prompt가 보인다.
-3. focus target 이탈 또는 invalid prompt 수신 시 prompt가 `Collapsed`가 된다.
-4. engaged focus prompt override가 들어오면 override의 `DisplayName`과 `InteractionKeyText`가 표시된다.
-5. 위젯 제거 또는 PIE 종료 시 delegate 해제 관련 오류가 없다.
+2. 전체 Focus target에 진입하면 prompt가 화면 중앙 근처에 표시된다.
+3. 전체 Focus target에서 벗어나면 prompt가 숨김 상태가 된다.
+4. FocusEngaged host 내부 PartFocus hover 대상에 진입하면 prompt가 마우스 커서 근처에 표시된다.
+5. PartFocus hover 대상이 유지된 상태로 마우스를 움직이면 prompt가 매 프레임 커서를 따라간다.
+6. 마우스가 viewport edge 근처에 있어도 prompt가 viewport 밖으로 잘리지 않는다.
+7. PartFocus hover가 사라지거나 invalid prompt가 브로드캐스트되면 prompt가 숨김 상태가 된다.
+8. PIE 종료/위젯 제거 시 delegate 해제 관련 오류가 없다.
 
 ## 중단 조건
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- `WBP_FocusPrompt`의 designer tree에서 `TargetNameText` 또는 `KeyText`가 없거나 이름 변경이 필요한 경우
-- `WBP_FocusPrompt` parent class 변경이 다른 Blueprint 참조를 깨는 경우
-- `BP_BeekeeperCharacter`가 `CreateWidget(WBP_FocusPrompt)`에 올바른 owning player를 전달하지 않아 `GetOwningPlayerPawn()` 자동 바인딩이 성립하지 않는 경우
-- `UBeekeeperFocusComponent::OnFocusPromptChanged` 또는 `GetCurrentPromptData()`의 계약이 문서와 현재 Source에서 다르게 확인되는 경우
-- Blueprint asset compile/save 자동화가 불가능해 수동 Unreal Editor 작업이 필요한 경우
+- `WBP_FocusPrompt`에서 `PromptContent`로 지정할 단일 root content widget을 안정적으로 특정할 수 없는 경우
+- `PromptContent`가 `CanvasPanelSlot` 아래에 있지 않아 위치 제어 방식 변경이 필요한 경우
+- `NativeTick()`이 호출되지 않는 엔진/asset 설정이 확인되어 별도 tick 활성화 정책을 정해야 하는 경우
+- DPI 변환 후 위치가 실제 viewport 좌표와 맞지 않아 좌표계 정책 재결정이 필요한 경우
+- `FFocusPromptData`에 enum property를 추가한 뒤 Blueprint compile/save에서 호환성 문제가 발생하는 경우
+- `BP_BeekeeperCharacter`의 widget 생성 흐름을 건드리지 않고는 owning player / viewport 좌표를 안정적으로 얻을 수 없는 경우
