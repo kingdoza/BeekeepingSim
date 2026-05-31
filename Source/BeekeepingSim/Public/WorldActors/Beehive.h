@@ -32,6 +32,8 @@ class UCursorPartFocusRegistrationComponent;
 class UChildCursorPartFocusProviderComponent;
 class AItemPlacementSlotActor;
 class UPlacedItemRemainingComponent;
+class UItemDefinition;
+class UPollenPattyItemDefinition;
 
 UENUM(BlueprintType)
 enum class EPollenPattyConsumptionSide : uint8
@@ -379,6 +381,8 @@ private:
 	bool IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const;
 	AItemPlacementSlotActor* FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const;
 	bool DoesSlotMatchPollenPattyConsumptionTags(const AItemPlacementSlotActor* SlotActor) const;
+	const UPollenPattyItemDefinition* ResolveActivePollenPattyItemDefinitionForEggLayingBonus() const;
+	const UItemDefinition* ResolvePlacedItemDefinitionForEggLayingBonus(const AActor* OccupiedActor) const;
 	UPrimitiveComponent* FindPrimitiveComponentByTag(FName ComponentTag) const;
 
 	UFUNCTION()

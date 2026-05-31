@@ -116,6 +116,7 @@
 - honey production 계수/분배 설정: `HoneyProductionCoefficient`, `HoneyDistributionDeviationRatio`
 - pollen patty consumption bucket 설정: `PollenPattyConsumptionBucketMinutes=60`, `bApplyPollenPattyConsumptionOnBeginPlayBucket=false` 기본
 - pollen patty consumption 설정: `PollenPattyConsumptionAmountPerBucket`, `PollenPattyConsumptionSide(Leftmost/Rightmost)`, `PollenPattyConsumptionAreaTags`
+- colony population의 `ItemEggLayingBonus`는 선택된 active 화분떡 1개(`UPollenPattyItemDefinition`)의 `EggLayingMultiplier`를 사용한다.
 - queen 위치 갱신 규칙:
   - active comb 후보에서 현재 lifted comb slot 제외
   - 중앙 slot일수록 높은 가중치로 weighted random 선택
@@ -273,6 +274,7 @@
 - `ABeehive`의 honey production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
 - `ABeehive`의 pollen patty 고정 소모도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`PollenPattyConsumption`)로 수행한다.
 - 같은 60분 경계에서는 subscription 순서를 `HoneyProduction` 먼저, `ColonyPopulation` 다음으로 두어 꿀 생산이 기존 벌 수 기준으로 선행 처리된다.
+- 같은 경계에서 `ColonyPopulation`과 `PollenPattyConsumption`이 함께 발생하면 population update가 먼저 실행되고, 이후 consumption이 실행된다.
 - pollen patty 소모량은 `PollenPattyConsumptionAmountPerBucket` 고정값이며, bucket 길이/이벤트 횟수/벌 수/온도에 따라 스케일하지 않는다.
 - pollen patty 소모 대상 탐색은 direct child `AItemPlacementSlotActor` 수집 경로를 사용하며 provider descriptor `AreaTags`는 사용하지 않는다.
   - slot 매칭: `AItemPlacementSlotActor::GetSlotAreaTags().HasAll(PollenPattyConsumptionAreaTags)`
@@ -283,7 +285,8 @@
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
   - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
   - 최종 적용은 `RoundToInt`를 마지막 단계에서만 수행하고 최소 0으로 clamp한다.
-  - 1차 구현에서는 item/temperature bonus를 각각 `1.0f`로 고정한다.
+  - `ItemEggLayingBonus`는 selected active pollen patty가 `UPollenPattyItemDefinition`이면 `Max(1.0, EggLayingMultiplier)`, 아니면 `1.0`이다.
+  - `ItemLifespanBonus`/`Decrease`는 화분떡 bonus와 분리되어 기존 `1.0f` 정책을 유지한다.
 - queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
 - honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
@@ -459,3 +462,10 @@
 - bucket 구독 `SubscriptionTag="PollenPattyConsumption"`에서 선택된 slot 하나만 소모한다.
 - slot tag 조회는 `AItemPlacementSlotActor::GetSlotAreaTags()`를 사용한다.
 - 런타임 로직에 `Item.UseArea.Beehive.PollenPatty` 문자열 하드코딩을 두지 않고, `PollenPattyConsumptionAreaTags` authored 값으로만 판정한다.
+
+## Update 2026-05-31 (Pollen Patty Population Bonus)
+
+- `ABeehive::GetItemEggLayingBonus()`는 화분떡 소모 대상 선택 helper(`FindPollenPattyConsumptionTargetSlot`)를 재사용한다.
+- bonus 대상 식별은 `PollenPattyConsumptionAreaTags` + active `UPlacedItemRemainingComponent` 기준을 그대로 재사용한다.
+- 선택된 occupied actor의 item definition이 `UPollenPattyItemDefinition`일 때만 `EggLayingMultiplier`를 적용한다.
+- 여러 active 화분떡이 있어도 bonus는 중첩하지 않고, selected 1개만 적용한다.

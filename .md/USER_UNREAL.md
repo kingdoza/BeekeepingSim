@@ -495,3 +495,24 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - `PollenPattyConsumptionAreaTags`가 비어 있으면 소모가 발생하지 않아야 한다.
 - 후보가 여러 개면 local Y 기준으로 설정한 방향의 slot 1개만 소모되어야 한다.
 - 같은 bucket에서 다른 화분떡으로 spillover 소모가 발생하지 않아야 한다.
+
+## Pollen Patty Population Bonus 설정 (2026-05-31)
+
+1. 화분떡 아이템 정의 클래스
+- 화분떡 item definition asset은 `UPollenPattyItemDefinition` 기반으로 생성/재지정한다.
+- 일반 아이템은 기존 `UItemDefinition`을 그대로 사용한다.
+
+2. tier별 multiplier 설정
+- `EggLayingMultiplier`를 tier별로 다르게 설정한다. (예: `1.1`, `1.2`, `1.35`)
+- 값은 `1.0` 이상으로 유지한다.
+
+3. 기존 설정 유지
+- 화분떡 durability placed remaining 설정은 그대로 유지해야 한다.
+  - `bUsesDurability = true`
+  - `PlacedRemainingSpec.bUseDurabilityAsPlacedRemaining = true`
+  - slot/tag 설정은 `PollenPattyConsumptionAreaTags` 정책과 일치해야 한다.
+
+4. 검증 포인트
+- active 화분떡이 없으면 colony population bonus가 `1.0`인지
+- selected active 화분떡의 `EggLayingMultiplier`가 `ItemEggLayingBonus`로 적용되는지
+- 여러 화분떡이 있어도 selected 1개만 적용되고 중첩되지 않는지

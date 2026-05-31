@@ -82,6 +82,7 @@ Source/BeekeepingSim/
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
 - `ABeehive`는 시간 bucket 구독(`PollenPattyConsumption`)을 통해 화분떡을 고정량(`PollenPattyConsumptionAmountPerBucket`) 소모한다.
+- `ABeehive`의 `ItemEggLayingBonus`는 화분떡 소모 대상 선택 정책과 동일하게 고른 active 화분떡 1개의 `UPollenPattyItemDefinition::EggLayingMultiplier`를 사용한다.
 - 화분떡 소모량은 벌 수/온도/bucket 길이와 무관한 고정값이며, bucket 길이는 소모 주기만 바꾼다.
 - 소모 대상은 `PollenPattyConsumptionAreaTags`와 slot의 configured `AreaTags`(`AItemPlacementSlotActor::GetSlotAreaTags`) 매칭으로 식별한다.
 - 여러 후보가 있으면 벌통 local Y 기준으로 leftmost/rightmost 1개만 소모하고, 같은 bucket에서 spillover 분배는 하지 않는다.
@@ -94,7 +95,8 @@ Source/BeekeepingSim/
 - colony population 계산식 요약:
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
   - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
-  - 1차 구현 기본값: `ItemEggLayingBonus=1.0`, `ItemLifespanBonus=1.0`, `TemperatureScore=1.0`
+  - `ItemEggLayingBonus`는 selected active pollen patty가 `UPollenPattyItemDefinition`이면 `Max(1.0, EggLayingMultiplier)`, 아니면 `1.0`
+  - `ItemLifespanBonus`와 `TemperatureScore`의 1차 기본값은 각각 `1.0`
 - honey production 계산식 요약:
   - `TotalHoneyIncrease = ColonyBeeCount * HoneyProductionCoefficient`
   - 같은 60분 bucket 경계에서는 `HoneyProduction`을 `ColonyPopulation`보다 먼저 처리한다.
@@ -227,3 +229,10 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
   - 매칭 기준: slot configured tags가 `PollenPattyConsumptionAreaTags`를 모두 포함
   - 후보 조건: occupied actor에 active `UPlacedItemRemainingComponent`가 있고 `CurrentAmount > 0`
 - 후보가 여러 개면 벌통 local Y 기준 `Leftmost/Rightmost` 1개를 선택해 `ConsumeAmount(...)`를 호출한다.
+
+## Update 2026-05-31 (Pollen Patty Population Bonus)
+
+- 화분떡 인구 가속효과는 colony population 증가 항(`ItemEggLayingBonus`)에만 적용한다.
+- bonus 수치는 `UPollenPattyItemDefinition::EggLayingMultiplier`에서 읽는다.
+- 대상 선택은 기존 `PollenPattyConsumptionSide` 기반 leftmost/rightmost active 화분떡 1개 정책을 재사용한다.
+- 여러 active 화분떡이 있어도 bonus는 중첩하지 않으며, selected 1개의 multiplier만 사용한다.

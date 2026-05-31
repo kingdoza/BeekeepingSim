@@ -102,3 +102,54 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
   - 화분떡 colony population/산란력/수명 보너스 효과 없음
   - hotbar/storage UI 잔량 bar/overlay/tooltip 없음
   - C++ 구현은 Content asset 직접 수정에 의존하지 않음
+
+---
+
+# 구현 수정 프롬프트: Pollen Patty Population Bonus 리뷰 Findings
+
+## 우선순위
+
+1. Low: `PopulationBonus` helper 명칭 정리
+
+## 발견 문제
+
+### 1. `PopulationBonus` 문자열이 private helper 이름에 남아 있음
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+  - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- 원인:
+  - 리뷰 프롬프트의 금지 검색 기준은 `PopulationBonus`를 임의 전역 개념 추가로 보지 않기 위해 소스에 남기지 않는 것이다.
+  - 현재 구현은 전역 multiplier 필드나 별도 bonus 시스템을 만들지는 않았지만, private helper 이름에 `ResolveActivePollenPattyItemDefinitionForPopulationBonus`, `ResolvePlacedItemDefinitionForPopulationBonus`가 남아 있다.
+- 영향:
+  - 런타임 동작 결함은 없다.
+  - 다만 검색 기준상 `rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/...`가 실패하며, `ItemEggLayingBonus`라는 기존 공식 항에만 적용한다는 정책 표현과 이름이 어긋난다.
+- 수정 방향:
+  - helper 이름에서 `PopulationBonus`를 제거하고 기존 공식 항 이름과 맞춘다.
+  - 권장 이름:
+    - `ResolveActivePollenPattyItemDefinitionForEggLayingBonus`
+    - `ResolvePlacedItemDefinitionForEggLayingBonus`
+  - 또는 더 짧게:
+    - `ResolveSelectedPollenPattyItemDefinition`
+    - `ResolveOccupiedItemDefinition`
+  - 함수 동작은 변경하지 않는다.
+
+## 검증 방법
+
+- UBT:
+  - `BeekeepingSimEditor Win64 Development`
+- 검색:
+  - `rg "PollenPattyItemDefinition|EggLayingMultiplier|GetItemEggLayingBonus" Source/BeekeepingSim .md`
+  - `rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private`
+  - `rg "CalculateBeeDecreaseAmount|GetItemLifespanBonus" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- 기대 결과:
+  - `PopulationBonus` 검색은 Source에서 0건이어야 한다.
+  - `GetItemEggLayingBonus()`는 selected active pollen patty definition만 보고 `Max(1.0f, EggLayingMultiplier)`를 반환해야 한다.
+  - `CalculateBeeDecreaseAmount()`와 `GetItemLifespanBonus()` 의미는 그대로 유지되어야 한다.
+
+## 아키텍처 문서 반영 필요 여부
+
+- 불필요.
+- 이유:
+  - 문서에는 해당 private helper 이름이 정본 계약으로 노출되어 있지 않다.
+  - 동작/정책 변경 없이 소스 내부 명칭만 정리하는 작업이다.

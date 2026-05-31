@@ -22,8 +22,11 @@
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/BeehiveCombSlotActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
+#include "Inventory/PollenPattyItemDefinition.h"
 #include "WorldActors/ItemPlacementSlot.h"
 #include "WorldActors/ItemPlacementSlotActor.h"
+#include "WorldActors/PlacedItemActor.h"
+#include "WorldActors/PlacementOccupantComponent.h"
 #include "WorldActors/PlacedItemRemainingComponent.h"
 #include "WorldActors/QueenBeeActor.h"
 #include "Curves/CurveFloat.h"
@@ -255,7 +258,13 @@ float ABeehive::CalculateBeeDecreaseAmount() const
 
 float ABeehive::GetItemEggLayingBonus() const
 {
-	return 1.0f;
+	const UPollenPattyItemDefinition* PollenPattyDefinition = ResolveActivePollenPattyItemDefinitionForEggLayingBonus();
+	if (!PollenPattyDefinition)
+	{
+		return 1.0f;
+	}
+
+	return FMath::Max(1.0f, PollenPattyDefinition->EggLayingMultiplier);
 }
 
 float ABeehive::GetItemLifespanBonus() const
@@ -1342,6 +1351,42 @@ bool ABeehive::DoesSlotMatchPollenPattyConsumptionTags(const AItemPlacementSlotA
 
 	const FGameplayTagContainer SlotTags = SlotActor->GetSlotAreaTags();
 	return SlotTags.HasAll(PollenPattyConsumptionAreaTags);
+}
+
+const UPollenPattyItemDefinition* ABeehive::ResolveActivePollenPattyItemDefinitionForEggLayingBonus() const
+{
+	UPlacedItemRemainingComponent* RemainingComponent = nullptr;
+	const AItemPlacementSlotActor* TargetSlot = FindPollenPattyConsumptionTargetSlot(RemainingComponent);
+	if (!TargetSlot || !RemainingComponent)
+	{
+		return nullptr;
+	}
+
+	const UItemDefinition* ItemDefinition = ResolvePlacedItemDefinitionForEggLayingBonus(TargetSlot->GetOccupiedActor());
+	return Cast<UPollenPattyItemDefinition>(ItemDefinition);
+}
+
+const UItemDefinition* ABeehive::ResolvePlacedItemDefinitionForEggLayingBonus(const AActor* OccupiedActor) const
+{
+	if (!OccupiedActor)
+	{
+		return nullptr;
+	}
+
+	if (const APlacedItemActor* PlacedItemActor = Cast<APlacedItemActor>(OccupiedActor))
+	{
+		if (const UItemDefinition* ItemDefinition = PlacedItemActor->GetItemDefinition())
+		{
+			return ItemDefinition;
+		}
+	}
+
+	if (const UPlacementOccupantComponent* Occupant = OccupiedActor->FindComponentByClass<UPlacementOccupantComponent>())
+	{
+		return Occupant->GetReturnItemDefinition();
+	}
+
+	return nullptr;
 }
 
 void ABeehive::HandleCombPartFocusBegin(UCursorPartFocusActionComponent* ActionComponent, UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)

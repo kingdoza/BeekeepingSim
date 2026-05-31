@@ -38,6 +38,7 @@
 - `Source/BeekeepingSim/Private/Inventory/DisinfectantUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/PollenPattyUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemPlacementUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemPlacementUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemActionContext.h`
@@ -68,6 +69,7 @@
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
+- `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
 - `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
 - `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
 - `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, 메시지를 담는 결과 DTO
@@ -247,3 +249,10 @@
   - split/create 경로에서 새 instance는 source durability를 복사한다.
 - 1차 범위 제외:
   - hotbar/storage UI 잔량 bar/overlay/tooltip 표시는 제외한다.
+
+## Update 2026-05-31 (Pollen Patty Population Bonus)
+
+- 화분떡 인구 가속효과 수치는 `UItemDefinition` 본체가 아니라 `UPollenPattyItemDefinition`에 둔다.
+  - 필드: `EggLayingMultiplier` (권장 기본값 `1.2`)
+- 일반 아이템 asset은 기존 `UItemDefinition`을 계속 사용한다.
+- 화분떡 tier는 `UPollenPattyItemDefinition` asset을 여러 개 두고 multiplier만 다르게 설정한다.

@@ -476,3 +476,111 @@
   - 기본 소모 bucket은 60분이다.
   - BeginPlay 즉시 소모는 기본 비활성화한다.
   - bucket 길이는 소모 주기만 바꾸며, `PollenPattyConsumptionAmountPerBucket` 값 자체를 시간 비율로 스케일하지 않는다.
+
+### [화분떡 인구 가속효과 설계 QnA]
+
+27. 화분떡 인구 가속효과 적용 대상
+- 질문 내용
+  - 화분떡이 colony population 공식의 어느 항에 영향을 줄지 결정한다.
+- 필요한 이유
+  - 현재 공식에는 증가 항 `ItemEggLayingBonus`와 감소 항 `ItemLifespanBonus`가 분리되어 있다.
+  - 화분떡을 어느 항에 넣느냐에 따라 "산란/육아 가속"인지 "수명 증가/감소 완화"인지 의미가 달라진다.
+- 선택지
+  - 옵션 A: 증가 항에만 적용한다. `ItemEggLayingBonus`를 통해 `Increase`만 곱한다.
+  - 옵션 B: 감소 항에만 적용한다. `ItemLifespanBonus`를 통해 `Decrease`를 줄인다.
+  - 옵션 C: 증가 항과 감소 항에 모두 적용한다.
+- 권장 옵션:
+  - 옵션 A. 화분떡은 인구 증가를 가속하는 보조 먹이로 보고, 벌 수 감소 완화와는 분리한다.
+- 답변:
+  - 옵션 A.
+  - 화분떡 인구 가속효과는 colony population 증가 항에만 적용한다.
+  - `ItemEggLayingBonus`를 통해 `Increase`만 곱하고, `ItemLifespanBonus`/`Decrease`에는 관여하지 않는다.
+
+28. 여러 화분떡의 인구 가속효과 중첩
+- 질문 내용
+  - 벌통에 active 화분떡이 여러 개 있을 때 population bonus를 중첩할지 결정한다.
+- 필요한 이유
+  - 현재 화분떡 소모는 여러 개 중 leftmost/rightmost 1개만 소모한다.
+  - bonus를 개수만큼 중첩하면 소모량은 1개 기준인데 효과는 여러 개 기준이 되어 밸런스가 과해질 수 있다.
+- 선택지
+  - 옵션 A: active 화분떡이 1개 이상이면 단일 bonus만 적용한다. 중첩하지 않는다.
+  - 옵션 B: active 화분떡 개수만큼 선형 중첩한다.
+  - 옵션 C: active 화분떡 개수만큼 중첩하되 최대 cap을 둔다.
+- 권장 옵션:
+  - 옵션 A. 단순하고 기존 "한 bucket에 한 개만 소모" 정책과 균형이 맞다.
+- 답변:
+  - 옵션 A.
+  - active 화분떡이 1개 이상이면 단일 bonus만 적용한다.
+  - 여러 화분떡이 있어도 population bonus는 중첩하지 않는다.
+  - 단일 bonus 대상은 최고 tier/최대 `EggLayingMultiplier` 화분떡이 아니라 기존 화분떡 소모 대상 선택 정책과 동일하게 고른다.
+  - 즉 `PollenPattyConsumptionSide`에 따라 벌통 local Y 기준 leftmost/rightmost active 화분떡 1개를 선택하고, 그 화분떡의 `EggLayingMultiplier`만 적용한다.
+
+29. 화분떡 잔량과 인구 가속효과 연동 방식
+- 질문 내용
+  - 화분떡 remaining amount가 population bonus 크기에 영향을 줄지 결정한다.
+- 필요한 이유
+  - 잔량 비율 기반 bonus는 정교하지만, 부분적으로 남은 화분떡이 매 bucket마다 다른 효과를 내므로 밸런싱과 설명이 복잡해진다.
+- 선택지
+  - 옵션 A: remaining amount가 0보다 크면 full bonus를 준다. 잔량 비율은 bonus 크기에 관여하지 않는다.
+  - 옵션 B: 가장 효과가 큰 화분떡 1개의 remaining ratio에 비례해 bonus를 준다.
+  - 옵션 C: active 화분떡들의 remaining ratio 합계에 비례해 bonus를 준다.
+- 권장 옵션:
+  - 옵션 A. 잔량은 소모/외관/회수 상태만 담당하고, 인구 가속효과는 active 여부만 본다.
+- 답변:
+  - 옵션 A.
+  - remaining amount가 0보다 크면 full bonus를 적용한다.
+  - remaining ratio는 population bonus 크기에 관여하지 않는다.
+
+30. 화분떡 인구 가속효과 설정 위치와 기본값
+- 질문 내용
+  - bonus 수치를 item definition에 둘지, 벌통 설정에 둘지 결정한다.
+- 필요한 이유
+  - item definition에 두면 아이템별 효과 확장이 쉽지만 inventory item stat 체계를 새로 열어야 한다.
+  - 벌통 설정에 두면 현재 `ABeehive`의 colony population 계수 구조 안에서 작게 확장할 수 있다.
+- 선택지
+  - 옵션 A: `ABeehive`에 `PollenPattyEggLayingMultiplier`를 추가한다. 기본값은 `1.2f`다.
+  - 옵션 B: `UItemDefinition`에 population bonus stat을 추가하고 화분떡 definition에서 설정한다.
+  - 옵션 C: remaining ratio 기반 curve asset을 item definition 또는 벌통에 둔다.
+  - 옵션 D: `UPollenPattyItemDefinition : UItemDefinition`를 추가하고, 화분떡 전용 subclass에 `EggLayingMultiplier`를 둔다.
+- 권장 옵션:
+  - 옵션 D. 여러 티어의 화분떡이 생길 수 있으므로 효과 수치는 아이템별로 두되, 일반 `UItemDefinition`에는 화분떡 전용 필드를 노출하지 않는다.
+- 답변:
+  - 옵션 D.
+  - `UPollenPattyItemDefinition`를 `UItemDefinition` subclass로 추가한다.
+  - `EggLayingMultiplier`는 `UPollenPattyItemDefinition`에만 둔다.
+  - 일반 아이템은 기존 `UItemDefinition`을 계속 사용하므로 인구 가속 수치가 노출되지 않는다.
+  - 여러 티어의 화분떡은 각각 `UPollenPattyItemDefinition` asset으로 만들고 `EggLayingMultiplier`만 다르게 설정한다.
+  - 기본 권장값은 `EggLayingMultiplier=1.2f`다.
+
+31. 화분떡 인구 가속효과 적용 시점과 소모 순서
+- 질문 내용
+  - `ColonyPopulation` bucket과 `PollenPattyConsumption` bucket이 같은 시간 경계에서 함께 발생할 때 어떤 순서로 처리할지 결정한다.
+- 필요한 이유
+  - population update 전에 화분떡을 먼저 소모하면, 잔량이 적어 해당 bucket에서 사라지는 화분떡은 그 경계의 population bonus를 주지 못한다.
+  - population update 후에 소모하면, 직전 interval 동안 존재했던 화분떡이 해당 interval의 효과를 준 뒤 소모되는 의미가 된다.
+- 선택지
+  - 옵션 A: `ColonyPopulation`을 먼저 처리하고 그 뒤 `PollenPattyConsumption`을 처리한다.
+  - 옵션 B: `PollenPattyConsumption`을 먼저 처리하고 그 뒤 `ColonyPopulation`을 처리한다.
+  - 옵션 C: population bonus와 consumption을 별도 bucket/별도 시점으로 분리한다.
+- 권장 옵션:
+  - 옵션 A. 현재 bucket subscription 순서와 맞고, "지난 interval 동안 먹이가 있었으므로 성장 bonus를 받고 이후 소모된다"는 의미가 명확하다.
+- 답변:
+  - 옵션 A.
+  - 같은 시간 경계에서는 `ColonyPopulation`을 먼저 처리하고 그 뒤 `PollenPattyConsumption`을 처리한다.
+  - 직전 interval 동안 active 화분떡이 있었다면 해당 population update에서 bonus를 받은 뒤 소모된다.
+
+32. 인구 가속효과 대상 화분떡 식별 기준
+- 질문 내용
+  - population bonus 대상 화분떡을 consumption 대상과 같은 기준으로 찾을지 결정한다.
+- 필요한 이유
+  - 별도 tag/slot 기준을 두면 bonus만 주고 소모되지 않는 화분떡 같은 예외 상태가 생길 수 있다.
+- 선택지
+  - 옵션 A: 기존 `PollenPattyConsumptionAreaTags`와 active `UPlacedItemRemainingComponent` 기준을 그대로 재사용한다.
+  - 옵션 B: `PollenPattyPopulationBonusAreaTags`를 별도로 추가한다.
+  - 옵션 C: item definition의 별도 population bonus tag/stat으로 판정한다.
+- 권장 옵션:
+  - 옵션 A. 소모 대상과 효과 대상을 일치시켜 authoring 실수를 줄인다.
+- 답변:
+  - 옵션 A.
+  - 인구 가속효과 대상 화분떡은 기존 `PollenPattyConsumptionAreaTags`와 active `UPlacedItemRemainingComponent` 기준을 재사용한다.
+  - 별도 population bonus tag/stat은 이번 설계에서 추가하지 않는다.

@@ -1,281 +1,263 @@
-# Pollen Patty Fixed Consumption 구현 프롬프트
+# Pollen Patty Population Bonus 구현 프롬프트
 
 ## 목표
 
-벌통(`ABeehive`)에 배치된 화분떡을 시간 bucket마다 고정량 소모한다.
+벌통(`ABeehive`)에 배치된 화분떡이 colony population 증가량을 가속하도록 구현한다.
 
-이번 작업은 이미 구현된 placed item durability remaining 시스템을 전제로 한다. 즉, 화분떡의 잔량은 `UPlacedItemRemainingComponent`가 소유하고, 소모는 `ConsumeAmount(...)` 호출로 처리한다.
+화분떡 tier별 효과 수치는 일반 `UItemDefinition`이 아니라 `UPollenPattyItemDefinition : UItemDefinition` subclass에 둔다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
 - `.md/Architecture/InventorySystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
 
-특히 `.md/QNA_ARCHITECTURE.md`의 `화분떡 고정 소모 로직 설계 QnA` 22-26번 답변을 따른다.
+특히 `.md/QNA_ARCHITECTURE.md`의 `화분떡 인구 가속효과 설계 QnA` 27-32번 답변을 따른다.
 
 ## 전제
 
-- `APlacedItemActor`는 `UPlacedItemRemainingComponent`를 기본 subobject로 가진다.
-- 화분떡은 전용 actor가 아니라 generic `APlacedItemActor`로 배치된다.
-- 화분떡 item definition은 durability 기반 placed remaining을 사용한다.
-- 화분떡 slot은 `AItemPlacementSlotActor` 계열 child actor로 벌통에 배치된다.
+- 화분떡은 generic `APlacedItemActor`로 배치된다.
+- `APlacedItemActor`는 `UPlacedItemRemainingComponent`를 가진다.
+- `ABeehive`에는 이미 화분떡 고정 소모 로직이 있다.
+  - `PollenPattyConsumptionAreaTags`
+  - `PollenPattyConsumptionSide`
+  - `FindPollenPattyConsumptionTargetSlot(...)`
+  - `DoesSlotMatchPollenPattyConsumptionTags(...)`
+  - `ApplyPollenPattyConsumptionUpdate()`
+- 화분떡 소모 대상 선택은 벌통 local Y 기준 `Leftmost/Rightmost` 1개 선택 정책을 따른다.
 - `Content/` asset은 직접 수정하거나 resave하지 않는다.
 
 위 전제가 현재 Source와 맞지 않으면 구현하지 말고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
 ## 명시적 제외 범위
 
-- colony population, 산란력, 수명, 온도, 벌 수에 따른 소모량 보정 추가 금지
-- 화분떡이 colony/honey 생산에 주는 효과 추가 금지
-- 여러 화분떡에 소모량 분배 금지
-- 선택된 화분떡이 부족할 때 남은 소모량을 다음 화분떡으로 넘기는 처리 금지
-- `Item.UseArea.Beehive.PollenPatty` 태그 문자열을 `ABeehive` 소모 대상 탐색 로직에 하드코딩 금지
-- `Content/` 수정 금지
+- `UItemDefinition` 본체에 인구 가속 float 추가 금지
+- `ABeehive`에 전역 `PollenPattyEggLayingMultiplier` 추가 금지
+- `ItemLifespanBonus` 또는 감소량(`Decrease`) 수정 금지
+- 여러 화분떡 효과 중첩 금지
+- 최고 tier/최대 multiplier 화분떡을 별도로 찾아 적용하는 정책 금지
+- remaining ratio에 따라 bonus 크기를 조절하는 처리 금지
+- `Content/` asset 직접 수정 금지
 
 ## 확정 정책
 
-1. 소모량은 벌통별 고정값 `PollenPattyConsumptionAmountPerBucket`만 사용한다.
-2. 기본 소모량은 `1.0f`다.
-3. 기본 bucket은 `PollenPattyConsumptionBucketMinutes=60`이다.
-4. BeginPlay 즉시 소모는 기본 비활성화한다.
-5. bucket 길이는 소모 주기만 바꾸며, 소모량을 시간 비율로 스케일하지 않는다.
-6. 여러 화분떡이 있으면 한 bucket에서 하나만 소모한다.
-7. 기본 선택 방향은 `Leftmost`다.
-8. `Leftmost`/`Rightmost` 판정은 벌통 local Y 기준이다.
-9. 소모 대상 위치 비교는 occupied actor가 아니라 slot actor 위치를 벌통 local space로 변환해 사용한다.
-10. 같은 local Y 값 tie는 먼저 수집된 slot을 유지한다.
-11. 소모 대상은 direct child `AItemPlacementSlotActor` 계열 slot 중에서 찾는다.
-12. slot `AreaTags`가 `ABeehive::PollenPattyConsumptionAreaTags`를 모두 포함해야 소모 후보가 된다.
-13. `PollenPattyConsumptionAreaTags`가 비어 있으면 소모 대상이 없는 것으로 처리한다.
-14. occupied actor에 active `UPlacedItemRemainingComponent`가 없으면 후보에서 제외한다.
-15. remaining current amount가 0 이하인 actor는 후보에서 제외한다.
-16. 선택된 target에만 `ConsumeAmount(PollenPattyConsumptionAmountPerBucket)`를 호출한다.
-17. 선택된 target이 소진되어 제거되더라도 같은 bucket에서 다른 화분떡으로 남은 소모량을 넘기지 않는다.
+1. 화분떡 인구 가속효과는 colony population 증가 항에만 적용한다.
+2. 기존 공식의 `ItemEggLayingBonus`가 화분떡 효과를 반영한다.
+3. 감소 항 `ItemLifespanBonus`/`Decrease`에는 관여하지 않는다.
+4. active 화분떡이 여러 개여도 bonus는 중첩하지 않는다.
+5. bonus 대상은 최고 tier가 아니라 기존 화분떡 소모 대상 선택 정책과 동일하게 고른다.
+6. `PollenPattyConsumptionSide` 기준 leftmost/rightmost active 화분떡 1개를 선택한다.
+7. 선택된 화분떡의 `EggLayingMultiplier`만 적용한다.
+8. remaining amount가 0보다 크면 full bonus를 적용한다.
+9. remaining ratio는 bonus 크기에 관여하지 않는다.
+10. `ColonyPopulation` bucket이 먼저 처리되고, 이후 `PollenPattyConsumption` bucket이 처리된다.
+11. bonus 대상 식별은 `PollenPattyConsumptionAreaTags` + active `UPlacedItemRemainingComponent` 기준을 재사용한다.
+12. 선택된 occupied actor의 item definition이 `UPollenPattyItemDefinition`이 아니면 bonus는 `1.0f`다.
 
 ## 주요 구현 대상
 
+Inventory:
+
+- `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
+- `Source/BeekeepingSim/Private/Inventory/PollenPattyItemDefinition.cpp`는 필요할 때만 추가한다.
+
+WorldActors:
+
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/ItemPlacementSlotActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/ItemPlacementSlotActor.cpp`
+
+문서:
+
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/USER_UNREAL.md`
 
-## `AItemPlacementSlotActor` 변경
+## `UPollenPattyItemDefinition`
 
-`ABeehive`가 slot의 configured area tags를 descriptor 경유 없이 읽을 수 있어야 한다.
+`UItemDefinition` subclass를 추가한다.
 
-`AItemPlacementSlotActor`에 public getter를 추가한다.
-
-```cpp
-UFUNCTION(BlueprintPure, Category = "Item Placement Slot")
-FGameplayTagContainer GetSlotAreaTags() const;
-```
-
-구현 정책:
-
-- source of truth는 `SlotMeshComponent->GetAreaTags()`다.
-- `SlotMeshComponent`가 없으면 deprecated `AreaTags`를 fallback으로 반환해도 된다.
-- active descriptor의 `AreaTags`를 사용하지 않는다.
-
-이 getter는 Public API 추가이며 기존 API 삭제/rename이 아니므로 Core Redirect가 필요하지 않다.
-
-## `ABeehive` public API 추가
-
-`Beehive.h`에 enum을 추가한다.
+권장 header:
 
 ```cpp
-UENUM(BlueprintType)
-enum class EPollenPattyConsumptionSide : uint8
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Inventory/ItemDefinition.h"
+#include "PollenPattyItemDefinition.generated.h"
+
+UCLASS(BlueprintType)
+class BEEKEEPINGSIM_API UPollenPattyItemDefinition : public UItemDefinition
 {
-    Leftmost,
-    Rightmost
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Pollen Patty", meta = (ClampMin = "1.0"))
+    float EggLayingMultiplier = 1.2f;
 };
 ```
 
-`ABeehive`에 callable update API를 추가한다.
+정책:
+
+- 일반 item asset은 계속 `UItemDefinition`을 사용한다.
+- 화분떡 item asset만 `UPollenPattyItemDefinition`을 사용한다.
+- 여러 tier 화분떡은 `UPollenPattyItemDefinition` asset을 여러 개 만들고 `EggLayingMultiplier`만 다르게 둔다.
+- 별도 virtual function이나 interface는 이번 범위에 추가하지 않는다.
+- `UItemDefinition::GetPrimaryAssetId()` override는 건드리지 않는다. subclass는 기존 `ItemId` 정책을 그대로 상속한다.
+
+## `ABeehive::GetItemEggLayingBonus()`
+
+현재 구현은 `1.0f`를 반환한다.
+
+변경 후 흐름:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Pollen Patty")
-void ApplyPollenPattyConsumptionUpdate();
+float ABeehive::GetItemEggLayingBonus() const
+{
+    const UPollenPattyItemDefinition* PollenPattyDefinition = ResolveActivePollenPattyItemDefinitionForPopulationBonus();
+    if (!PollenPattyDefinition)
+    {
+        return 1.0f;
+    }
+
+    return FMath::Max(1.0f, PollenPattyDefinition->EggLayingMultiplier);
+}
+```
+
+helper 이름은 기존 style에 맞게 조정해도 된다.
+
+## 대상 선택 helper
+
+기존 `FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const`가 현재 Source에 있으면 재사용한다.
+
+권장:
+
+```cpp
+const UPollenPattyItemDefinition* ABeehive::ResolveActivePollenPattyItemDefinitionForPopulationBonus() const
+{
+    UPlacedItemRemainingComponent* RemainingComponent = nullptr;
+    const AItemPlacementSlotActor* TargetSlot = FindPollenPattyConsumptionTargetSlot(RemainingComponent);
+    if (!TargetSlot || !RemainingComponent)
+    {
+        return nullptr;
+    }
+
+    AActor* OccupiedActor = TargetSlot->GetOccupiedActor();
+    if (!OccupiedActor)
+    {
+        return nullptr;
+    }
+
+    const UItemDefinition* ItemDefinition = ResolvePlacedItemDefinition(OccupiedActor);
+    return Cast<UPollenPattyItemDefinition>(ItemDefinition);
+}
 ```
 
 필요하면 private helper를 추가한다.
 
 ```cpp
-AItemPlacementSlotActor* FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const;
-bool DoesSlotMatchPollenPattyConsumptionTags(const AItemPlacementSlotActor* SlotActor) const;
+const UItemDefinition* ResolvePlacedItemDefinitionForPopulationBonus(const AActor* OccupiedActor) const;
 ```
 
-helper 이름은 기존 style에 맞게 조정해도 된다.
+item definition resolve 우선순위:
 
-## `ABeehive` 설정값 추가
-
-`Beehive.h`에 아래 UPROPERTY를 추가한다.
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty Time", meta = (ClampMin = "1", ClampMax = "1440"))
-int32 PollenPattyConsumptionBucketMinutes = 60;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty Time")
-bool bApplyPollenPattyConsumptionOnBeginPlayBucket = false;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty", meta = (ClampMin = "0.0"))
-float PollenPattyConsumptionAmountPerBucket = 1.0f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty")
-EPollenPattyConsumptionSide PollenPattyConsumptionSide = EPollenPattyConsumptionSide::Leftmost;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Pollen Patty")
-FGameplayTagContainer PollenPattyConsumptionAreaTags;
-```
+1. `APlacedItemActor`이면 `GetItemDefinition()`
+2. 아니면 `UPlacementOccupantComponent::GetReturnItemDefinition()`
+3. 둘 다 없으면 `nullptr`
 
 주의:
 
-- `FGameplayTagContainer`를 header에서 쓰므로 필요한 include를 추가한다.
-- `PollenPattyConsumptionAreaTags`는 디테일창/Blueprint asset에서 설정한다.
-- `ABeehive` constructor 또는 탐색 함수에서 `Item.UseArea.Beehive.PollenPatty`를 `RequestGameplayTag(...)`로 직접 넣지 않는다.
-- 권장 editor 설정은 `.md/USER_UNREAL.md`에 남긴다.
+- 새 helper는 selection policy를 바꾸지 않는다.
+- 최고 tier/최대 multiplier 탐색을 하지 않는다.
+- 여러 후보가 있어도 기존 소모 대상 선택 결과 1개만 본다.
+- `PollenPattyConsumptionAreaTags`가 비어 있으면 기존 helper가 대상 없음으로 처리하므로 bonus도 `1.0f`다.
+- selected actor에 remaining이 있고 `CurrentAmount > 0`인 조건은 기존 helper 조건을 그대로 따른다.
 
-## Bucket subscription
+## Include 지침
 
-`ABeehive::GetGameTimeBucketSubscriptions_Implementation(...)`에 새 subscription을 추가한다.
+`Beehive.cpp`에 필요한 include를 추가한다.
 
-```cpp
-FGameTimeBucketSubscription PollenPattySubscription;
-PollenPattySubscription.BucketMinutes = FMath::Clamp(PollenPattyConsumptionBucketMinutes, 1, 1440);
-PollenPattySubscription.bApplyImmediatelyOnBeginPlay = bApplyPollenPattyConsumptionOnBeginPlayBucket;
-PollenPattySubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
-PollenPattySubscription.SubscriptionTag = FName(TEXT("PollenPattyConsumption"));
-OutSubscriptions.Add(PollenPattySubscription);
-```
-
-`ABeehive::OnGameTimeBucketEvent_Implementation(...)`에 새 branch를 추가한다.
+예:
 
 ```cpp
-else if (Event.SubscriptionTag == FName(TEXT("PollenPattyConsumption")))
-{
-    ApplyPollenPattyConsumptionUpdate();
-}
+#include "Inventory/PollenPattyItemDefinition.h"
+#include "WorldActors/PlacedItemActor.h"
+#include "WorldActors/PlacementOccupantComponent.h"
 ```
 
-소모량은 `Event`의 시간 길이나 catch-up count로 스케일하지 않는다.
+`Beehive.h`에는 `UPollenPattyItemDefinition`을 노출할 필요가 없으면 forward declaration만 사용하거나 아예 cpp-local helper로 둔다.
 
-## 후보 수집 및 선택
+## 공식 검증
 
-`ABeehive`의 direct child actor component를 순회한다.
+기존 공식:
 
-```cpp
-TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+```text
+Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient
+Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore
 ```
 
-각 child actor에 대해:
+변경 후:
 
-1. `AItemPlacementSlotActor`로 cast한다.
-2. slot tags가 `PollenPattyConsumptionAreaTags`를 모두 포함하는지 확인한다.
-3. `SlotActor->GetOccupiedActor()`로 occupied actor를 얻는다.
-4. occupied actor에서 `UPlacedItemRemainingComponent`를 찾는다.
-5. `HasRemaining()`이 false면 제외한다.
-6. `GetCurrentAmount() <= 0.0f`이면 제외한다.
-7. slot actor world location을 벌통 local space로 변환하고 local Y를 후보 값으로 사용한다.
-
-tag match는 아래 의미로 구현한다.
-
-```cpp
-if (PollenPattyConsumptionAreaTags.IsEmpty())
-{
-    return false;
-}
-
-return SlotTags.HasAll(PollenPattyConsumptionAreaTags);
+```text
+ItemEggLayingBonus =
+  selected active pollen patty가 UPollenPattyItemDefinition이면 Max(1.0, EggLayingMultiplier)
+  아니면 1.0
 ```
 
-선택:
-
-- `PollenPattyConsumptionSide == Leftmost`: local Y가 가장 작은 후보
-- `PollenPattyConsumptionSide == Rightmost`: local Y가 가장 큰 후보
-- tie는 `<` 또는 `>` 비교만 사용해 먼저 찾은 후보 유지
-
-provider descriptor를 쓰지 않는다. 현재 구조에서 occupied slot은 item-use descriptor의 `AreaTags`가 비워지므로 소모 대상 식별에 부적합하다.
-
-## 소모 실행
-
-`ApplyPollenPattyConsumptionUpdate()` 흐름:
-
-```cpp
-void ABeehive::ApplyPollenPattyConsumptionUpdate()
-{
-    const float Amount = FMath::Max(0.0f, PollenPattyConsumptionAmountPerBucket);
-    if (Amount <= 0.0f)
-    {
-        return;
-    }
-
-    UPlacedItemRemainingComponent* RemainingComponent = nullptr;
-    AItemPlacementSlotActor* TargetSlot = FindPollenPattyConsumptionTargetSlot(RemainingComponent);
-    if (!TargetSlot || !RemainingComponent)
-    {
-        return;
-    }
-
-    RemainingComponent->ConsumeAmount(Amount);
-}
-```
-
-`ConsumeAmount(...)`가 소진 처리와 owning slot clear를 담당한다. 별도 destroy/clear를 `ABeehive`에서 직접 수행하지 않는다.
+`CalculateBeeDecreaseAmount()`는 수정하지 않는다.
 
 ## 문서 갱신
 
 구현 후 아래 문서를 갱신한다.
 
 - `.md/0_ARCHITECTURE.md`
-  - `ABeehive`가 `PollenPattyConsumption` bucket으로 화분떡 고정 소모를 처리한다고 기록
-  - 소모량이 벌 수/온도/bucket 길이와 무관한 고정값임을 기록
-  - 소모 대상은 `PollenPattyConsumptionAreaTags`와 slot `AreaTags` 매칭으로 식별한다고 기록
+  - 화분떡 인구 가속효과가 `ItemEggLayingBonus`로 증가 항에만 적용된다고 기록
+  - 효과 수치는 `UPollenPattyItemDefinition::EggLayingMultiplier`에서 읽는다고 기록
+  - 여러 active 화분떡은 중첩하지 않고 기존 소모 대상 선택 정책과 동일한 1개만 적용한다고 기록
+- `.md/Architecture/InventorySystem.md`
+  - `UPollenPattyItemDefinition` 역할 추가
+  - 일반 `UItemDefinition`에는 인구 가속 필드를 추가하지 않는다고 기록
 - `.md/Architecture/WorldActorsSystem.md`
-  - `ABeehive` composition/flow에 pollen patty consumption 설정값과 동작 기록
-  - left/right local Y 선택 규칙 기록
-  - provider descriptor를 쓰지 않고 direct child `AItemPlacementSlotActor`를 수집한다는 구현 기준 기록
+  - `ABeehive::GetItemEggLayingBonus()`가 선택된 active 화분떡 definition을 참조한다고 기록
+  - `PollenPattyConsumptionAreaTags`/remaining 기준을 bonus 대상 식별에도 재사용한다고 기록
+  - `ColonyPopulation`이 먼저 bonus를 적용하고 이후 `PollenPattyConsumption`이 소모된다고 기록
 - `.md/USER_UNREAL.md`
-  - 벌통 Blueprint/레벨 인스턴스에서 `PollenPattyConsumptionAreaTags`를 설정해야 한다고 기록
-  - 권장값: `{Item.UseArea.Beehive.PollenPatty}`
-  - pollen slot `SlotMeshComponent.AreaTags`도 같은 태그를 포함해야 한다고 기록
-  - 화분떡 item definition은 durability placed remaining 설정이 필요하다고 기록
-
-새 QnA는 필요하지 않다. 구현 중 문서 확정 정책과 충돌하는 구조를 발견하면 `.md/QNA_IMPLEMENTATION.md`에 질문하고 중단한다.
+  - 화분떡 item definition asset은 `UPollenPattyItemDefinition` class로 만들거나 reparent해야 한다고 기록
+  - tier별 `EggLayingMultiplier` 설정 예시를 기록
+  - 기존 화분떡 durability placed remaining 설정은 유지해야 한다고 기록
 
 ## 검색 검증
 
 ```powershell
-rg "PollenPattyConsumption" Source/BeekeepingSim .md
-rg "Item.UseArea.Beehive.PollenPatty" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
-rg "GetSlotAreaTags|GetOccupiedActor|ConsumeAmount" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+rg "PollenPattyItemDefinition|EggLayingMultiplier|GetItemEggLayingBonus" Source/BeekeepingSim .md
+rg "PollenPattyEggLayingMultiplier|BeehivePopulationEffect|PopulationBonus" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private
+rg "CalculateBeeDecreaseAmount|GetItemLifespanBonus" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp
 ```
 
 확인할 것:
 
-- `ABeehive` 소모 대상 탐색 경로에 `Item.UseArea.Beehive.PollenPatty` 문자열이 없다.
-- `PollenPattyConsumption` subscription과 event branch가 모두 존재한다.
-- 소모는 `UPlacedItemRemainingComponent::ConsumeAmount(...)`로만 수행한다.
+- `UItemDefinition` 본체에 인구 가속 float가 추가되지 않았다.
+- `ABeehive`에 전역 `PollenPattyEggLayingMultiplier`가 추가되지 않았다.
+- `GetItemEggLayingBonus()`가 selected active pollen patty definition만 본다.
+- `CalculateBeeDecreaseAmount()`와 `GetItemLifespanBonus()`는 기존 의미를 유지한다.
 - source에서 `Content/` asset 수정이 없다.
 
 ## 시나리오 검증
 
-가능하면 PIE 또는 단위 테스트성 디버그 호출로 아래를 확인한다.
+가능하면 PIE 또는 디버그 호출로 확인한다.
 
-1. `PollenPattyConsumptionAreaTags`가 비어 있으면 아무 것도 소모되지 않는다.
-2. 태그가 매칭되는 화분떡 slot 1개가 있으면 bucket마다 `1.0f`만 감소한다.
-3. 여러 화분떡이 있으면 기본값 기준 local Y가 가장 작은 slot 하나만 감소한다.
-4. `PollenPattyConsumptionSide=Rightmost`로 바꾸면 local Y가 가장 큰 slot 하나만 감소한다.
-5. 선택된 화분떡 잔량이 소모량보다 작아도 같은 bucket에서 다음 화분떡으로 spillover되지 않는다.
-6. remaining이 없는 occupied actor는 후보에서 제외된다.
-7. hotbar 회수 시 남은 durability가 기존 remaining 시스템을 통해 보존된다.
+1. active 화분떡이 없으면 `GetItemEggLayingBonus() == 1.0f`
+2. selected active 화분떡이 `UPollenPattyItemDefinition(EggLayingMultiplier=1.2)`이면 `GetItemEggLayingBonus() == 1.2f`
+3. selected active 화분떡 remaining amount가 0이면 대상에서 제외되고 bonus는 `1.0f`
+4. 여러 화분떡이 있어도 `PollenPattyConsumptionSide` 기준 selected 1개만 적용된다.
+5. selected 화분떡이 낮은 tier이고 반대쪽에 높은 tier가 있어도 selected 낮은 tier multiplier가 적용된다.
+6. selected occupied actor의 item definition이 `UPollenPattyItemDefinition`이 아니면 bonus는 `1.0f`
+7. `CalculateBeeIncreaseAmount()`만 변하고 `CalculateBeeDecreaseAmount()`는 변하지 않는다.
+8. 같은 bucket 경계에서 population update 후 consumption이 수행되어, 소모 직전 active 화분떡이 해당 update에 bonus를 준다.
 
 ## 빌드 검증
 
@@ -291,8 +273,8 @@ rg "GetSlotAreaTags|GetOccupiedActor|ConsumeAmount" Source/BeekeepingSim/Public/
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- `UPlacedItemRemainingComponent` 또는 `ConsumeAmount(...)`가 현재 Source에 없거나 의미가 문서와 다른 경우
-- 화분떡 slot이 direct child `AItemPlacementSlotActor`가 아니라는 근거가 발견되어 수집 범위를 바꿔야 하는 경우
-- `AItemPlacementSlotActor`에서 configured `AreaTags`를 읽는 public getter 추가만으로 해결되지 않는 경우
-- `ABeehive`에 `FGameplayTagContainer` UPROPERTY를 추가하는 것이 기존 Blueprint/API 계약과 충돌하는 경우
-- Content asset 수정 없이는 기능을 C++에서 검증할 수 없는 경우
+- `FindPollenPattyConsumptionTargetSlot(...)` 또는 동등한 기존 소모 대상 선택 helper가 없고, 선택 정책을 새로 정의해야 하는 경우
+- occupied actor에서 item definition을 안정적으로 resolve할 수 없는 경우
+- `UPollenPattyItemDefinition` subclass asset이 기존 item acquisition/stack/move 경로에서 `UItemDefinition*`로 호환되지 않는 근거가 발견되는 경우
+- primary asset scan 설정 때문에 subclass data asset을 에디터에서 만들거나 로드하는 방식이 불명확한 경우
+- QNA 27-32번 확정 답변과 현재 Source 구조가 충돌하는 경우
