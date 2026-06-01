@@ -1,6 +1,7 @@
 #include "WorldActors/BeehiveCombPartFocusActionComponent.h"
 
 #include "Focus/CursorPartFocusScopeComponent.h"
+#include "Focus/FocusTargetComponent.h"
 #include "GameplayTagsManager.h"
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/ItemPlacementSlot.h"
@@ -13,13 +14,15 @@ UBeehiveCombPartFocusActionComponent::UBeehiveCombPartFocusActionComponent()
 	RequiredTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
 	SetRequiredStateTags(RequiredTags);
 	SetExclusiveGroup(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.CombLift")), false));
+	SetPrimaryPromptActionText(FText::FromString(TEXT("들기")));
+	SetEngagedPrimaryPromptActionText(FText::FromString(TEXT("넣기")));
 }
 
 bool UBeehiveCombPartFocusActionComponent::CanHandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const
 {
 	const ABeehiveCombActor* CombActor = ResolveOwnerCombActor();
 	const UPlacementSlotRetrievePartFocusActionComponent* RetrieveAction = CombActor ? CombActor->GetPlacementRetrieveActionComponent() : nullptr;
-	return RetrieveAction && RetrieveAction->CanRetrievePlacementOccupant(InteractingCharacter);
+	return RetrieveAction && RetrieveAction->CanRetrievePlacementOccupantWithInventory(InteractingCharacter);
 }
 
 bool UBeehiveCombPartFocusActionComponent::HandleSecondaryPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter)
@@ -47,6 +50,31 @@ bool UBeehiveCombPartFocusActionComponent::HandleSecondaryPartFocusAction(UCurso
 
 	IItemPlacementSlot::Execute_ClearPlacedItem(SlotActor);
 	return true;
+}
+
+void UBeehiveCombPartFocusActionComponent::AppendPartFocusPromptEntries(const FPartFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const
+{
+	const ABeehiveCombActor* CombActor = ResolveOwnerCombActor();
+	const UPlacementSlotRetrievePartFocusActionComponent* RetrieveAction = CombActor ? CombActor->GetPlacementRetrieveActionComponent() : nullptr;
+	if (!RetrieveAction)
+	{
+		return;
+	}
+
+	FFocusPromptEntry Entry;
+	Entry.EntryId = FName(TEXT("Retrieve"));
+	Entry.KeyText = FText::FromString(TEXT("RMB"));
+	Entry.ActionText = FText::FromString(TEXT("획득"));
+	Entry.SortPriority = 50;
+
+	FText FailureReason;
+	Entry.bEnabled = RetrieveAction->CanRetrievePlacementOccupantWithInventory(Context.InteractingCharacter, &FailureReason);
+	if (!Entry.bEnabled)
+	{
+		Entry.DisabledReason = FailureReason;
+	}
+
+	OutEntries.Add(MoveTemp(Entry));
 }
 
 bool UBeehiveCombPartFocusActionComponent::CanBeginPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const

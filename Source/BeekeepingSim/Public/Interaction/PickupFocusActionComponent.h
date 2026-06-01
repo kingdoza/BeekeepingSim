@@ -12,7 +12,11 @@ class BEEKEEPINGSIM_API UPickupFocusActionComponent : public UFocusActionCompone
 	GENERATED_BODY()
 
 public:
+	UPickupFocusActionComponent();
+
 	virtual bool CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const override;
 
 	virtual bool BeginFocusAction(ABeekeeperCharacter* InteractingCharacter) override;
+
+	virtual void AppendFocusPromptEntries(const FFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const override;
 };

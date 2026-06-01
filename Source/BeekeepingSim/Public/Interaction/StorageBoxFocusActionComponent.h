@@ -14,6 +14,8 @@ class BEEKEEPINGSIM_API UStorageBoxFocusActionComponent : public UFocusActionCom
 	GENERATED_BODY()
 
 public:
+	UStorageBoxFocusActionComponent();
+
 	virtual bool CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const override;
 
 	virtual bool BeginFocusAction(ABeekeeperCharacter* InteractingCharacter) override;
@@ -33,6 +35,8 @@ public:
 	virtual bool ShouldBlockHotbarSlotInputWhileEngaged() const override;
 
 	virtual bool ShouldBlockHotbarWheelInputWhileEngaged() const override;
+
+	virtual void AppendFocusPromptEntries(const FFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const override;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

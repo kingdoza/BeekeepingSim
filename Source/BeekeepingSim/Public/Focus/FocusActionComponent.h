@@ -5,10 +5,22 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Focus/CursorPartFocusTypes.h"
+#include "Focus/FocusTargetComponent.h"
 #include "Inventory/HotbarPresentationTypes.h"
 #include "FocusActionComponent.generated.h"
 
 class ABeekeeperCharacter;
+class UFocusTargetComponent;
+
+USTRUCT()
+struct FFocusPromptBuildContext
+{
+	GENERATED_BODY()
+
+	ABeekeeperCharacter* InteractingCharacter = nullptr;
+	UFocusTargetComponent* FocusTarget = nullptr;
+	FFocusPromptData BasePromptData;
+};
 
 UCLASS(Abstract, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class BEEKEEPINGSIM_API UFocusActionComponent : public UActorComponent
@@ -75,6 +87,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Focus Action|Hotbar")
 	virtual bool ShouldBlockHotbarWheelInputWhileEngaged() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Focus Action|Prompt")
+	void SetPromptActionText(const FText& NewText);
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Prompt")
+	FText GetPromptActionText() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Focus Action|Prompt")
+	void SetEngagedPromptActionText(const FText& NewText);
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Prompt")
+	FText GetEngagedPromptActionText() const;
+
+	UFUNCTION(BlueprintPure, Category = "Focus Action|Prompt")
+	virtual FText ResolveFocusPromptActionText() const;
+
+	virtual void AppendFocusPromptEntries(const FFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const;
+
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Focus Action|Prompt")
+	FText PromptActionText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Focus Action|Prompt")
+	FText EngagedPromptActionText;
+
 	bool bIsActionEngaged = false;
 };

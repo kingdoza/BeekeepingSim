@@ -39,7 +39,7 @@
 - `EItemSlotDragMode`: full stack / partial stack drag 구분
 - `FItemSlotMoveResult`: partial move 결과
 - `UTimeOfDayClockWidget`: controller가 주입한 `Hour24`를 normalize/floor minute 변환해 `HH:MM` 표시 이벤트를 제공
-- `UFocusPromptWidget`: focus component prompt delegate를 구독하고 `FFocusPromptData`를 `TargetNameText`/`KeyText`에 반영하며, `AnchorMode` 기반 위치를 갱신하는 base widget
+- `UFocusPromptWidget`: focus component prompt delegate를 구독하고 `FFocusPromptData`를 legacy `TargetNameText`/`KeyText` 및 다중 prompt entry Blueprint event로 전달하며, `AnchorMode` 기반 위치를 갱신하는 base widget
 
 ## Drag/Drop Flow
 
@@ -81,6 +81,10 @@
 - `UFocusPromptWidget::GetCurrentPromptData`
 - `UFocusPromptWidget::OnPromptDataApplied`
 
+다중 prompt entry 구현 시 추가되는 Blueprint 표시 계약:
+
+- `UFocusPromptWidget::OnPromptEntriesApplied`
+
 `ShouldHideItemVisualForCurrentDrag`는 legacy wrapper다. 새 Blueprint 로직은 가능하면 `ShouldHideItemVisualForPartialDragPreview`, `IsPartialDragPreviewActive`, `GetPartialDragPreviewDisplayStackCount` 조합을 우선 사용한다.
 
 ## C++-Only API
@@ -118,6 +122,11 @@
 - `WBP_FocusPrompt`는 `UFocusPromptWidget`을 parent로 사용하고, C++이 runtime prompt binding/update를 담당한다. Blueprint는 layout/style와 선택적 `OnPromptDataApplied` 반응만 담당한다.
 - `UFocusPromptWidget`은 `PromptContent`(BindWidget, Canvas slot)와 `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding` layout contract를 소유한다.
 - `UFocusPromptWidget::NativeTick()`의 visible 상태 위치 갱신은 PartFocus cursor-follow 표시 책임에 포함된다.
+- 다중 prompt entry row 생성, 수직 정렬, disabled alpha 스타일은 `WBP_FocusPrompt` Blueprint 작업 영역이다.
+- C++은 `FFocusPromptData::Entries`를 저장하고 `OnPromptEntriesApplied(PromptData, Entries, bVisible)` 형태의 Blueprint event로 표시 데이터를 전달한다.
+- 다중 entry가 있으면 Blueprint는 `Entries`를 기준으로 row를 렌더링하고, entry가 없으면 기존 `KeyText` 단일 표시를 fallback으로 사용할 수 있다.
+- `FFocusPromptEntry::bEnabled=false`인 row는 모든 상호작용 유형에서 공통으로 반투명 disabled 표시 대상이다.
+- row 내부 widget 이름과 구체 UMG hierarchy는 Blueprint 소유이며, C++ `BindWidget` 계약으로 강제하지 않는다.
 
 ## Update 2026-06-01 (Focus Prompt Position Policy)
 
@@ -126,6 +135,13 @@
 - `MouseCursor` mode anchor는 `mouse position + MouseCursorOffset`이다.
 - 위치 적용 대상은 `PromptContent`이며, `ViewportPadding` 기준 clamp로 viewport 바깥 이탈을 방지한다.
 - Focus 설정(`UBeekeepingSimFocusSettings`)은 prompt spacing 값을 소유하지 않는다.
+
+## Update 2026-06-01 (Focus Prompt Multi Entry Rendering)
+
+- `FFocusPromptData::Entries` 렌더링은 C++ widget이 row widget을 생성하지 않고 Blueprint event에 위임한다.
+- `WBP_FocusPrompt`는 여러 상호작용 key/action row를 수직 정렬로 표시한다.
+- disabled entry는 pickup/회수뿐 아니라 모든 상호작용 entry에 공통 적용되며, Blueprint에서 반투명 스타일로 표현한다.
+- 기존 `TargetNameText`/`KeyText` 단일 표시 계약은 migration fallback으로 유지한다.
 
 ## Manual Review Points
 

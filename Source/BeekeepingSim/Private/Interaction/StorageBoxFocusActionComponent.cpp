@@ -29,6 +29,11 @@ void CenterMouseCursorInViewportForStorageBox(APlayerController* PlayerControlle
 }
 }
 
+UStorageBoxFocusActionComponent::UStorageBoxFocusActionComponent()
+{
+	PromptActionText = FText::FromString(TEXT("열기"));
+}
+
 bool UStorageBoxFocusActionComponent::CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const
 {
 	if (!Super::CanBeginFocusAction(InteractingCharacter))
@@ -159,6 +164,46 @@ bool UStorageBoxFocusActionComponent::ShouldBlockHotbarSlotInputWhileEngaged() c
 bool UStorageBoxFocusActionComponent::ShouldBlockHotbarWheelInputWhileEngaged() const
 {
 	return true;
+}
+
+void UStorageBoxFocusActionComponent::AppendFocusPromptEntries(const FFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const
+{
+	FFocusPromptEntry Entry;
+	Entry.EntryId = FName(TEXT("StorageOpen"));
+	Entry.KeyText = Context.BasePromptData.InteractionKeyText;
+	Entry.ActionText = ResolveFocusPromptActionText();
+	Entry.bEnabled = CanBeginFocusAction(Context.InteractingCharacter);
+	Entry.SortPriority = 0;
+
+	if (!Entry.bEnabled)
+	{
+		if (!StorageWidgetClass)
+		{
+			Entry.DisabledReason = FText::FromString(TEXT("Storage 위젯 클래스가 설정되지 않았습니다."));
+		}
+		else if (!Context.InteractingCharacter)
+		{
+			Entry.DisabledReason = FText::FromString(TEXT("상호작용 캐릭터를 찾을 수 없습니다."));
+		}
+		else if (!Context.InteractingCharacter->GetBeekeeperHotbar())
+		{
+			Entry.DisabledReason = FText::FromString(TEXT("인벤토리를 찾을 수 없습니다."));
+		}
+		else if (!(GetOwner() && GetOwner()->FindComponentByClass<UStorageBoxComponent>()))
+		{
+			Entry.DisabledReason = FText::FromString(TEXT("Storage 컴포넌트를 찾을 수 없습니다."));
+		}
+		else
+		{
+			const APlayerController* PlayerController = Context.InteractingCharacter ? Cast<APlayerController>(Context.InteractingCharacter->GetController()) : nullptr;
+			if (!PlayerController || !PlayerController->IsLocalController())
+			{
+				Entry.DisabledReason = FText::FromString(TEXT("로컬 플레이어 컨트롤러가 필요합니다."));
+			}
+		}
+	}
+
+	OutEntries.Add(MoveTemp(Entry));
 }
 
 void UStorageBoxFocusActionComponent::CleanupInteractionUI()

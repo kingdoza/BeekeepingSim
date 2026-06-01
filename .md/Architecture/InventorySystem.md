@@ -135,6 +135,13 @@
 
 이 API는 UI widget wrapper가 아니라 실제 상태 변경 경로다.
 
+## Public Query API
+
+- `UBeekeeperHotbarComponent`
+  - `PreviewAcquireItemBySpec`
+
+`PreviewAcquireItemBySpec(const FItemAcquireSpec&)`는 `TryAcquireItemBySpec`와 같은 stack/empty-slot/durability compatibility 규칙을 사용하지만, slot mutation, item instance 생성, delegate broadcast를 수행하지 않는 dry-run query다. Focus prompt availability와 실제 acquire 실행은 같은 acquire 계산 규칙을 공유해야 한다.
+
 ## Dependencies
 
 - Focus
@@ -161,6 +168,8 @@
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
 - Instant click action, item stack 소비 정책, Blueprint override event hook은 아직 Inventory 정본에서 확정된 현재 계약이 아니다. 설계 확정 없이 Public API를 rename/delete하지 않는다.
+- Focus prompt entry의 획득/회수 availability는 hotbar mutation API를 호출하지 않고 `PreviewAcquireItemBySpec` dry-run 결과를 사용한다.
+- pickup, placed item retrieve, beehive comb retrieve 같은 경로는 prompt disabled 상태와 실제 실행 성공 조건이 어긋나지 않도록 dry-run/execute 양쪽에서 같은 `FItemAcquireSpec`을 구성해야 한다.
 
 ## Manual Review Points
 
@@ -256,3 +265,9 @@
   - 필드: `EggLayingMultiplier` (권장 기본값 `1.2`)
 - 일반 아이템 asset은 기존 `UItemDefinition`을 계속 사용한다.
 - 화분떡 tier는 `UPollenPattyItemDefinition` asset을 여러 개 두고 multiplier만 다르게 설정한다.
+
+## Update 2026-06-01 (Acquire Preview For Prompt Availability)
+
+- focus prompt disabled 상태 판정을 위해 hotbar acquire dry-run query를 추가하는 설계를 확정했다.
+- `PreviewAcquireItemBySpec`는 `TryAcquireItemBySpec`와 동일한 수용 가능성 규칙을 사용하되 hotbar 상태를 변경하지 않는다.
+- pickup과 회수 prompt entry는 공간 부족 또는 stack compatibility 실패 시 entry를 제거하지 않고 `bEnabled=false`로 표시할 수 있다.

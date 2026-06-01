@@ -13,6 +13,7 @@
 - pickup confirm 시 hotbar 획득 실행
 - storage confirm 시 storage UI 생성, input mode 전환, active storage context 등록
 - interaction 종료/cancel/abort 시 UI와 controller transient state 정리
+- pickup/storage 같은 전역 Focus 상호작용 prompt entry와 availability 제공
 
 ## Key Classes
 
@@ -50,9 +51,18 @@
 - Interaction system은 FocusAction의 구체 효과를 구현하되, inventory slot mutation 자체는 Inventory 컴포넌트에 위임한다.
 - Storage action은 UI widget lifecycle의 owner다. Widget은 storage action이 주입한 context를 읽는다.
 - Pickup action은 장기 engaged 상태 없이 동기적으로 완료될 수 있다.
+- `UPickupFocusActionComponent`와 `UStorageBoxFocusActionComponent`는 `UFocusActionComponent::AppendFocusPromptEntries(...)` 경로로 표시 entry를 제공한다.
+- pickup/storage action name은 `UFocusActionComponent::PromptActionText` Blueprint authoring 값을 사용하고, 표시 source는 `ResolveFocusPromptActionText()`를 따른다. 기본값은 pickup `획득`, storage `열기`다.
+- pickup prompt availability는 실제 획득 실행과 같은 item/acquire spec을 사용하되, prompt 판정 시에는 hotbar `PreviewAcquireItemBySpec` dry-run을 사용한다.
+- pickup 공간 부족 등 실행 불가 상태는 prompt entry 제거가 아니라 `bEnabled=false` disabled 표시로 표현할 수 있다.
 
 ## Manual Review Points
 
 - storage interaction 종료 시 `ClearActiveItemSlotDragOperation()`과 `ClearActiveStorageComponent()` 호출 여부
 - storage widget 생성 실패 시 input lock/cursor/input mode가 복구되는지 확인
 - pickup 실패 시 actor가 유지되고 focus 상태가 정상 해제되는지 확인
+
+## Update 2026-06-01 (Focus Prompt Entries)
+
+- interaction action component가 전역 Focus prompt entry 생성 surface를 제공하는 설계를 확정했다.
+- pickup/storage entry는 Focus/UI가 도메인 조건을 직접 알지 않도록 action component에서 append한다.

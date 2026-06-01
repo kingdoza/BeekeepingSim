@@ -1,62 +1,106 @@
-# 구현 수정 프롬프트: Focus Prompt AnchorMode 리뷰 Findings
+# 구현 수정 프롬프트: Focus Prompt Multi-Entry 리뷰 Findings
 
 ## 우선순위
 
-1. High: `WBP_FocusPrompt` asset에 필수 `PromptContent` BindWidget 계약 반영
-2. 참고: UBT 빌드 실패는 이번 FocusPrompt 변경 파일 기인이 아닌 기존 unity build 충돌로 분리
+1. High: `UPickupFocusActionComponent::AppendFocusPromptEntries(...)` 구현 누락으로 UBT 링크 실패
+2. High: pickup/retrieve prompt availability가 `PreviewAcquireItemBySpec` dry-run 기반으로 구현되지 않음
+3. Medium: storage prompt entry가 `StorageOpen`/`열기` 계약으로 제공되지 않음
+4. Medium: `WBP_FocusPrompt`의 `OnPromptEntriesApplied` row 렌더링 구현 확인/반영 필요
 
 ## 발견 문제
 
-### 1. `WBP_FocusPrompt` asset에 `PromptContent`가 없어 위치 정책이 실제 적용되지 않음
+### 1. Pickup append override 선언만 있고 구현이 없어 빌드가 실패함
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Public/Interaction/PickupFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/Interaction/PickupFocusActionComponent.cpp`
+- 확인 결과:
+  - header에 `AppendFocusPromptEntries(...) override`가 선언되어 있다.
+  - cpp에는 해당 함수 정의가 없다.
+  - UBT 결과: `LNK2001 unresolved external UPickupFocusActionComponent::AppendFocusPromptEntries(...)`
+- 영향:
+  - `BeekeepingSimEditor Win64 Development` 빌드가 실패한다.
+  - Focus Prompt Multi-Entry 구현은 현재 통합 불가능 상태다.
+- 수정 방향:
+  - cpp에 override 구현을 추가한다.
+  - `EntryId=Pickup`, `ActionText=획득`, `SortPriority=0` 계약을 지킨다.
+  - enabled 판정은 hotbar mutation이 아니라 `PreviewAcquireItemBySpec`로 수행한다.
+
+### 2. Pickup/retrieve availability가 hotbar dry-run 기반으로 연결되지 않음
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Private/Interaction/PickupFocusActionComponent.cpp`
+  - `Source/BeekeepingSim/Public/WorldActors/PlacementSlotRetrievePartFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/WorldActors/PlacementSlotRetrievePartFocusActionComponent.cpp`
+  - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPartFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+- 확인 결과:
+  - `PreviewAcquireItemBySpec`는 Inventory에 존재하고 dry-run 경로 자체는 mutation 없이 동작한다.
+  - pickup prompt append 구현이 없어 dry-run availability도 없다.
+  - `UPlacementSlotRetrievePartFocusActionComponent`는 `AppendPartFocusPromptEntries(...)`를 override하지 않는다.
+  - `CanRetrievePlacementOccupant(...)`는 occupant/slot 조건까지만 확인하고 hotbar 수용 가능성은 확인하지 않는다.
+  - 실제 회수는 `TryAcquireItemBySpec(...)`에서 실패할 수 있으므로 prompt enabled 상태와 실행 결과가 어긋날 수 있다.
+  - `UBeehiveCombPartFocusActionComponent`도 retrieve prompt append override가 없고, bridge availability는 generic retrieve action의 hotbar dry-run 결과를 포함하지 않는다.
+- 영향:
+  - `[RMB] 회수` row가 enabled/disabled 상태로 유지 표시되지 않는다.
+  - hotbar 공간 부족/stack compatibility 실패 시 disabled row 대신 row 누락 또는 enabled처럼 보이는 불일치가 발생할 수 있다.
+  - 리뷰 요구사항 6, 7, PartFocus retrieve 계약을 충족하지 못한다.
+- 수정 방향:
+  - retrieve action에 `AppendPartFocusPromptEntries(...)` override를 추가한다.
+  - 회수 조건 helper를 domain 조건 + `PreviewAcquireItemBySpec` 결과로 분리한다.
+  - 실제 실행은 같은 `FItemAcquireSpec` 구성 helper를 사용해 `TryAcquireItemBySpec`를 호출한다.
+  - `EntryId=Retrieve`, `KeyText=RMB`, `ActionText=회수`, `SortPriority=50`을 적용한다.
+  - 실패 사유는 가능하면 `DisabledReason`에 넣는다.
+  - comb bridge는 generic retrieve action의 availability helper를 재사용하거나 동일한 dry-run helper를 공유한다.
+
+### 3. Storage entry가 전용 계약으로 제공되지 않음
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Public/Interaction/StorageBoxFocusActionComponent.h`
+  - `Source/BeekeepingSim/Private/Interaction/StorageBoxFocusActionComponent.cpp`
+- 확인 결과:
+  - `UStorageBoxFocusActionComponent`는 `AppendFocusPromptEntries(...)`를 override하지 않는다.
+  - 현재는 base fallback이 `EntryId=Primary`, empty `ActionText`로 row를 만들 수 있을 뿐이다.
+- 영향:
+  - 요구된 `EntryId=StorageOpen`, `ActionText=열기`, `SortPriority=0` 계약을 충족하지 못한다.
+  - UI row가 다중 entry 모델의 의미 있는 action text를 표시할 수 없다.
+- 수정 방향:
+  - storage action에 `AppendFocusPromptEntries(...)` override를 추가한다.
+  - `KeyText=Context.BasePromptData.InteractionKeyText`, `ActionText=열기`, `bEnabled=CanBeginFocusAction(Context.InteractingCharacter)`로 구성한다.
+
+### 4. `WBP_FocusPrompt` row 렌더링 구현 반영이 확인되지 않음
 
 - 대상 파일:
   - `Content/UI/WBP_FocusPrompt.uasset`
-  - `Source/BeekeepingSim/Public/UI/FocusPromptWidget.h`
-  - `Source/BeekeepingSim/Private/UI/FocusPromptWidget.cpp`
 - 확인 결과:
-  - `UFocusPromptWidget`는 `PromptContent`를 필수 `BindWidget`으로 선언한다.
-  - `UFocusPromptWidget::UpdatePromptPosition()`은 `PromptContent`의 `UCanvasPanelSlot`에 `SetPosition(...)`을 적용한다.
-  - `rg -a "PromptContent" Content/UI/WBP_FocusPrompt.uasset` 결과가 0건이다.
-  - 같은 asset에서 `NativeParentClass=/Script/BeekeepingSim.FocusPromptWidget`, `TargetNameText`, `KeyText`는 확인된다.
-- 원인:
-  - C++ 위치 정책은 추가됐지만 Blueprint designer tree의 전체 prompt 컨테이너 이름 변경/variable 노출/compile-save가 최종 asset에 반영되지 않았다.
+  - `PromptContent`, `TargetNameText`, `KeyText`, native parent 문자열은 확인된다.
+  - `OnPromptEntriesApplied` 또는 `Entries` 문자열은 검색되지 않았다.
 - 영향:
-  - `PromptContent` 필수 binding 계약을 충족하지 못한다.
-  - widget compile/load 단계에서 required BindWidget 오류 또는 runtime null binding이 발생할 수 있다.
-  - `UpdatePromptPosition()`이 `PromptContent == nullptr`에서 반환하므로 `ScreenCenter`/`MouseCursor` 위치 정책, DPI 변환, viewport clamp가 실제 WBP에 적용되지 않는다.
+  - C++이 `OnPromptEntriesApplied(...)`를 호출해도 Blueprint가 row rebuild/수직 정렬/disabled alpha를 수행하지 않을 수 있다.
 - 수정 방향:
-  - Unreal Editor에서 `Content/UI/WBP_FocusPrompt`를 연다.
-  - prompt 전체를 감싸는 컨테이너를 `PromptContent`로 rename한다.
-  - `PromptContent`를 variable로 노출한다.
-  - `PromptContent`가 `CanvasPanel` direct child인지 확인한다.
-  - `PromptContent` slot을 runtime 위치 제어에 맞춰 `CanvasPanelSlot`으로 유지하고, 필요 시 `Auto Size=true`, `Alignment=(0, 0.5)`를 적용한다.
-  - `TargetNameText`, `KeyText` 이름은 유지한다.
-  - Compile/Save 후 `rg -a "PromptContent|TargetNameText|KeyText|NativeParentClass" Content/UI/WBP_FocusPrompt.uasset`로 재확인한다.
+  - Unreal Editor에서 `WBP_FocusPrompt`를 열고 `OnPromptEntriesApplied` 구현을 추가/확인한다.
+  - `Entries` 배열 기준으로 row를 rebuild한다.
+  - `bEnabled=false` row는 disabled alpha/스타일을 적용한다.
+  - invalid 호출 시 기존 rows를 clear한다.
 
 ## 검증 방법
 
 - 검색:
-  - `rg "EFocusPromptAnchorMode|AnchorMode|ScreenCenterOffset|MouseCursorOffset|ViewportPadding|PromptContent|UpdatePromptPosition" Source/BeekeepingSim .md`
-  - `rg -a "PromptContent|TargetNameText|KeyText|NativeParentClass|FocusPromptWidget" Content/UI/WBP_FocusPrompt.uasset`
+  - `rg "AppendFocusPromptEntries|AppendPartFocusPromptEntries|PreviewAcquireItemBySpec|EntryId|ActionText|DisabledReason" Source/BeekeepingSim/Public Source/BeekeepingSim/Private`
+  - `rg -a "PromptContent|TargetNameText|KeyText|OnPromptEntriesApplied|Entries" Content/UI/WBP_FocusPrompt.uasset`
 - UBT:
   - `BeekeepingSimEditor Win64 Development`
-  - 현재 빌드 실패 원인:
-    - `Source/BeekeepingSim/Private/Interaction/StorageBoxFocusActionComponent.cpp`
-    - `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
-    - 두 파일의 anonymous namespace `CenterMouseCursorInViewport` 함수명이 unity build에서 충돌
-  - 위 빌드 blocker는 이번 FocusPrompt 변경 파일 기인이 아니지만, 최종 검증 전 별도 수정이 필요하다.
-- Editor/PIE:
-  - 플레이 직후 target 없음: prompt 숨김
-  - 일반 Focus target 진입: 화면 중앙 근처 표시
-  - 일반 Focus 이탈: 숨김
-  - PartFocus hover 진입: 커서 근처 표시
-  - PartFocus 유지 + 마우스 이동: prompt가 커서를 따라감
-  - viewport edge 근처: prompt가 화면 밖으로 이탈하지 않음
-  - invalid prompt/hover 해제: 숨김
-  - PIE 종료 시 delegate 해제 관련 오류 없음
+- PIE:
+  - pickup hover: `[키] 획득` enabled
+  - hotbar full pickup: `[키] 획득` disabled
+  - storage hover: `[키] 열기`
+  - retrieve 가능: `[RMB] 회수` enabled
+  - retrieve 불가 또는 hotbar full: `[RMB] 회수` disabled
+  - invalid prompt 전환 시 rows clear
+  - PartFocus prompt 위치는 기존처럼 cursor follow 유지
 
-## 아키텍처 문서 반영 필요 여부
+## 문서 반영 필요 여부
 
-- 현재 `.md/0_ARCHITECTURE.md`, `.md/Architecture/FocusSystem.md`, `.md/Architecture/UISystem.md`에는 AnchorMode 위치 정책이 반영되어 있다.
-- 위 수정은 Content asset 계약 반영이므로 추가 문서 변경은 불필요하다.
+- 현재 문서는 설계 의도를 이미 반영하고 있다.
+- 위 수정이 기존 설계 범위 안에서 구현 누락을 채우는 작업이면 추가 문서 변경은 불필요하다.
 

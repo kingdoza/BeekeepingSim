@@ -10,6 +10,7 @@
 class ABeekeeperCharacter;
 class UBeekeeperFocusComponent;
 class UPrimitiveComponent;
+struct FFocusPromptEntry;
 
 USTRUCT(BlueprintType)
 struct FCursorPartFocusPromptData
@@ -152,6 +153,8 @@ private:
 	FGameplayTagContainer BuildEffectiveRequiredStateTags(const FCursorPartFocusPartDescriptor& Descriptor) const;
 	void ApplyOutlineForPart(int32 PartIndex, bool bEnabled);
 	void BroadcastPartPrompt();
+	bool EvaluatePrimaryEntryEnabledForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor, bool& bOutIsPrimaryActionEngaged, bool& bOutCanBeginPrimaryAction) const;
+	void BuildPromptEntriesForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor, TArray<FFocusPromptEntry>& OutEntries) const;
 	bool CancelTopActionCascade(bool bAbort);
 	bool CancelActionCascade(UCursorPartFocusActionComponent* Action, bool bAbort, TSet<TObjectPtr<UCursorPartFocusActionComponent>>& Visited);
 	void RemoveInactiveActions();

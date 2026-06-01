@@ -3,6 +3,7 @@
 
 #include "Focus/BeekeeperFocusComponent.h"
 
+#include "Algo/Sort.h"
 #include "Camera/CameraComponent.h"
 #include "Focus/BeekeepingSimFocusSettings.h"
 #include "Engine/World.h"
@@ -293,7 +294,36 @@ FFocusPromptData UBeekeeperFocusComponent::GetCurrentPromptData() const
 		return FFocusPromptData();
 	}
 
-	return CurrentFocusTarget->GetPromptData();
+	FFocusPromptData PromptData = CurrentFocusTarget->GetPromptData();
+	if (!CurrentFocusTarget->GetOwner())
+	{
+		return PromptData;
+	}
+
+	TArray<UFocusActionComponent*> FocusActions;
+	CurrentFocusTarget->GetOwner()->GetComponents<UFocusActionComponent>(FocusActions);
+
+	FFocusPromptBuildContext BuildContext;
+	BuildContext.InteractingCharacter = OwnerCharacter;
+	BuildContext.FocusTarget = CurrentFocusTarget;
+	BuildContext.BasePromptData = PromptData;
+
+	for (const UFocusActionComponent* FocusAction : FocusActions)
+	{
+		if (!FocusAction)
+		{
+			continue;
+		}
+
+		FocusAction->AppendFocusPromptEntries(BuildContext, PromptData.Entries);
+	}
+
+	PromptData.Entries.StableSort([](const FFocusPromptEntry& A, const FFocusPromptEntry& B)
+	{
+		return A.SortPriority < B.SortPriority;
+	});
+
+	return PromptData;
 }
 
 void UBeekeeperFocusComponent::SetEngagedFocusPromptOverride(const FFocusPromptData& PromptData)

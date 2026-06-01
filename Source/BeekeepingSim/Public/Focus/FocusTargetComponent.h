@@ -27,6 +27,30 @@ enum class EFocusPromptAnchorMode : uint8
 };
 
 USTRUCT(BlueprintType)
+struct FFocusPromptEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	FName EntryId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	FText KeyText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	FText ActionText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	bool bEnabled = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	FText DisabledReason;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	int32 SortPriority = 0;
+};
+
+USTRUCT(BlueprintType)
 struct FFocusPromptData
 {
 	GENERATED_BODY()
@@ -42,6 +66,9 @@ struct FFocusPromptData
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
 	EFocusPromptAnchorMode AnchorMode = EFocusPromptAnchorMode::ScreenCenter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Focus")
+	TArray<FFocusPromptEntry> Entries;
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))

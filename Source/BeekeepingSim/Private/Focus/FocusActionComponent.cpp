@@ -109,3 +109,49 @@ bool UFocusActionComponent::ShouldBlockHotbarWheelInputWhileEngaged() const
 {
 	return false;
 }
+
+void UFocusActionComponent::SetPromptActionText(const FText& NewText)
+{
+	PromptActionText = NewText;
+}
+
+FText UFocusActionComponent::GetPromptActionText() const
+{
+	return PromptActionText;
+}
+
+void UFocusActionComponent::SetEngagedPromptActionText(const FText& NewText)
+{
+	EngagedPromptActionText = NewText;
+}
+
+FText UFocusActionComponent::GetEngagedPromptActionText() const
+{
+	return EngagedPromptActionText;
+}
+
+FText UFocusActionComponent::ResolveFocusPromptActionText() const
+{
+	if (IsActionEngaged() && !EngagedPromptActionText.IsEmpty())
+	{
+		return EngagedPromptActionText;
+	}
+
+	return PromptActionText;
+}
+
+void UFocusActionComponent::AppendFocusPromptEntries(const FFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const
+{
+	if (Context.BasePromptData.InteractionKeyText.IsEmpty())
+	{
+		return;
+	}
+
+	FFocusPromptEntry Entry;
+	Entry.EntryId = FName(TEXT("Primary"));
+	Entry.KeyText = Context.BasePromptData.InteractionKeyText;
+	Entry.ActionText = ResolveFocusPromptActionText();
+	Entry.bEnabled = CanBeginFocusAction(Context.InteractingCharacter);
+	Entry.SortPriority = 0;
+	OutEntries.Add(MoveTemp(Entry));
+}

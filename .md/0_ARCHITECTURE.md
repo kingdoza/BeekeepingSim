@@ -74,7 +74,8 @@ Source/BeekeepingSim/
 - Interaction은 FocusAction의 구체 구현이며 pickup/storage 같은 도메인별 상호작용을 실행한다.
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, runtime clock 표시, Blueprint 표시 API를 제공한다.
-- `WBP_FocusPrompt` 런타임 바인딩/텍스트/visibility/위치 갱신은 `UFocusPromptWidget`(C++ base widget)이 담당하고, `BP_BeekeeperCharacter`는 widget 생성/viewport 추가만 유지한다.
+- `WBP_FocusPrompt` 런타임 바인딩/텍스트/visibility/위치 갱신은 `UFocusPromptWidget`(C++ base widget)이 담당하고, 다중 상호작용 row 생성/수직 정렬/disabled 스타일은 Blueprint 작업 영역으로 유지한다.
+- Focus prompt entry 생성은 실제 실행 주체가 append API로 제공한다. 전역 Focus는 `UFocusActionComponent`, PartFocus는 `UCursorPartFocusActionComponent`가 context별 prompt entry와 availability를 제공한다.
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
@@ -249,3 +250,16 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `FFocusPromptData`는 `EFocusPromptAnchorMode`(`ScreenCenter`, `MouseCursor`)를 포함한다.
 - 일반 Focus prompt(`UFocusTargetComponent::GetPromptData`)는 기본 `ScreenCenter` anchor mode를 사용한다.
 - PartFocus prompt(`UCursorPartFocusScopeComponent` engaged override)는 `MouseCursor` anchor mode로 변환되며, 표시 위치 갱신 책임은 `UFocusPromptWidget`에 있다.
+
+## Update 2026-06-01 (Focus Prompt Multi Entry + Availability)
+
+- `FFocusPromptData`는 다중 `FFocusPromptEntry` 배열을 포함하는 방향으로 확장한다.
+- `FFocusPromptEntry`는 key/action 표시값, `bEnabled`, `DisabledReason`, `SortPriority`, `EntryId`를 포함하는 공통 상호작용 row DTO다.
+- disabled entry는 pickup/회수 전용이 아니라 모든 표시 가능한 상호작용에 적용되는 공통 availability 상태다.
+- `UBeekeeperFocusComponent`는 preview target owner의 `UFocusActionComponent`들이 제공하는 `AppendFocusPromptEntries(...)` 결과를 수집한다.
+- `UCursorPartFocusScopeComponent`는 hovered part action의 `AppendPartFocusPromptEntries(...)` 결과를 수집해 engaged prompt override로 전달한다.
+- 두 append API는 context 격리를 위해 분리하지만, UI로 내려가는 데이터 모델은 `FFocusPromptEntry`로 통일한다.
+- action 이름은 실행 주체 action component가 소유한다. 전역 Focus는 `PromptActionText`/`EngagedPromptActionText` + `ResolveFocusPromptActionText()`, PartFocus primary는 `PrimaryPromptActionText`/`EngagedPrimaryPromptActionText` + `ResolvePrimaryPromptActionText()`를 Blueprint authoring 값 source로 사용한다.
+- 공통 PartFocus primary action text는 action engaged 상태에 따라 시작/해제 텍스트를 전환한다. 예: `열기`/`닫기`, `들기`/`넣기`.
+- `UFocusPromptWidget`은 entries를 Blueprint event로 전달하고, `WBP_FocusPrompt`가 수직 row 생성과 disabled alpha 스타일을 담당한다.
+- hotbar 획득/회수 availability는 상태 변경 없는 `PreviewAcquireItemBySpec` dry-run query로 판정한다.

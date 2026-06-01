@@ -118,3 +118,37 @@ bool UCursorPartFocusActionComponent::EndPartFocusDrag(UCursorPartFocusScopeComp
 	bIsPartFocusDragInProgress = false;
 	return false;
 }
+
+void UCursorPartFocusActionComponent::SetPrimaryPromptActionText(const FText& NewText)
+{
+	PrimaryPromptActionText = NewText;
+}
+
+FText UCursorPartFocusActionComponent::GetPrimaryPromptActionText() const
+{
+	return PrimaryPromptActionText;
+}
+
+void UCursorPartFocusActionComponent::SetEngagedPrimaryPromptActionText(const FText& NewText)
+{
+	EngagedPrimaryPromptActionText = NewText;
+}
+
+FText UCursorPartFocusActionComponent::GetEngagedPrimaryPromptActionText() const
+{
+	return EngagedPrimaryPromptActionText;
+}
+
+FText UCursorPartFocusActionComponent::ResolvePrimaryPromptActionText() const
+{
+	if (IsPartActionEngaged() && !EngagedPrimaryPromptActionText.IsEmpty())
+	{
+		return EngagedPrimaryPromptActionText;
+	}
+
+	return PrimaryPromptActionText;
+}
+
+void UCursorPartFocusActionComponent::AppendPartFocusPromptEntries(const FPartFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const
+{
+}

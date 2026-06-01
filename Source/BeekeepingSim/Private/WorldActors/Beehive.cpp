@@ -126,6 +126,8 @@ ABeehive::ABeehive()
 		FGameplayTagContainer ProvidedTags;
 		ProvidedTags.AddTag(FGameplayTag::RequestGameplayTag(FName(TEXT("Beehive.LidOpen")), false));
 		LidPartFocusAction->SetProvidedStateTags(ProvidedTags);
+		LidPartFocusAction->SetPrimaryPromptActionText(FText::FromString(TEXT("열기")));
+		LidPartFocusAction->SetEngagedPrimaryPromptActionText(FText::FromString(TEXT("닫기")));
 	}
 }
 
@@ -365,7 +367,7 @@ void ABeehive::RebuildCursorPartFocusDescriptors()
 		LidDescriptor.EngageMode = LidPartFocusAction ? LidPartFocusAction->GetEngageMode() : ECursorPartFocusEngageMode::PersistentAction;
 		LidDescriptor.PromptData.bIsValid = true;
 		LidDescriptor.PromptData.DisplayName = LidPartDisplayName.IsEmpty() ? FText::FromString(TEXT("Lid")) : LidPartDisplayName;
-		LidDescriptor.PromptData.InteractionKeyText = LidPartInteractionKeyText.IsEmpty() ? FText::FromString(TEXT("Click")) : LidPartInteractionKeyText;
+		LidDescriptor.PromptData.InteractionKeyText = LidPartInteractionKeyText.IsEmpty() ? FText::FromString(TEXT("LMB")) : LidPartInteractionKeyText;
 		CursorPartFocusScope->RegisterPartDescriptor(LidDescriptor);
 	}
 
@@ -1253,7 +1255,7 @@ void ABeehive::RegisterCombPartsToScope()
 		}
 		CombDescriptor.PromptData.bIsValid = true;
 		CombDescriptor.PromptData.DisplayName = FText::FromString(TEXT("Comb"));
-		CombDescriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("Click"));
+		CombDescriptor.PromptData.InteractionKeyText = FText::FromString(TEXT("LMB"));
 		CursorPartFocusScope->RegisterPartDescriptor(CombDescriptor);
 	}
 }

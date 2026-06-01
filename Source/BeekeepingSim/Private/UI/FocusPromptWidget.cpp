@@ -89,6 +89,7 @@ void UFocusPromptWidget::SetPromptData(const FFocusPromptData& InPromptData)
 	{
 		SetVisibility(ESlateVisibility::Collapsed);
 		OnPromptDataApplied(CurrentPromptData, false);
+		OnPromptEntriesApplied(CurrentPromptData, CurrentPromptData.Entries, false);
 		return;
 	}
 
@@ -105,6 +106,7 @@ void UFocusPromptWidget::SetPromptData(const FFocusPromptData& InPromptData)
 	SetVisibility(ESlateVisibility::Visible);
 	UpdatePromptPosition();
 	OnPromptDataApplied(CurrentPromptData, true);
+	OnPromptEntriesApplied(CurrentPromptData, CurrentPromptData.Entries, true);
 }
 
 void UFocusPromptWidget::ClearPrompt()

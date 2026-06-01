@@ -205,14 +205,36 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItem(UItemDefiniti
 
 FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec)
 {
-	FHotbarItemAcquireResult Result;
-	Result.RequestedQuantity = FMath::Max(0, AcquireSpec.Quantity);
-	Result.RemainingQuantity = Result.RequestedQuantity;
-
 	if (Slots.Num() != SlotCount)
 	{
 		Slots.SetNum(SlotCount);
 	}
+
+	bool bHotbarChanged = false;
+	FHotbarItemAcquireResult Result = EvaluateAcquireItemBySpec(AcquireSpec, true, bHotbarChanged);
+	if (bHotbarChanged)
+	{
+		ReevaluateSlotsInternal();
+		BroadcastHotbarChanged();
+	}
+
+	return Result;
+}
+
+FHotbarItemAcquireResult UBeekeeperHotbarComponent::PreviewAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec) const
+{
+	bool bIgnoredHotbarChanged = false;
+	return const_cast<UBeekeeperHotbarComponent*>(this)->EvaluateAcquireItemBySpec(AcquireSpec, false, bIgnoredHotbarChanged);
+}
+
+FHotbarItemAcquireResult UBeekeeperHotbarComponent::EvaluateAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec, bool bApplyMutation, bool& bOutHotbarChanged)
+{
+	bOutHotbarChanged = false;
+
+	FHotbarItemAcquireResult Result;
+	Result.RequestedQuantity = FMath::Max(0, AcquireSpec.Quantity);
+	Result.RemainingQuantity = Result.RequestedQuantity;
+	Result.LastModifiedItemInstance = nullptr;
 
 	UItemDefinition* ItemDefinition = AcquireSpec.ItemDefinition.Get();
 	if (!ItemDefinition)
@@ -233,9 +255,9 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const F
 		: 0.0f;
 
 	const int32 MaxStack = ItemStackMoveUtils::ResolveMaxStack(ItemDefinition);
-	bool bHotbarChanged = false;
+	const int32 SlotNum = Slots.Num();
 
-	for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
+	for (int32 SlotIndex = 0; SlotIndex < SlotNum && Result.RemainingQuantity > 0; ++SlotIndex)
 	{
 		FHotbarSlotData& Slot = Slots[SlotIndex];
 		UItemInstance* ExistingItemInstance = Cast<UItemInstance>(Slot.ItemInstance);
@@ -244,7 +266,21 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const F
 			continue;
 		}
 
-		const int32 QuantityToAdd = ItemStackMoveUtils::MergeIntoStack(ExistingItemInstance, Result.RemainingQuantity, MaxStack);
+		int32 QuantityToAdd = 0;
+		if (bApplyMutation)
+		{
+			QuantityToAdd = ItemStackMoveUtils::MergeIntoStack(ExistingItemInstance, Result.RemainingQuantity, MaxStack);
+			if (QuantityToAdd > 0)
+			{
+				Result.LastModifiedItemInstance = ExistingItemInstance;
+			}
+		}
+		else
+		{
+			const int32 AvailableSpace = ItemStackMoveUtils::GetAvailableStackSpace(ExistingItemInstance, MaxStack);
+			QuantityToAdd = ItemStackMoveUtils::ClampQuantityToAvailable(Result.RemainingQuantity, AvailableSpace);
+		}
+
 		if (QuantityToAdd <= 0)
 		{
 			continue;
@@ -253,37 +289,52 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const F
 		Result.AddedQuantity += QuantityToAdd;
 		Result.RemainingQuantity -= QuantityToAdd;
 		Result.LastModifiedSlotIndex = SlotIndex;
-		Result.LastModifiedItemInstance = ExistingItemInstance;
-		bHotbarChanged = true;
-
-		if (Result.RemainingQuantity <= 0)
-		{
-			break;
-		}
+		bOutHotbarChanged = bOutHotbarChanged || bApplyMutation;
 	}
 
-	while (Result.RemainingQuantity > 0)
+	if (Result.RemainingQuantity > 0)
 	{
-		const int32 EmptySlotIndex = FindFirstEmptySlot();
-		if (EmptySlotIndex == INDEX_NONE)
+		TArray<int32> EmptySlotIndices;
+		EmptySlotIndices.Reserve(SlotNum);
+		for (int32 SlotIndex = 0; SlotIndex < SlotNum; ++SlotIndex)
 		{
-			break;
+			if (!Slots[SlotIndex].ItemInstance)
+			{
+				EmptySlotIndices.Add(SlotIndex);
+			}
 		}
 
-		const int32 StackQuantity = ItemStackMoveUtils::ClampQuantityToAvailable(Result.RemainingQuantity, MaxStack);
-		UItemInstance* NewItemInstance = CreateItemInstance(ItemDefinition, StackQuantity, bHasDurabilityOverride, DurabilityOverride);
-		if (!NewItemInstance)
+		for (const int32 EmptySlotIndex : EmptySlotIndices)
 		{
-			Result.Message = FText::FromString(TEXT("Failed to create a new item instance for the hotbar."));
-			break;
-		}
+			if (Result.RemainingQuantity <= 0)
+			{
+				break;
+			}
 
-		Slots[EmptySlotIndex].ItemInstance = NewItemInstance;
-		Result.AddedQuantity += StackQuantity;
-		Result.RemainingQuantity -= StackQuantity;
-		Result.LastModifiedSlotIndex = EmptySlotIndex;
-		Result.LastModifiedItemInstance = NewItemInstance;
-		bHotbarChanged = true;
+			const int32 StackQuantity = ItemStackMoveUtils::ClampQuantityToAvailable(Result.RemainingQuantity, MaxStack);
+			if (StackQuantity <= 0)
+			{
+				break;
+			}
+
+			if (bApplyMutation)
+			{
+				UItemInstance* NewItemInstance = CreateItemInstance(ItemDefinition, StackQuantity, bHasDurabilityOverride, DurabilityOverride);
+				if (!NewItemInstance)
+				{
+					Result.Message = FText::FromString(TEXT("Failed to create a new item instance for the hotbar."));
+					break;
+				}
+
+				Slots[EmptySlotIndex].ItemInstance = NewItemInstance;
+				Result.LastModifiedItemInstance = NewItemInstance;
+				bOutHotbarChanged = true;
+			}
+
+			Result.AddedQuantity += StackQuantity;
+			Result.RemainingQuantity -= StackQuantity;
+			Result.LastModifiedSlotIndex = EmptySlotIndex;
+		}
 	}
 
 	Result.bSuccess = Result.AddedQuantity > 0 && Result.RemainingQuantity == 0;
@@ -307,10 +358,9 @@ FHotbarItemAcquireResult UBeekeeperHotbarComponent::TryAcquireItemBySpec(const F
 		Result.Message = NSLOCTEXT("BeekeeperHotbar", "AcquireItemFailed", "No hotbar space was available for this item.");
 	}
 
-	if (bHotbarChanged)
+	if (!bApplyMutation)
 	{
-		ReevaluateSlotsInternal();
-		BroadcastHotbarChanged();
+		Result.LastModifiedItemInstance = nullptr;
 	}
 
 	return Result;

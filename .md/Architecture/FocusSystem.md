@@ -33,7 +33,7 @@
 
 - PreviewFocus와 EngagedFocus 상태 관리
 - 라인트레이스 기반 focus target 탐지
-- prompt data, item rule, crosshair visibility 브로드캐스트
+- prompt data, prompt entry list, item rule, crosshair visibility 브로드캐스트
 - confirm/cancel/abort 흐름에서 FocusAction 실행 위임
 - focus target outline과 `IFocusInteractable` 이벤트 전달
 - anchored focus camera blend 및 cursor/input mode 정책 제공
@@ -194,6 +194,28 @@
 - UI/HUD/Blueprint는 action component를 직접 찾지 말고 `ShouldHideCrosshair()` 또는 `OnCrosshairVisibilityChanged`를 사용한다.
 - cancel 시작 시 즉시 복구가 필요한 action은 `ShouldRestoreCrosshairOnCancelStart()`를 true로 반환한다.
 
+## Focus Prompt Entry Model
+
+- `FFocusPromptData`는 기존 단일 표시 텍스트와 함께 다중 `FFocusPromptEntry` 배열을 전달하는 공통 prompt DTO다.
+- `FFocusPromptEntry`는 최소한 `EntryId`, `KeyText`, `ActionText`, `bEnabled`, `DisabledReason`, `SortPriority`를 가진다.
+- `bEnabled=false`는 pickup/회수 전용이 아니라 모든 표시 가능한 상호작용 entry의 공통 disabled 상태다.
+- 실행 불가하지만 사용자가 인지해야 하는 상호작용은 entry를 유지하고 disabled로 표시한다.
+- 현재 문맥에 해당하지 않는 상호작용은 entry를 append하지 않는다.
+- prompt availability 판정과 실제 실행 가능 판정은 같은 helper를 공유해야 한다.
+- 전역 Focus prompt entry 수집:
+  - 수집 owner는 `UBeekeeperFocusComponent`다.
+  - preview target owner의 `UFocusActionComponent`들이 `AppendFocusPromptEntries(const FFocusPromptBuildContext&, TArray<FFocusPromptEntry>&)`로 entry를 append한다.
+  - 확장성을 위해 prompt 수집은 단일 action 반환이 아니라 owner actor의 action component 다중 수집을 허용하는 방향으로 설계한다.
+- PartFocus prompt entry 수집:
+  - 수집 owner는 `UCursorPartFocusScopeComponent`다.
+  - hovered part descriptor의 `UCursorPartFocusActionComponent`가 `AppendPartFocusPromptEntries(const FPartFocusPromptBuildContext&, TArray<FFocusPromptEntry>&)`로 entry를 append한다.
+  - PartFocus action은 LMB begin/cancel, `R/F/C` preview key, secondary retrieve, drag 관련 안내를 같은 append surface에서 제공할 수 있다.
+- 전역 Focus와 PartFocus의 append API는 context가 다르므로 분리하지만, UI로 내려가는 데이터 모델은 `FFocusPromptEntry` 하나로 통일한다.
+- 동일 key의 enabled entry가 여러 개 생기는 경우는 UI가 해결하지 않는다. action 수집 단계에서 `SortPriority`/`EntryId` 정책으로 정리하거나 설계 오류로 다룬다.
+- 전역 Focus action 이름은 `UFocusActionComponent`가 Blueprint authoring 가능한 `PromptActionText`/`EngagedPromptActionText`와 `ResolveFocusPromptActionText()`를 소유한다.
+- PartFocus primary action 이름은 `UCursorPartFocusActionComponent`가 Blueprint authoring 가능한 `PrimaryPromptActionText`/`EngagedPrimaryPromptActionText`와 `ResolvePrimaryPromptActionText()`를 소유한다.
+- 공통 PartFocus primary resolver는 `IsPartActionEngaged()` 상태에 따라 `PrimaryPromptActionText`와 `EngagedPrimaryPromptActionText`를 전환한다. 예: 뚜껑 `열기`/`닫기`, 소비장 `들기`/`넣기`.
+
 ## Dependencies
 
 - Character
@@ -212,10 +234,11 @@
 - Action component는 UI를 직접 제어하지 않고 정책을 반환하거나, 필요한 경우 PlayerController input mode만 적용한다.
 - `UAnchoredFocusCursorActionComponent`는 cursor/input mode를 담당하지만 crosshair 최종 브로드캐스트는 Focus component가 담당한다.
 - Focus target의 item rule은 Inventory/Hotbar가 구독하는 공통 정책 데이터다.
-- focus prompt 데이터 source는 `UBeekeeperFocusComponent::OnFocusPromptChanged` + `GetCurrentPromptData()`이며, UI는 `FFocusPromptData`(text + `AnchorMode`) 표시만 담당한다.
+- focus prompt 데이터 source는 `UBeekeeperFocusComponent::OnFocusPromptChanged` + `GetCurrentPromptData()`이며, UI는 `FFocusPromptData`(text + `AnchorMode` + `Entries`) 표시만 담당한다.
 - 일반 focus prompt(`UFocusTargetComponent::GetPromptData`)의 기본 anchor mode는 `ScreenCenter`다.
 - `UCursorPartFocusScopeComponent`는 engaged prompt override 변환 시 part prompt를 `MouseCursor` anchor mode로 설정한다.
 - Focus system은 widget 위치를 직접 조작하지 않는다.
+- Focus system은 widget row 생성/스타일을 직접 조작하지 않고, 상호작용 entry와 availability 데이터만 제공한다.
 
 ## PartFocus Delegate Contract
 
@@ -302,3 +325,13 @@
 - `FFocusPromptData`에 `EFocusPromptAnchorMode`를 추가해 prompt 위치 정책을 데이터로 전달한다.
 - `UFocusTargetComponent`가 생성하는 일반 focus prompt는 `ScreenCenter`를 사용한다.
 - `UCursorPartFocusScopeComponent`의 engaged prompt override 경로는 part prompt를 `MouseCursor`로 변환해 전달한다.
+
+## Update 2026-06-01 (Focus Prompt Multi Entry Contract)
+
+- `FFocusPromptData`를 다중 `FFocusPromptEntry` 기반 prompt로 확장하는 설계를 확정했다.
+- `UFocusActionComponent`는 전역 Focus용 `AppendFocusPromptEntries(...)` virtual API를 제공한다.
+- `UCursorPartFocusActionComponent`는 PartFocus용 `AppendPartFocusPromptEntries(...)` virtual API를 제공한다.
+- 두 append API는 context 격리를 위해 분리하지만, entry 데이터와 UI 표시 계약은 공통 `FFocusPromptEntry`를 사용한다.
+- 모든 표시 entry는 공통 availability(`bEnabled`, `DisabledReason`)를 제공하며, disabled entry는 UI에서 반투명 표시 대상이다.
+- `UCursorPartFocusActionComponent`의 기본 primary prompt action text는 not-engaged 상태에서 `PrimaryPromptActionText`, engaged 상태에서 `EngagedPrimaryPromptActionText`를 사용한다.
+- 복잡한 상태 기반 명칭은 subclass가 resolver를 override해 처리한다.

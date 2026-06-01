@@ -122,6 +122,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	FHotbarItemAcquireResult TryAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec);
 
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	FHotbarItemAcquireResult PreviewAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec) const;
+
 	UFUNCTION(BlueprintPure, Category = "Hotbar")
 	const TArray<FHotbarSlotData>& GetSlots() const { return Slots; }
 
@@ -193,6 +196,7 @@ protected:
 
 	UItemInstance* CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount);
 	UItemInstance* CreateItemInstance(UItemDefinition* ItemDefinition, int32 StackCount, bool bHasDurabilityOverride, float DurabilityOverride);
+	FHotbarItemAcquireResult EvaluateAcquireItemBySpec(const FItemAcquireSpec& AcquireSpec, bool bApplyMutation, bool& bOutHotbarChanged);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hotbar")

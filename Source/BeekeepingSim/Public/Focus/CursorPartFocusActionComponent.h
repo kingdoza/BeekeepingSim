@@ -8,6 +8,7 @@
 
 class ABeekeeperCharacter;
 class UCursorPartFocusScopeComponent;
+struct FFocusPromptEntry;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCursorPartFocusActionSignature, UCursorPartFocusActionComponent*, ActionComponent, UCursorPartFocusScopeComponent*, ScopeComponent, ABeekeeperCharacter*, InteractingCharacter);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FCursorPartFocusPreviewKeyActionSignature, UCursorPartFocusActionComponent*, ActionComponent, UCursorPartFocusScopeComponent*, ScopeComponent, ABeekeeperCharacter*, InteractingCharacter, ECursorPartFocusPreviewInputKey, Key);
@@ -18,6 +19,21 @@ enum class ECursorPartFocusEngageMode : uint8
 	PreviewOnly,
 	InstantAction,
 	PersistentAction
+};
+
+USTRUCT()
+struct FPartFocusPromptBuildContext
+{
+	GENERATED_BODY()
+
+	UCursorPartFocusScopeComponent* ScopeComponent = nullptr;
+	ABeekeeperCharacter* InteractingCharacter = nullptr;
+	FName PartId = NAME_None;
+	FText PartDisplayName;
+	FText PrimaryKeyText;
+	ECursorPartFocusEngageMode EngageMode = ECursorPartFocusEngageMode::PreviewOnly;
+	bool bIsPrimaryActionEngaged = false;
+	bool bCanBeginPrimaryAction = false;
 };
 
 UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -91,6 +107,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Drag")
 	virtual bool EndPartFocusDrag(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter, bool bCanceled);
 
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Prompt")
+	void SetPrimaryPromptActionText(const FText& NewText);
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Prompt")
+	FText GetPrimaryPromptActionText() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus|Prompt")
+	void SetEngagedPrimaryPromptActionText(const FText& NewText);
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Prompt")
+	FText GetEngagedPrimaryPromptActionText() const;
+
+	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Prompt")
+	virtual FText ResolvePrimaryPromptActionText() const;
+
+	virtual void AppendPartFocusPromptEntries(const FPartFocusPromptBuildContext& Context, TArray<FFocusPromptEntry>& OutEntries) const;
+
 	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus|Drag")
 	bool IsPartFocusDragInProgress() const { return bIsPartFocusDragInProgress; }
 
@@ -138,6 +171,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cursor Part Focus|Preview Key")
 	bool bEnableCPreviewAction = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cursor Part Focus|Prompt")
+	FText PrimaryPromptActionText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cursor Part Focus|Prompt")
+	FText EngagedPrimaryPromptActionText;
 
 	bool bIsPartActionEngaged = false;
 	bool bIsPartFocusDragInProgress = false;

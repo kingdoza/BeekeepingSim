@@ -59,3 +59,25 @@
   - 옵션 C: `WBP_FocusPrompt` EventGraph 변수로 둔다.
 - 권장 옵션: 옵션 A. UI 표시 튜닝값은 UI widget 소유가 맞고, WBP 에셋별 기본값 조정도 가능하다.
 - 딥변 : 옵션A
+
+### Focus Prompt 다중 엔트리 QnA
+
+1. 다중 상호작용 row 렌더링을 Blueprint 이벤트 위임으로 확정할지?
+- 질문 내용: `FFocusPromptData`가 여러 상호작용 엔트리를 전달할 때, `UFocusPromptWidget` C++이 row widget을 동적으로 생성할지, 아니면 Blueprint/UMG가 row 생성/수직 정렬/비활성 alpha 스타일을 전담할지 결정이 필요하다.
+- 필요한 이유: UI 요소 생성과 명명은 Blueprint 작업 영역이라는 경계를 유지하면서도, C++이 의존할 Blueprint API 계약을 명확히 해야 한다.
+- 선택지
+  - 옵션 A: C++은 `FFocusPromptEntry` 배열을 저장하고 `OnPromptEntriesApplied(PromptData, Entries, bVisible)` Blueprint 이벤트만 호출한다. `WBP_FocusPrompt`가 row 생성, 수직 정렬, disabled alpha 스타일을 전담한다.
+  - 옵션 B: C++이 `PromptEntriesBox`와 row widget class를 `BindWidgetOptional`/property 계약으로 잡고 row widget을 동적으로 생성한다. Blueprint는 row widget 스타일만 담당한다.
+  - 옵션 C: C++이 기존 `KeyText`에 여러 줄 텍스트를 조합해 넣고, Blueprint row 구조는 만들지 않는다.
+- 권장 옵션: 옵션 A. 다중 row의 구조와 스타일은 Blueprint 작업 영역에 두고, C++은 표시 데이터와 이벤트 계약만 소유한다.
+- 답변 : 옵션A
+
+2. 다중 prompt entry 생성 surface를 기존 action component virtual API로 둘지?
+- 질문 내용: pickup, storage, PartFocus, 소비장/배치 아이템 회수, item-use 같은 여러 상호작용이 각자 `FFocusPromptEntry`와 활성/비활성 상태를 제공해야 한다. 이 entry 생성 책임을 어디에 둘지 결정이 필요하다.
+- 필요한 이유: prompt 표시 가능 여부와 실제 실행 가능 여부가 같은 helper를 공유해야 하고, Focus/UI가 도메인별 조건을 직접 알면 시스템 경계가 흐려진다.
+- 선택지
+  - 옵션 A: 기존 실행 주체에 prompt builder virtual API를 추가한다. 예: `UFocusActionComponent`, `UCursorPartFocusActionComponent`, 필요 시 item-use scope/action이 자기 entry를 append한다.
+  - 옵션 B: 별도 `IFocusPromptEntryProvider` 인터페이스를 추가하고, Focus/PartFocus가 현재 context의 provider들을 수집한다.
+  - 옵션 C: `UFocusTargetComponent`가 authored entry 목록을 들고, 런타임 가능/불가능 상태만 외부에서 덮어쓴다.
+- 권장 옵션: 옵션 A. 현재 구조에서 실제 실행 주체가 이미 action component에 모여 있으므로, prompt availability도 같은 class/helper에서 계산하게 하는 것이 가장 작고 일관적이다.
+- 답변 : 옵션A. 전역 Focus와 PartFocus는 context가 다르므로 각각 `UFocusActionComponent::AppendFocusPromptEntries(...)`, `UCursorPartFocusActionComponent::AppendPartFocusPromptEntries(...)` 형태로 분리한다. 공통 데이터는 `FFocusPromptEntry`/`FFocusPromptData::Entries`로 통일한다.

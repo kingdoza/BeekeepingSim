@@ -1,5 +1,6 @@
 #include "Focus/CursorPartFocusScopeComponent.h"
 
+#include "Algo/Sort.h"
 #include "Character/BeekeeperCharacter.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
@@ -240,6 +241,7 @@ bool UCursorPartFocusScopeComponent::HandleCancelInput()
 	if (CancelTopActionCascade(false))
 	{
 		RemoveInactiveActions();
+		BroadcastPartPrompt();
 		return true;
 	}
 
@@ -550,9 +552,11 @@ void UCursorPartFocusScopeComponent::ApplyOutlineForPart(int32 PartIndex, bool b
 void UCursorPartFocusScopeComponent::BroadcastPartPrompt()
 {
 	FCursorPartFocusPromptData PromptData;
+	const FCursorPartFocusPartDescriptor* HoveredDescriptor = nullptr;
 	if (!bHoverOutlineSuppressed && RegisteredParts.IsValidIndex(HoveredPartIndex) && IsDescriptorPreviewAllowed(RegisteredParts[HoveredPartIndex]))
 	{
-		PromptData = RegisteredParts[HoveredPartIndex].PromptData;
+		HoveredDescriptor = &RegisteredParts[HoveredPartIndex];
+		PromptData = HoveredDescriptor->PromptData;
 	}
 
 	OnPartFocusPromptChanged.Broadcast(PromptData);
@@ -564,8 +568,97 @@ void UCursorPartFocusScopeComponent::BroadcastPartPrompt()
 		FocusPromptData.DisplayName = PromptData.DisplayName;
 		FocusPromptData.InteractionKeyText = PromptData.InteractionKeyText;
 		FocusPromptData.AnchorMode = EFocusPromptAnchorMode::MouseCursor;
+
+		if (HoveredDescriptor && FocusPromptData.bIsValid)
+		{
+			BuildPromptEntriesForDescriptor(*HoveredDescriptor, FocusPromptData.Entries);
+			FocusPromptData.Entries.StableSort([](const FFocusPromptEntry& A, const FFocusPromptEntry& B)
+			{
+				return A.SortPriority < B.SortPriority;
+			});
+		}
+
 		OwnerFocusComponent->SetEngagedFocusPromptOverride(FocusPromptData);
 	}
+}
+
+bool UCursorPartFocusScopeComponent::EvaluatePrimaryEntryEnabledForDescriptor(
+	const FCursorPartFocusPartDescriptor& Descriptor,
+	bool& bOutIsPrimaryActionEngaged,
+	bool& bOutCanBeginPrimaryAction) const
+{
+	bOutIsPrimaryActionEngaged = false;
+	bOutCanBeginPrimaryAction = false;
+
+	UCursorPartFocusActionComponent* Action = Descriptor.ActionHandler;
+	if (!Action)
+	{
+		bOutCanBeginPrimaryAction = true;
+		return true;
+	}
+
+	bOutIsPrimaryActionEngaged = Action->IsPartActionEngaged();
+	if (bOutIsPrimaryActionEngaged)
+	{
+		return true;
+	}
+
+	if (!OwnerCharacter)
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer ActiveTags = GetActiveProvidedStateTags();
+	const FGameplayTagContainer RequiredTags = BuildEffectiveRequiredStateTags(Descriptor);
+	bOutCanBeginPrimaryAction = ActiveTags.HasAll(RequiredTags) && Action->CanBeginPartFocusAction(const_cast<UCursorPartFocusScopeComponent*>(this), OwnerCharacter);
+	return bOutCanBeginPrimaryAction;
+}
+
+void UCursorPartFocusScopeComponent::BuildPromptEntriesForDescriptor(const FCursorPartFocusPartDescriptor& Descriptor, TArray<FFocusPromptEntry>& OutEntries) const
+{
+	bool bIsPrimaryActionEngaged = false;
+	bool bCanBeginPrimaryAction = false;
+	const bool bPrimaryEnabled = EvaluatePrimaryEntryEnabledForDescriptor(Descriptor, bIsPrimaryActionEngaged, bCanBeginPrimaryAction);
+
+	const FPartFocusPromptBuildContext BuildContext = {
+		const_cast<UCursorPartFocusScopeComponent*>(this),
+		OwnerCharacter,
+		Descriptor.PartId,
+		Descriptor.PromptData.DisplayName,
+		Descriptor.PromptData.InteractionKeyText,
+		Descriptor.EngageMode,
+		bIsPrimaryActionEngaged,
+		bCanBeginPrimaryAction
+	};
+
+	if (Descriptor.ActionHandler)
+	{
+		Descriptor.ActionHandler->AppendPartFocusPromptEntries(BuildContext, OutEntries);
+	}
+
+	const bool bHasRetrieveEntryWithSameKey = OutEntries.ContainsByPredicate([&BuildContext](const FFocusPromptEntry& Entry)
+	{
+		return Entry.EntryId == FName(TEXT("Retrieve")) && Entry.KeyText.EqualTo(BuildContext.PrimaryKeyText);
+	});
+
+	const bool bShouldAddPrimaryFallback = !BuildContext.PrimaryKeyText.IsEmpty()
+		&& BuildContext.EngageMode != ECursorPartFocusEngageMode::PreviewOnly
+		&& !bHasRetrieveEntryWithSameKey;
+
+	if (!bShouldAddPrimaryFallback)
+	{
+		return;
+	}
+
+	FFocusPromptEntry PrimaryEntry;
+	PrimaryEntry.EntryId = FName(TEXT("Primary"));
+	PrimaryEntry.KeyText = BuildContext.PrimaryKeyText;
+	PrimaryEntry.ActionText = Descriptor.ActionHandler
+		? Descriptor.ActionHandler->ResolvePrimaryPromptActionText()
+		: FText::GetEmpty();
+	PrimaryEntry.bEnabled = bPrimaryEnabled;
+	PrimaryEntry.SortPriority = 0;
+	OutEntries.Add(MoveTemp(PrimaryEntry));
 }
 
 bool UCursorPartFocusScopeComponent::CancelTopActionCascade(bool bAbort)
@@ -675,6 +768,7 @@ bool UCursorPartFocusScopeComponent::BeginPartActionForDescriptor(const FCursorP
 		ActivePartActions.AddUnique(Action);
 	}
 
+	BroadcastPartPrompt();
 	return true;
 }
 
@@ -735,6 +829,7 @@ bool UCursorPartFocusScopeComponent::ExecutePartClickForDescriptor(const FCursor
 		TSet<TObjectPtr<UCursorPartFocusActionComponent>> Visited;
 		CancelActionCascade(Action, false, Visited);
 		RemoveInactiveActions();
+		BroadcastPartPrompt();
 		return true;
 	}
 

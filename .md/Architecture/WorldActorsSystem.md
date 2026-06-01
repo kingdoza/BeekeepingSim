@@ -291,6 +291,11 @@
 - honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
+- placement/comb 회수 prompt availability는 실제 회수 경로의 조건 helper를 공유한다. 예: `CanRetrievePlacementOccupant`, comb 회수 조건(`TotalTargetBeeCount == 0`, queen 미부착), hotbar acquire dry-run 결과를 조합한다.
+- 회수 조건 실패는 prompt entry 제거가 아니라 `FFocusPromptEntry::bEnabled=false` disabled 표시 대상이 될 수 있다.
+- 뚜껑/소비장 같은 토글형 PartFocus primary action name은 공통 `UCursorPartFocusActionComponent`의 `PrimaryPromptActionText`/`EngagedPrimaryPromptActionText`를 사용하며, 표시 source는 `ResolvePrimaryPromptActionText()`를 따른다.
+  - 뚜껑 기본 authoring: `열기` / `닫기`
+  - 소비장 기본 authoring: `들기` / `넣기`
 
 ## Beehive Comb Delegate Ownership
 
@@ -434,6 +439,7 @@
 - 소비장 회수 조건:
   - `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
   - `TotalTargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능
+  - prompt availability와 실제 secondary retrieve는 같은 회수 가능 조건을 공유해야 한다.
 
 ## Update 2026-05-31 (Placed Item Durability Remaining)
 
@@ -469,3 +475,15 @@
 - bonus 대상 식별은 `PollenPattyConsumptionAreaTags` + active `UPlacedItemRemainingComponent` 기준을 그대로 재사용한다.
 - 선택된 occupied actor의 item definition이 `UPollenPattyItemDefinition`일 때만 `EggLayingMultiplier`를 적용한다.
 - 여러 active 화분떡이 있어도 bonus는 중첩하지 않고, selected 1개만 적용한다.
+
+## Update 2026-06-01 (Retrieve Prompt Availability)
+
+- 배치 아이템/소비장 회수 prompt는 PartFocus action의 `AppendPartFocusPromptEntries(...)` 경로에서 제공한다.
+- 회수 entry는 회수 조건 또는 hotbar 수용 가능성 중 하나라도 실패하면 disabled 상태로 표시할 수 있다.
+- disabled 표시 판정과 실제 `HandleSecondaryPartFocusAction` 실행 판정은 같은 helper/API를 공유해야 한다.
+
+## Update 2026-06-01 (PartFocus Toggle Action Text)
+
+- PartFocus primary prompt action text는 common action component에서 engaged 상태 기준으로 시작/해제 텍스트를 전환한다.
+- `ABeehive` lid action은 별도 subclass 없이 common `UCursorPartFocusActionComponent`의 authored text로 `열기`/`닫기`를 표시할 수 있다.
+- `UBeehiveCombPartFocusActionComponent`는 common resolver 기본 정책으로 소비장 `들기`/`넣기` primary prompt를 제공한다.

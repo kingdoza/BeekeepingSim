@@ -39,6 +39,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Focus Prompt")
 	void OnPromptDataApplied(const FFocusPromptData& PromptData, bool bVisible);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Focus Prompt")
+	void OnPromptEntriesApplied(const FFocusPromptData& PromptData, const TArray<FFocusPromptEntry>& Entries, bool bVisible);
+
 private:
 	UFUNCTION()
 	void HandleFocusPromptChanged(FFocusPromptData PromptData);
