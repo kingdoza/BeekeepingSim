@@ -263,3 +263,9 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - 공통 PartFocus primary action text는 action engaged 상태에 따라 시작/해제 텍스트를 전환한다. 예: `열기`/`닫기`, `들기`/`넣기`.
 - `UFocusPromptWidget`은 entries를 Blueprint event로 전달하고, `WBP_FocusPrompt`가 수직 row 생성과 disabled alpha 스타일을 담당한다.
 - hotbar 획득/회수 availability는 상태 변경 없는 `PreviewAcquireItemBySpec` dry-run query로 판정한다.
+
+## Update 2026-06-01 (Smoker + Beehive Aggression)
+
+- `ABeehive`는 sanitation과 분리된 aggression 상태(`MaxAggressionValue`, `AggressionValue`)를 소유한다.
+- `USmokerUseAction`(`UHoldItemUseAction` 기반)은 `Item.UseArea.Beehive.Smoker` 영역에서 hold-use 중 `ABeehive::DecreaseAggression`을 호출한다.
+- 현재 범위에서 aggression 자동 회복과 공격력 계산/피해 시스템 연동은 구현하지 않는다.

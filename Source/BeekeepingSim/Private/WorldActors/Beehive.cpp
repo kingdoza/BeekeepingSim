@@ -134,6 +134,7 @@ ABeehive::ABeehive()
 void ABeehive::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	SetAggressionValue(AggressionValue);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
@@ -145,6 +146,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 void ABeehive::BeginPlay()
 {
 	Super::BeginPlay();
+	SetAggressionValue(AggressionValue);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
@@ -335,6 +337,33 @@ float ABeehive::GetSanitationRatio() const
 	}
 
 	return FMath::Clamp(SanitationValue / SafeMax, 0.0f, 1.0f);
+}
+
+void ABeehive::DecreaseAggression(float Delta)
+{
+	if (Delta <= 0.0f)
+	{
+		return;
+	}
+
+	SetAggressionValue(AggressionValue - Delta);
+}
+
+void ABeehive::SetAggressionValue(float NewValue)
+{
+	const float SafeMax = FMath::Max(0.0f, MaxAggressionValue);
+	AggressionValue = FMath::Clamp(NewValue, 0.0f, SafeMax);
+}
+
+float ABeehive::GetAggressionRatio() const
+{
+	const float SafeMax = FMath::Max(0.0f, MaxAggressionValue);
+	if (SafeMax <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp(AggressionValue / SafeMax, 0.0f, 1.0f);
 }
 
 void ABeehive::RebuildCursorPartFocusDescriptors()

@@ -1,16 +1,16 @@
-# 리뷰 프롬프트: Focus Prompt ActionName Blueprint 노출
+# 리뷰 프롬프트: 훈연기와 벌통 공격성 구현
 
 ## 리뷰 목적
 
-이번 리뷰는 Focus Prompt Multi-Entry에서 사용할 ActionName source를 Blueprint/Details에서 authoring 가능하도록 노출한 C++ API가 설계 의도와 일치하는지 검증한다.
+이번 리뷰는 FocusEngaged item-use-area hold-use 경로에서 훈연기(`USmokerUseAction`)가 벌통(`ABeehive`) 공격성 수치를 감소시키는 구현이 설계 합의와 일치하는지 검증한다.
 
-이번 리뷰 범위는 **ActionName 노출 API**만 대상으로 한다.
+범위는 **공격성 상태 + 훈연기 동작**만 포함한다.
 
 제외:
-- prompt row 렌더링/정렬/스타일 (`WBP_FocusPrompt`)
-- 위치 정책 (`AnchorMode`, `PromptContent`, `UpdatePromptPosition`)
-- availability 계산 로직 개선
-- 추가 데이터 모델 설계 변경
+- 공격/피해/공격력 시스템
+- 공격성 자동 회복
+- 훈연기 자원 소모
+- Content `.uasset` 수정 자체
 
 ---
 
@@ -19,69 +19,73 @@
 - `.md/AGENT_REVIEW.md`
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InteractionSystem.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
+- `.md/QNA_ARCHITECTURE.md` (`[훈연기와 벌통 공격성]`)
 - `.md/QNA_IMPLEMENTATION.md`
 
 ---
 
 ## 리뷰 범위 파일
 
-- `Source/BeekeepingSim/Public/Focus/FocusActionComponent.h`
-- `Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Private/Interaction/PickupFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Private/Interaction/StorageBoxFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Inventory/SmokerUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/SmokerUseAction.cpp`
+- `Config/DefaultGameplayTags.ini`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InteractionSystem.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
+- `.md/USER_UNREAL.md`
 
 ---
 
 ## 핵심 검증 질문
 
-1. `UFocusActionComponent`에 다음 API가 Blueprint 노출 형태로 추가되었는가?
-   - `PromptActionText`, `EngagedPromptActionText`
-   - setter/getter 4종
-   - `ResolveFocusPromptActionText()`
-2. `ResolveFocusPromptActionText()` 동작이 정책과 일치하는가?
-   - engaged && engaged text not empty -> engaged text
-   - else -> prompt text
-3. `UCursorPartFocusActionComponent`에 다음 API가 추가되었는가?
-   - `PrimaryPromptActionText`, `EngagedPrimaryPromptActionText`
-   - setter/getter 4종
-   - `ResolvePrimaryPromptActionText()`
-4. `ResolvePrimaryPromptActionText()` 동작이 정책과 일치하는가?
-5. 기본값 authoring이 반영되었는가?
-   - pickup: `획득`
-   - storage: `열기`
-   - beehive lid: `열기` / `닫기`
-   - beehive comb: `들기` / `넣기`
-6. 기존 API 삭제/rename 없이 additive 변경인가?
-7. 이번 작업 범위 바깥(UI row/위치 정책/DTO 구조) 변경이 섞이지 않았는가?
+1. `ABeehive`가 aggression 상태 owner로 구현되었는가?
+   - `MaxAggressionValue`, `AggressionValue`
+   - `DecreaseAggression`, `SetAggressionValue`, `GetAggressionRatio`
+2. 초기값/클램프 정책이 맞는가?
+   - 기본 `100/100`
+   - `SetAggressionValue`는 `0..MaxAggressionValue` clamp
+   - BeginPlay에서 authored 값을 무조건 max로 리셋하지 않는가?
+3. `USmokerUseAction`이 `UHoldItemUseAction` subclass로 추가되었는가?
+4. 훈연기 tag query가 `Item.UseArea.Beehive.Smoker`로 구성되는가?
+5. `BeginUse`/`EndUse`가 소독약과 동일한 held item active lifecycle을 호출하는가?
+6. `ApplyUseEffect`가 `ABeehive::DecreaseAggression`만 호출하는가?
+   - `bSucceeded=true`
+   - item 소비/stack delta 변경 없음
+7. 공격력 관련 API/필드가 추가되지 않았는가?
+8. `DefaultGameplayTags.ini`에 `Item.UseArea.Beehive.Smoker`가 등록되었는가?
 
 ---
 
 ## 검색 검증
 
 ```powershell
-rg "PromptActionText|EngagedPromptActionText|SetPromptActionText|GetPromptActionText|SetEngagedPromptActionText|GetEngagedPromptActionText|ResolveFocusPromptActionText" Source/BeekeepingSim .md
-rg "PrimaryPromptActionText|EngagedPrimaryPromptActionText|SetPrimaryPromptActionText|GetPrimaryPromptActionText|SetEngagedPrimaryPromptActionText|GetEngagedPrimaryPromptActionText|ResolvePrimaryPromptActionText" Source/BeekeepingSim .md
-rg "획득|열기|닫기|들기|넣기" Source/BeekeepingSim/Private/Interaction Source/BeekeepingSim/Private/WorldActors .md
+rg "SmokerUseAction|AggressionValue|MaxAggressionValue|DecreaseAggression|GetAggressionRatio" Source/BeekeepingSim .md Config
+rg "Item.UseArea.Beehive.Smoker" Source/BeekeepingSim .md Config
+rg "EffectiveAttackPower|BaseAttackPower|AttackPower|MinAttackMultiplier" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
 ---
 
 ## 빌드 검증
 
-- 가능하면 UBT 수행:
+- 가능하면 UBT:
   - `BeekeepingSimEditor Win64 Development`
-- 빌드 실패 시:
-  - 이번 변경 기인 오류인지 기존 워크트리/unity 충돌인지 분리 보고
+- 실패 시:
+  - 이번 변경 기인 오류와 기존 워크트리/unity 이슈 분리 보고
+
+---
+
+## 수동 검증 포인트 (PIE)
+
+1. 벌통 FocusEngaged 상태 진입
+2. 훈연기 아이템 선택 후 smoker use-area에서 hold-use
+3. hold 중 `AggressionValue`가 감소하는지 확인
+4. 아이템 stack/durability가 감소하지 않는지 확인
+5. use 종료 후 값이 유지되는지 확인(자동 회복 없음)
 
 ---
 
@@ -95,4 +99,4 @@ rg "획득|열기|닫기|들기|넣기" Source/BeekeepingSim/Private/Interaction
   - 수정 제안
 - 이슈가 없으면:
   - `No blocking issues found.` 명시
-  - 남은 검증 공백(PIE/Blueprint 수동확인 등)만 간단히 기재
+  - 남은 검증 공백(PIE/Content 수동 설정 등)만 간단히 기재

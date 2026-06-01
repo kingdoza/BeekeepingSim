@@ -36,6 +36,8 @@
 - `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/DisinfectantUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/DisinfectantUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/SmokerUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/SmokerUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/PollenPattyUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
@@ -67,6 +69,7 @@
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
+- `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
 - `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
@@ -164,6 +167,7 @@
 - FocusEngaged item-use-area 설계에서 실질 아이템사용효과의 owner는 item action이다.
 - Focus의 `UCursorItemUseAreaScopeComponent`는 선택 item의 `FindHoldItemUseAction()` 결과를 cache하고 LMB Press/Hold/Release를 hold-use lifecycle로 라우팅한다.
 - Hold-use item action은 use session 중 `TickUse(Context, DeltaTime)`와, 유효 area target 위에서 `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원한다.
+- `USmokerUseAction`은 `Item.UseArea.Beehive.Smoker` tag query와 함께 hold-use 시 `ABeehive::DecreaseAggression`만 호출하고 stack/durability를 소비하지 않는다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.

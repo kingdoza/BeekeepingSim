@@ -541,3 +541,18 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 5. PIE 확인
 - 일반 Focus prompt: 화면 중앙 근처에 표시되는지 확인한다.
 - PartFocus prompt: 커서 근처를 따라가고 viewport edge에서 잘리지 않는지 확인한다.
+
+## Smoker + Beehive Aggression 설정 (2026-06-01)
+
+1. 훈연기 item definition 설정
+- 훈연기 아이템 definition의 ActionSpec에 `USmokerUseAction`을 추가한다.
+- held 표현은 smoke VFX가 있는 `AVfxItemPresentationActor` 계열 BP를 권장한다.
+
+2. 벌통 item-use-area 태그 설정
+- 벌통 BP의 기존 item-use-area(`UItemUseAreaMeshComponent.AreaTags`)에 `Item.UseArea.Beehive.Smoker` 태그를 추가한다.
+- 소독약과 같은 영역을 사용하려면 기존 disinfectant area tags에 smoker tag를 함께 추가한다.
+
+3. 검증 포인트
+- FocusEngaged 상태에서 훈연기를 hold-use하면 벌통 `AggressionValue`가 감소하는지 확인한다.
+- item stack/durability가 감소하지 않는지 확인한다.
+- 자동 회복 없이 감소된 aggression 값이 유지되는지 확인한다.

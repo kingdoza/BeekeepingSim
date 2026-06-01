@@ -1,83 +1,61 @@
-### Focus Prompt 위치 정책 QnA
+### [훈연기와 벌통 공격성]
 
-1. Prompt 위치 정책을 `FFocusPromptData`에 싣는 방식으로 확정할지?
-- 질문 내용: 전체 Focus prompt는 화면 중앙 근처, PartFocus prompt는 마우스 커서 근처에 표시해야 한다. 이 위치 정책을 `FFocusPromptData`에 `AnchorMode` enum으로 추가해 UI에 전달할지 결정이 필요하다.
-- 필요한 이유: UI가 `IsFocusEngaged()`나 PartFocus 내부 상태를 추론하지 않고, prompt data만 보고 위치를 정할 수 있어야 시스템 경계가 단순해진다.
+1. 벌통 공격성의 초기값을 어떻게 둘지?
+- 질문 내용
+  - 훈연기는 벌통 공격성을 낮추는 hold-use item으로 설계한다. 이때 `ABeehive`의 초기 `AggressionValue`를 어떤 값으로 시작할지 결정이 필요하다.
+- 필요한 이유
+  - 초기 공격성이 낮으면 훈연기 효과가 체감되지 않고, 초기 공격성이 최대이면 "훈연기로 낮춘다"는 gameplay loop가 명확해진다.
 - 선택지
-  - 옵션 A: `FFocusPromptData`에 `EFocusPromptAnchorMode { ScreenCenter, MouseCursor }`를 추가한다.
-  - 옵션 B: `UFocusPromptWidget`이 focus component 상태를 직접 조회해서 전체 Focus/PartFocus를 추론한다.
-  - 옵션 C: PartFocus 전용 delegate를 UI가 별도로 구독해서 위치 정책을 분리한다.
-- 권장 옵션: 옵션 A. prompt data가 표시 텍스트와 위치 정책을 함께 전달하고, UI는 표시만 담당한다.
-- 딥변 : 옵션A
-
-2. 전체 Focus prompt의 기준점을 화면 중앙 고정점으로 둘지?
-- 질문 내용: 전체 Focus 대상은 카메라 중앙 trace로 잡히므로 prompt를 world hit point에 투영하지 않고 viewport 중앙 근처에 고정할지 결정이 필요하다.
-- 필요한 이유: world hit point projection을 쓰면 대상 표면/거리/카메라 회전에 따라 prompt가 흔들릴 수 있고, 현재 요구사항의 "화면중앙의 근처지점"과 다르게 동작할 수 있다.
-- 선택지
-  - 옵션 A: viewport center + `ScreenCenterOffset`에 표시한다.
-  - 옵션 B: focus target actor/component의 world location을 screen projection해서 그 근처에 표시한다.
-  - 옵션 C: 기존 WBP의 center anchor 위치를 그대로 유지하고 C++ 위치 갱신은 PartFocus에만 적용한다.
-- 권장 옵션: 옵션 A. 전체 Focus는 카메라 중앙 판정과 같은 화면 기준으로 안정적으로 표시한다.
-- 딥변 : 옵션A
-
-3. PartFocus prompt는 마우스 커서를 매 프레임 따라가게 할지?
-- 질문 내용: PartFocus hover 대상이 유지되는 동안 prompt data가 다시 브로드캐스트되지 않아도 마우스 위치는 계속 변한다. 따라서 `UFocusPromptWidget`이 visible 상태에서 위치를 반복 갱신할지 결정이 필요하다.
-- 필요한 이유: `SetPromptData()` 시점에만 위치를 잡으면 cursor 이동 중 prompt가 따라오지 않는다.
-- 선택지
-  - 옵션 A: `UFocusPromptWidget::NativeTick()`에서 visible prompt의 위치를 매 프레임 갱신한다.
-  - 옵션 B: PartFocus scope가 마우스 이동마다 prompt data를 다시 브로드캐스트한다.
-  - 옵션 C: PartFocus prompt는 hover 변경 시점에만 위치를 갱신한다.
-- 권장 옵션: 옵션 A. 위치 갱신은 UI 표시 책임이고, Focus/PartFocus의 prompt broadcast 빈도를 늘리지 않는다.
-- 딥변 : 옵션A
-
-4. Prompt 전체 컨테이너를 C++ `BindWidget` 필수 요소로 추가할지?
-- 질문 내용: C++에서 위치를 바꾸려면 `TargetNameText`, `KeyText` 외에 프롬프트 전체 묶음 위젯을 참조해야 한다. `WBP_FocusPrompt`의 현재 프롬프트 root 위젯을 `PromptContent`로 이름 지정하고 필수 `BindWidget`으로 잡을지 결정이 필요하다.
-- 필요한 이유: 텍스트만 참조하면 prompt 전체를 Canvas 좌표로 이동할 안정적인 대상이 없다.
-- 선택지
-  - 옵션 A: `PromptContent`를 필수 `BindWidget`으로 추가하고 WBP designer tree에서 해당 컨테이너 이름을 맞춘다.
-  - 옵션 B: `BindWidgetOptional`로 두고 없으면 widget self 또는 root slot을 fallback으로 사용한다.
-  - 옵션 C: C++에서 이름 검색으로 기존 `VerticalBox_52`를 찾는다.
-- 권장 옵션: 옵션 A. Blueprint 구조 계약을 명확히 하고, 이름 검색이나 fallback에 의존하지 않는다.
-- 딥변 : 옵션A
-
-5. 화면 밖 이탈 방지 clamp를 기본 적용할지?
-- 질문 내용: PartFocus prompt가 커서 근처를 따라갈 때 화면 오른쪽/아래쪽 가장자리에서 prompt가 viewport 밖으로 나갈 수 있다. `ViewportPadding` 기준 clamp를 기본 적용할지 결정이 필요하다.
-- 필요한 이유: cursor 기반 UI는 edge에서 잘리기 쉽고, prompt의 가독성과 조작 피드백이 떨어질 수 있다.
-- 선택지
-  - 옵션 A: `ViewportPadding`을 둬 prompt content가 viewport 밖으로 나가지 않게 clamp한다.
-  - 옵션 B: clamp하지 않고 cursor + offset 위치를 그대로 사용한다.
-  - 옵션 C: edge 근처에서는 offset 방향을 반전해 cursor 반대편에 표시한다.
-- 권장 옵션: 옵션 A. 구현이 단순하고 모든 해상도에서 잘림을 방지한다.
-- 딥변 : 옵션A
-
-6. 위치 튜닝값의 소속을 `UFocusPromptWidget`으로 둘지?
-- 질문 내용: `ScreenCenterOffset`, `MouseCursorOffset`, `ViewportPadding` 같은 값의 소속을 정해야 한다.
-- 필요한 이유: 이 값들은 Focus 판정이 아니라 UI 표시 간격이므로, Focus settings에 넣을지 Widget 기본값으로 둘지 경계를 확정해야 한다.
-- 선택지
-  - 옵션 A: `UFocusPromptWidget`의 `EditAnywhere, BlueprintReadOnly` layout property로 둔다.
-  - 옵션 B: `UBeekeepingSimFocusSettings`에 둔다.
-  - 옵션 C: `WBP_FocusPrompt` EventGraph 변수로 둔다.
-- 권장 옵션: 옵션 A. UI 표시 튜닝값은 UI widget 소유가 맞고, WBP 에셋별 기본값 조정도 가능하다.
-- 딥변 : 옵션A
-
-### Focus Prompt 다중 엔트리 QnA
-
-1. 다중 상호작용 row 렌더링을 Blueprint 이벤트 위임으로 확정할지?
-- 질문 내용: `FFocusPromptData`가 여러 상호작용 엔트리를 전달할 때, `UFocusPromptWidget` C++이 row widget을 동적으로 생성할지, 아니면 Blueprint/UMG가 row 생성/수직 정렬/비활성 alpha 스타일을 전담할지 결정이 필요하다.
-- 필요한 이유: UI 요소 생성과 명명은 Blueprint 작업 영역이라는 경계를 유지하면서도, C++이 의존할 Blueprint API 계약을 명확히 해야 한다.
-- 선택지
-  - 옵션 A: C++은 `FFocusPromptEntry` 배열을 저장하고 `OnPromptEntriesApplied(PromptData, Entries, bVisible)` Blueprint 이벤트만 호출한다. `WBP_FocusPrompt`가 row 생성, 수직 정렬, disabled alpha 스타일을 전담한다.
-  - 옵션 B: C++이 `PromptEntriesBox`와 row widget class를 `BindWidgetOptional`/property 계약으로 잡고 row widget을 동적으로 생성한다. Blueprint는 row widget 스타일만 담당한다.
-  - 옵션 C: C++이 기존 `KeyText`에 여러 줄 텍스트를 조합해 넣고, Blueprint row 구조는 만들지 않는다.
-- 권장 옵션: 옵션 A. 다중 row의 구조와 스타일은 Blueprint 작업 영역에 두고, C++은 표시 데이터와 이벤트 계약만 소유한다.
+  - 옵션 A: `AggressionValue`를 `MaxAggressionValue`와 동일하게 시작한다. 기본값은 100/100.
+  - 옵션 B: `AggressionValue`를 0으로 시작하고 외부 이벤트로 증가시킨다.
+  - 옵션 C: `InitialAggressionValue`를 별도 authoring 값으로 둔다.
+- 권장 옵션: 옵션 A. 벌통은 기본적으로 공격성을 가진 상태이고, 훈연기로 낮추는 흐름이 가장 직관적이다.
 - 답변 : 옵션A
 
-2. 다중 prompt entry 생성 surface를 기존 action component virtual API로 둘지?
-- 질문 내용: pickup, storage, PartFocus, 소비장/배치 아이템 회수, item-use 같은 여러 상호작용이 각자 `FFocusPromptEntry`와 활성/비활성 상태를 제공해야 한다. 이 entry 생성 책임을 어디에 둘지 결정이 필요하다.
-- 필요한 이유: prompt 표시 가능 여부와 실제 실행 가능 여부가 같은 helper를 공유해야 하고, Focus/UI가 도메인별 조건을 직접 알면 시스템 경계가 흐려진다.
+2. 훈연으로 낮아진 공격성이 자동 회복되어야 하는지?
+- 질문 내용
+  - 훈연기 사용 후 낮아진 벌통 공격성이 유지되는지, 시간이 지나며 회복되는지 결정이 필요하다.
+- 필요한 이유
+  - 자동 회복은 시간 bucket/상태 갱신 설계가 추가로 필요하고, 회복 없음은 소독약 효과 방식과 동일한 단순 누적 상태 변경으로 처리할 수 있다.
 - 선택지
-  - 옵션 A: 기존 실행 주체에 prompt builder virtual API를 추가한다. 예: `UFocusActionComponent`, `UCursorPartFocusActionComponent`, 필요 시 item-use scope/action이 자기 entry를 append한다.
-  - 옵션 B: 별도 `IFocusPromptEntryProvider` 인터페이스를 추가하고, Focus/PartFocus가 현재 context의 provider들을 수집한다.
-  - 옵션 C: `UFocusTargetComponent`가 authored entry 목록을 들고, 런타임 가능/불가능 상태만 외부에서 덮어쓴다.
-- 권장 옵션: 옵션 A. 현재 구조에서 실제 실행 주체가 이미 action component에 모여 있으므로, prompt availability도 같은 class/helper에서 계산하게 하는 것이 가장 작고 일관적이다.
-- 답변 : 옵션A. 전역 Focus와 PartFocus는 context가 다르므로 각각 `UFocusActionComponent::AppendFocusPromptEntries(...)`, `UCursorPartFocusActionComponent::AppendPartFocusPromptEntries(...)` 형태로 분리한다. 공통 데이터는 `FFocusPromptEntry`/`FFocusPromptData::Entries`로 통일한다.
+  - 옵션 A: 자동 회복 없음. 훈연으로 낮춘 공격성 값이 유지된다.
+  - 옵션 B: `UGameTimeBucketSubsystem` bucket 이벤트로 일정 시간마다 회복한다.
+  - 옵션 C: Tick 기반으로 연속 회복한다.
+- 권장 옵션: 옵션 A. 기존 소독약 효과 방식과 동일하게 먼저 구현하고, 회복은 실제 공격 시스템이 구체화될 때 추가한다.
+- 답변 : 옵션A
+
+3. 공격성에서 실제 공격력을 계산하는 공식을 어떻게 둘지?
+- 질문 내용
+  - `AggressionValue`가 내려갈 때 해당 벌통의 실제 공격력이 어떤 방식으로 낮아지는지 결정이 필요하다.
+- 필요한 이유
+  - 공격성이 0일 때 완전히 무력화할지, 최소 공격력은 남길지에 따라 밸런스와 API가 달라진다.
+- 선택지
+  - 옵션 A: `EffectiveAttackPower = BaseAttackPower * AggressionRatio`
+  - 옵션 B: `EffectiveAttackPower = BaseAttackPower * Lerp(MinAttackMultiplier, 1.0, AggressionRatio)`
+  - 옵션 C: `AggressionValue` 자체를 공격력으로 사용한다.
+- 권장 옵션: 옵션 B. `MinAttackMultiplier` 기본값을 0으로 두면 옵션 A와 동일하게 동작하면서, 이후 최소 공격력을 쉽게 조정할 수 있다.
+- 답변 : 옵션D. 이 설계는 공격성 수치와 훈연기 동작에만 집중. 공격력 관련 구현은 X.
+
+4. 훈연기 적용 use-area를 어디에 둘지?
+- 질문 내용
+  - 훈연기가 벌통의 어느 item-use-area에서 동작해야 하는지 결정이 필요하다.
+- 필요한 이유
+  - 기존 item-use-area mesh/tag 계약을 재사용할지, 훈연기 전용 hit 영역을 추가할지에 따라 Blueprint 작업 범위가 달라진다.
+- 선택지
+  - 옵션 A: 기존 벌통 body/lid 등 host use-area에 `Item.UseArea.Beehive.Smoker` 태그를 추가한다.
+  - 옵션 B: 훈연기 전용 `UItemUseAreaMeshComponent`를 추가한다.
+  - 옵션 C: 모든 벌통 use-area에서 훈연기를 허용하도록 host actor fallback을 둔다.
+- 권장 옵션: 옵션 A. 소독약과 같은 item-use-area 효과 방식이므로 태그만 추가하는 편이 가장 일관적이다.
+- 답변 : 옵션A
+
+5. 훈연기 사용 중 자원을 소모할지?
+- 질문 내용
+  - 훈연기 사용 중 stack, durability, fuel 같은 자원을 소모할지 결정이 필요하다.
+- 필요한 이유
+  - 자원 소모를 넣으면 item stack/durability/remaining 정책과 UI 표시 범위가 함께 커진다.
+- 선택지
+  - 옵션 A: 1차 구현에서는 자원 소모 없음.
+  - 옵션 B: durability를 감소시킨다.
+  - 옵션 C: 별도 fuel/remaining 시스템을 추가한다.
+- 권장 옵션: 옵션 A. 기존 소독약 효과 방식과 동일하게 hold-use 효과만 먼저 구현하고, 훈연기 연료는 별도 설계로 나중에 붙인다.
+- 답변 : 옵션A

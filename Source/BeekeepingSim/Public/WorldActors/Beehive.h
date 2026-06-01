@@ -164,6 +164,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation")
 	float GetSanitationRatio() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Aggression")
+	void DecreaseAggression(float Delta);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Aggression")
+	void SetAggressionValue(float NewValue);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Aggression")
+	float GetAggressionValue() const { return AggressionValue; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Aggression")
+	float GetAggressionRatio() const;
+
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
 
@@ -311,6 +323,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation", meta = (ClampMin = "0.0"))
 	float SanitationValue = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Aggression", meta = (ClampMin = "0.0"))
+	float MaxAggressionValue = 100.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Aggression", meta = (ClampMin = "0.0"))
+	float AggressionValue = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Comb", meta = (ClampMin = "0"))
 	int32 MaxCombCount = 6;
