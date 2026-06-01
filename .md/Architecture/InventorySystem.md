@@ -200,7 +200,8 @@
   - `ToggleSelectionFromLastSelectedSlot()`
   - 슬롯 선택 중이면 선택 해제 전 현재 index를 기억한다.
   - 미선택 상태면 `LastSelectedIndex` -> `0` -> 첫 enabled 슬롯 순서로 fallback 재선택한다.
-- focus rule 또는 stack 소모로 선택이 강제 해제될 때도 마지막 선택 슬롯을 기억한다.
+- focus rule로 선택이 강제 해제될 때 마지막 선택 슬롯을 기억한다.
+- 선택 아이템 사용/소모로 stack이 0이 되면 슬롯 item만 비우고 선택 index는 유지한다.
 - FocusEngaged에서 hotbar slot input block 정책이 활성화된 경우 middle click 토글도 차단한다.
 
 ## Update 2026-05-27 (BeeBrush Use Action)

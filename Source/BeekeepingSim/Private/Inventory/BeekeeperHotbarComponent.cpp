@@ -591,7 +591,6 @@ bool UBeekeeperHotbarComponent::ApplySelectedItemStackDelta(int32 StackDelta)
 	{
 		RememberSelectedIndex();
 		Slots[SelectedIndex].ItemInstance = nullptr;
-		SelectedIndex = INDEX_NONE;
 	}
 
 	ReevaluateSlotsInternal();
