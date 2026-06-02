@@ -47,6 +47,51 @@ namespace BeehiveCombSlotNames
 
 namespace
 {
+	void LogHoneyDiagnosticCombState(const TCHAR* Phase, const ABeehive* Beehive, const TArray<TObjectPtr<UChildActorComponent>>& CombSlotComponents)
+	{
+		if (!Beehive)
+		{
+			return;
+		}
+
+		const UWorld* World = Beehive->GetWorld();
+		UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=%s World=%s IsGameWorld=%d SlotCount=%d"),
+			*GetNameSafe(Beehive),
+			Phase ? Phase : TEXT("Unknown"),
+			*GetNameSafe(World),
+			World && World->IsGameWorld() ? 1 : 0,
+			CombSlotComponents.Num());
+
+		for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+		{
+			const UChildActorComponent* SlotComponent = CombSlotComponents[Index];
+			const ABeehiveCombSlotActor* SlotActor = SlotComponent ? Cast<ABeehiveCombSlotActor>(SlotComponent->GetChildActor()) : nullptr;
+			const ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+			if (!CombActor)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=%s Slot=%d SlotComponent=%s SlotActor=%s Comb=None"),
+					*GetNameSafe(Beehive),
+					Phase ? Phase : TEXT("Unknown"),
+					Index,
+					*GetNameSafe(SlotComponent),
+					*GetNameSafe(SlotActor));
+				continue;
+			}
+
+			UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=%s Slot=%d SlotComponent=%s SlotActor=%s Comb=%s Honey=%.3f FillRatio=%.3f Ripeness=%.3f RipenessRatio=%.3f"),
+				*GetNameSafe(Beehive),
+				Phase ? Phase : TEXT("Unknown"),
+				Index,
+				*GetNameSafe(SlotComponent),
+				*GetNameSafe(SlotActor),
+				*GetNameSafe(CombActor),
+				CombActor->GetCurrentHoney(),
+				CombActor->GetHoneyFillRatio(),
+				CombActor->GetCurrentHoneyRipeness(),
+				CombActor->GetHoneyRipenessRatio());
+		}
+	}
+
 	bool IsTemplateCombSlotComponent(const UChildActorComponent* Component)
 	{
 		if (!Component)
@@ -146,20 +191,32 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 void ABeehive::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=BeginPlay_Start ApplyHoneyOnBeginPlay=%d HoneyBucketMinutes=%d HoneyProductionCoefficient=%.3f"),
+		*GetNameSafe(this),
+		bApplyHoneyProductionOnBeginPlayBucket ? 1 : 0,
+		HoneyProductionBucketMinutes,
+		HoneyProductionCoefficient);
+
 	SetAggressionValue(AggressionValue);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	LogHoneyDiagnosticCombState(TEXT("BeginPlay_AfterRefreshCombLayoutAndParameters"), this, CombSlotComponents);
 	ApplyInitialCombSetupForBeginPlay();
+	LogHoneyDiagnosticCombState(TEXT("BeginPlay_AfterApplyInitialCombSetup"), this, CombSlotComponents);
 	RebuildCursorPartFocusDescriptors();
 
 	if (UWorld* World = GetWorld())
 	{
 		if (UGameTimeBucketSubsystem* BucketSubsystem = World->GetSubsystem<UGameTimeBucketSubsystem>())
 		{
+			UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=BeginPlay_BeforeRegisterListener World=%s"),
+				*GetNameSafe(this),
+				*GetNameSafe(World));
 			BucketSubsystem->RegisterListener(this);
+			LogHoneyDiagnosticCombState(TEXT("BeginPlay_AfterRegisterListener"), this, CombSlotComponents);
 		}
 	}
 }
@@ -284,7 +341,14 @@ float ABeehive::GetTemperatureScore() const
 void ABeehive::ApplyHoneyProductionUpdate()
 {
 	const float TotalHoneyIncrease = CalculateTotalHoneyIncreaseAmount();
+	UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=ApplyHoneyProductionUpdate TotalHoneyIncrease=%.3f ColonyBeeCount=%d HoneyProductionCoefficient=%.3f"),
+		*GetNameSafe(this),
+		TotalHoneyIncrease,
+		ColonyBeeCount,
+		HoneyProductionCoefficient);
+	LogHoneyDiagnosticCombState(TEXT("ApplyHoneyProductionUpdate_BeforeDistribute"), this, CombSlotComponents);
 	DistributeHoneyIncreaseToCombs(TotalHoneyIncrease);
+	LogHoneyDiagnosticCombState(TEXT("ApplyHoneyProductionUpdate_AfterDistribute"), this, CombSlotComponents);
 }
 
 void ABeehive::ApplyHoneyRipenessUpdate()
@@ -672,8 +736,21 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	}
 	else if (Event.SubscriptionTag == FName(TEXT("HoneyProduction")))
 	{
+		UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Beehive=%s Phase=HoneyProductionEvent Hour=%.3f BucketMinutes=%d BucketIndex=%d StartMinute=%d EndMinute=%d Initial=%d CatchUp=%d Wrapped=%d"),
+			*GetNameSafe(this),
+			Event.Hour24,
+			Event.BucketMinutes,
+			Event.BucketIndex,
+			Event.BucketStartMinute,
+			Event.BucketEndMinute,
+			Event.bInitialApply ? 1 : 0,
+			Event.bCatchUp ? 1 : 0,
+			Event.bWrappedDay ? 1 : 0);
+		LogHoneyDiagnosticCombState(TEXT("HoneyProductionEvent_BeforeRipenessAndProduction"), this, CombSlotComponents);
 		ApplyHoneyRipenessUpdate();
+		LogHoneyDiagnosticCombState(TEXT("HoneyProductionEvent_AfterRipenessBeforeProduction"), this, CombSlotComponents);
 		ApplyHoneyProductionUpdate();
+		LogHoneyDiagnosticCombState(TEXT("HoneyProductionEvent_AfterProduction"), this, CombSlotComponents);
 	}
 	else if (Event.SubscriptionTag == FName(TEXT("ColonyPopulation")))
 	{

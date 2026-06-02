@@ -91,11 +91,30 @@ void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
 void ABeehiveCombActor::BeginPlay()
 {
 	Super::BeginPlay();
+	const UWorld* World = GetWorld();
+	UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Comb=%s Phase=CombBeginPlay_BeforeSanitize World=%s IsGameWorld=%d Owner=%s AttachParentActor=%s Honey=%.3f FillRatio=%.3f Ripeness=%.3f RipenessRatio=%.3f"),
+		*GetNameSafe(this),
+		*GetNameSafe(World),
+		World && World->IsGameWorld() ? 1 : 0,
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(GetAttachParentActor()),
+		CurrentHoney,
+		GetHoneyFillRatio(),
+		CurrentHoneyRipeness,
+		GetHoneyRipenessRatio());
+
 	SanitizeState();
 	SanitizeHoneyState();
 	SanitizeHoneyRipenessState();
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
+
+	UE_LOG(LogTemp, Log, TEXT("[HoneyDiagnostic] Comb=%s Phase=CombBeginPlay_AfterSanitize Honey=%.3f FillRatio=%.3f Ripeness=%.3f RipenessRatio=%.3f"),
+		*GetNameSafe(this),
+		CurrentHoney,
+		GetHoneyFillRatio(),
+		CurrentHoneyRipeness,
+		GetHoneyRipenessRatio());
 }
 
 int32 ABeehiveCombActor::GetFrontShareFromTotal(int32 Total)
