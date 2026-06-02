@@ -584,3 +584,19 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 벌통 FocusEngaged + 훈연기/소독약 hold-use 중 유효 area에서 durability가 Tick 기반으로 감소하는지 확인한다.
 - 유효 area 밖 또는 effect 실패 tick에서는 durability가 감소하지 않는지 확인한다.
 - durability 0 도달 시 현재 use session이 종료되는지 확인한다.
+
+## Honey Ripeness Material 확인 (2026-06-02)
+
+1. honey plane material 설정
+- `M_Honey` 또는 소비장 honey plane에 사용되는 material에 scalar parameter `HoneyRipeness`를 추가한다.
+- 기존 `HoneyAmount` scalar parameter는 유지한다.
+- C++은 `HoneyRipeness`에 `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값을 주입한다.
+
+2. 소비장 Blueprint 확인
+- `BP_HoneyComb` 또는 `ABeehiveCombActor` 기반 소비장 BP에서 `FrontHoneyPlane`, `BackHoneyPlane` material이 `HoneyRipeness` parameter를 가진 material인지 확인한다.
+- `HoneyRipeness`는 face별 값이 아니라 소비장 전체 숙성도이므로 front/back 모두 같은 값을 받는다.
+
+3. PIE 검증
+- 이미 full 상태였던 소비장이 `HoneyProduction` bucket에서 숙성도 증가와 material 변화가 발생하는지 확인한다.
+- 이번 bucket에서 처음 full이 된 소비장은 같은 bucket에서 숙성되지 않고 다음 `HoneyProduction` bucket부터 숙성되는지 확인한다.
+- 소비장 회수 후 재배치 시 `HoneyAmount`, `HoneyRipeness`, visible face가 모두 복원되는지 확인한다.

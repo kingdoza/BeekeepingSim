@@ -24,6 +24,9 @@ struct FBeehiveCombItemState
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb", meta = (ClampMin = "0.0"))
 	float HoneyAmount = 0.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb", meta = (ClampMin = "0.0"))
+	float HoneyRipeness = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
 	bool bIsFrontFaceVisible = true;
 };
@@ -81,6 +84,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
 	void SetBeehiveCombState(float HoneyAmount, bool bIsFrontFaceVisible);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
+	void SetBeehiveCombStateWithRipeness(float HoneyAmount, float HoneyRipeness, bool bIsFrontFaceVisible);
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
 	void ClearBeehiveCombState();

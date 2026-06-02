@@ -83,6 +83,7 @@ void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	SanitizeState();
 	SanitizeHoneyState();
+	SanitizeHoneyRipenessState();
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
 }
@@ -92,6 +93,7 @@ void ABeehiveCombActor::BeginPlay()
 	Super::BeginPlay();
 	SanitizeState();
 	SanitizeHoneyState();
+	SanitizeHoneyRipenessState();
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
 }
@@ -372,10 +374,41 @@ float ABeehiveCombActor::GetHoneyFillRatio() const
 	return FMath::Clamp(CurrentHoney / SafeMaxHoney, 0.0f, 1.0f);
 }
 
+bool ABeehiveCombActor::IsHoneyFull() const
+{
+	return GetHoneyFillRatio() >= 1.0f - KINDA_SMALL_NUMBER;
+}
+
+void ABeehiveCombActor::AddHoneyRipeness(float DeltaRipeness)
+{
+	CurrentHoneyRipeness += FMath::Max(0.0f, DeltaRipeness);
+	SanitizeHoneyRipenessState();
+	ApplyHoneyVisualState();
+}
+
+void ABeehiveCombActor::SetCurrentHoneyRipeness(float NewHoneyRipeness)
+{
+	CurrentHoneyRipeness = NewHoneyRipeness;
+	SanitizeHoneyRipenessState();
+	ApplyHoneyVisualState();
+}
+
+float ABeehiveCombActor::GetHoneyRipenessRatio() const
+{
+	const float SafeMaxRipeness = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyRipeness);
+	return FMath::Clamp(CurrentHoneyRipeness / SafeMaxRipeness, 0.0f, 1.0f);
+}
+
 void ABeehiveCombActor::SanitizeHoneyState()
 {
 	MaxHoneyPerComb = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyPerComb);
 	CurrentHoney = FMath::Clamp(CurrentHoney, 0.0f, MaxHoneyPerComb);
+}
+
+void ABeehiveCombActor::SanitizeHoneyRipenessState()
+{
+	MaxHoneyRipeness = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyRipeness);
+	CurrentHoneyRipeness = FMath::Clamp(CurrentHoneyRipeness, 0.0f, MaxHoneyRipeness);
 }
 
 void ABeehiveCombActor::EnsureHoneyMaterialInstances()
@@ -411,6 +444,7 @@ void ABeehiveCombActor::ApplyHoneyVisualState()
 {
 	EnsureHoneyMaterialInstances();
 	const float FillRatio = GetHoneyFillRatio();
+	const float RipenessRatio = GetHoneyRipenessRatio();
 
 	if (FrontHoneyPlane)
 	{
@@ -425,11 +459,13 @@ void ABeehiveCombActor::ApplyHoneyVisualState()
 	if (FrontHoneyMaterialInstance)
 	{
 		FrontHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
+		FrontHoneyMaterialInstance->SetScalarParameterValue(HoneyRipenessMaterialParameterName, RipenessRatio);
 	}
 
 	if (BackHoneyMaterialInstance)
 	{
 		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
+		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyRipenessMaterialParameterName, RipenessRatio);
 	}
 }
 
@@ -474,6 +510,7 @@ void ABeehiveCombActor::ApplyStateFromItemInstance(const UItemInstance* SourceIt
 
 	const FBeehiveCombItemState CombState = SourceItemInstance->GetBeehiveCombState();
 	SetCurrentHoney(CombState.HoneyAmount);
+	SetCurrentHoneyRipeness(CombState.HoneyRipeness);
 	SetVisibleCombFace(CombState.bIsFrontFaceVisible ? EBeehiveCombVisibleFace::Front : EBeehiveCombVisibleFace::Back);
 }
 
@@ -485,7 +522,7 @@ void ABeehiveCombActor::WriteStateToItemInstance(UItemInstance* TargetItemInstan
 	}
 
 	const bool bIsFrontFaceVisible = (VisibleCombFace == EBeehiveCombVisibleFace::Front);
-	TargetItemInstance->SetBeehiveCombState(CurrentHoney, bIsFrontFaceVisible);
+	TargetItemInstance->SetBeehiveCombStateWithRipeness(CurrentHoney, CurrentHoneyRipeness, bIsFrontFaceVisible);
 }
 
 bool ABeehiveCombActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const
@@ -505,6 +542,7 @@ void ABeehiveCombActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	SanitizeState();
 	SanitizeHoneyState();
+	SanitizeHoneyRipenessState();
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
 }

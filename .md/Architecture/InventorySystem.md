@@ -243,8 +243,8 @@
 ## Update 2026-05-28 (Beehive Comb Retrieve State Contract)
 
 - `UItemInstance`에 소비장 회수 상태를 위한 최소 전용 상태를 추가했다.
-  - `FBeehiveCombItemState` (`bHasState`, `HoneyAmount`, `bIsFrontFaceVisible`)
-  - `SetBeehiveCombState`, `ClearBeehiveCombState`, `HasBeehiveCombState`, `GetBeehiveCombState`
+  - `FBeehiveCombItemState` (`bHasState`, `HoneyAmount`, `HoneyRipeness`, `bIsFrontFaceVisible`)
+  - `SetBeehiveCombState`, `SetBeehiveCombStateWithRipeness`, `ClearBeehiveCombState`, `HasBeehiveCombState`, `GetBeehiveCombState`
 - `UBeekeeperHotbarComponent::TryAcquireItem` 결과에 마지막 변경 슬롯/인스턴스 정보를 추가했다.
   - `LastModifiedSlotIndex`
   - `LastModifiedItemInstance`
@@ -252,7 +252,7 @@
 - invariant:
   - comb 상태 보존이 필요한 반환 item definition(`DA_HoneyComb` 등)은 `MaxStack == 1`이어야 한다. (`MaxStack > 1`은 회수 차단 대상)
 - 상태 보존 범위:
-  - 보존: 꿀 양(`CurrentHoney`), visible face(front/back)
+  - 보존: 꿀 양(`CurrentHoney`), 꿀 숙성도(`CurrentHoneyRipeness`), visible face(front/back)
   - 회수 가능 조건: `TotalTargetBeeCount == 0` 및 queen 미부착(조건 판정은 WorldActors occupant hook에서 수행)
 
 ## Update 2026-05-31 (Placed Item Durability Remaining)
@@ -313,3 +313,12 @@
 - 적용 범위:
   - 훈연기/소독약은 DataAsset이 `UActiveUseDurabilityItemDefinition` 기반으로 전환된 경우에만 active-use drain 적용
   - 벌솔은 기존 durability 소모 없음 정책 유지
+
+## Update 2026-06-02 (Beehive Comb Honey Ripeness State)
+
+- `FBeehiveCombItemState`에 `HoneyRipeness` 절대값을 추가했다.
+- 기존 `SetBeehiveCombState(float HoneyAmount, bool bIsFrontFaceVisible)` 시그니처는 유지한다.
+  - 기존 setter는 `HoneyRipeness=0.0f`로 state를 저장한다.
+- 신규 `SetBeehiveCombStateWithRipeness(float HoneyAmount, float HoneyRipeness, bool bIsFrontFaceVisible)`를 추가했다.
+- 소비장 회수/재배치 state 보존 범위는 `HoneyAmount`, `HoneyRipeness`, visible face다.
+- 저장되는 `HoneyRipeness`는 material ratio가 아니라 `ABeehiveCombActor::CurrentHoneyRipeness` 절대값이다.

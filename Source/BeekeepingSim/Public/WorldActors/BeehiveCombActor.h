@@ -122,6 +122,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
 	float GetHoneyFillRatio() const;
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
+	bool IsHoneyFull() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Ripeness")
+	void AddHoneyRipeness(float DeltaRipeness);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Ripeness")
+	void SetCurrentHoneyRipeness(float NewHoneyRipeness);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Ripeness")
+	float GetCurrentHoneyRipeness() const { return CurrentHoneyRipeness; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Ripeness")
+	float GetHoneyRipenessRatio() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
 	void FlipCombFace();
 
@@ -206,6 +221,7 @@ private:
 	void RestartBeeNiagaraSystems();
 	void SanitizeState();
 	void SanitizeHoneyState();
+	void SanitizeHoneyRipenessState();
 	void ApplyHoneyVisualState();
 	void EnsureHoneyMaterialInstances();
 
@@ -227,6 +243,12 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey", meta = (ClampMin = "0.0"))
 	float CurrentHoney = 0.0f;
 
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey Ripeness", meta = (ClampMin = "0.0"))
+	float MaxHoneyRipeness = 100.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey Ripeness", meta = (ClampMin = "0.0"))
+	float CurrentHoneyRipeness = 0.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
 	FVector FrontHoneyEmptyRelativeLocation = FVector::ZeroVector;
 
@@ -241,6 +263,9 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
 	FName HoneyMaterialParameterName = TEXT("HoneyAmount");
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Honey Ripeness")
+	FName HoneyRipenessMaterialParameterName = TEXT("HoneyRipeness");
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FrontHoneyMaterialInstance;

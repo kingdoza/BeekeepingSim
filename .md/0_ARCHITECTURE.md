@@ -3,7 +3,7 @@
 ## 문서 기준
 
 - 기준일: 2026-06-02(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain 반영 후 현재 Source 구조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -101,8 +101,10 @@ Source/BeekeepingSim/
   - `ItemLifespanBonus`와 `TemperatureScore`의 1차 기본값은 각각 `1.0`
 - honey production 계산식 요약:
   - `TotalHoneyIncrease = ColonyBeeCount * HoneyProductionCoefficient`
+  - `HoneyProduction` bucket event에서는 꿀 생산 전에 이미 full 상태인 active comb의 숙성도(`CurrentHoneyRipeness`)를 증가시킨다.
   - 같은 60분 bucket 경계에서는 `HoneyProduction`을 `ColonyPopulation`보다 먼저 처리한다.
   - `ABeehiveCombActor`는 절대 꿀 양(`CurrentHoney`)을 저장하고, 시각값은 `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)` fill ratio를 사용한다.
+  - `ABeehiveCombActor`는 절대 숙성도(`CurrentHoneyRipeness`)를 저장하고, material에는 `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)` ratio를 `HoneyRipeness`로 주입한다.
 - FocusEngaged host 내부 파츠 상호작용은 `UCursorPartFocusScopeComponent`가 담당하고, 전역 focus 단일 오너(`UBeekeeperFocusComponent`)와 분리된다.
 - 파츠별 동작은 전용 C++ subclass 대신 공통 `UCursorPartFocusActionComponent` + BP Begin/Cancel/Abort 이벤트 구현을 기본 경로로 사용한다.
 - Host FocusEngaged 이후 파츠 입력은 `LMB`(begin/cancel)와 `R/F/C`(hover preview key action)로 분리한다.
@@ -285,3 +287,17 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - durability 0 도달 시 현재 use session을 `EndUseSession(false)`로 종료한다.
 - 훈연기/소독약은 DataAsset을 `UActiveUseDurabilityItemDefinition`으로 전환한 경우에만 drain이 적용된다.
 - 벌솔(`UBeeBrushUseAction`)은 기존처럼 durability drain 대상이 아니다.
+
+## Update 2026-06-02 (Honey Ripeness)
+
+- 꿀 숙성도 상태 owner는 `ABeehiveCombActor`다.
+  - `CurrentHoneyRipeness`: `0..MaxHoneyRipeness` 절대값
+  - material parameter `HoneyRipeness`: `CurrentHoneyRipeness / MaxHoneyRipeness` normalized value
+- `ABeehive`는 기존 `HoneyProduction` bucket subscription만 사용한다.
+- `HoneyProduction` bucket event 처리 순서:
+  - `ApplyHoneyRipenessUpdate()`
+  - `ApplyHoneyProductionUpdate()`
+- `ApplyHoneyProductionUpdate()` 직접 호출은 숙성 없이 꿀 생산만 수행한다.
+- 숙성 대상은 벌통이 관리하는 active comb 전체이며 lifted comb도 포함한다. empty slot은 제외한다.
+- 이번 bucket에서 처음 full이 된 comb는 같은 bucket에서 숙성되지 않고 다음 `HoneyProduction` bucket부터 숙성 대상이 된다.
+- 소비장 회수/재배치 state(`FBeehiveCombItemState`)는 `HoneyAmount`, `HoneyRipeness`, visible face를 보존한다.

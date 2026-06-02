@@ -287,6 +287,27 @@ void ABeehive::ApplyHoneyProductionUpdate()
 	DistributeHoneyIncreaseToCombs(TotalHoneyIncrease);
 }
 
+void ABeehive::ApplyHoneyRipenessUpdate()
+{
+	const float RipenessIncrease = FMath::Max(0.0f, HoneyRipenessIncreasePerBucket);
+	if (RipenessIncrease <= 0.0f)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+		if (!CombActor || !CombActor->IsHoneyFull())
+		{
+			continue;
+		}
+
+		CombActor->AddHoneyRipeness(RipenessIncrease);
+	}
+}
+
 float ABeehive::CalculateTotalHoneyIncreaseAmount() const
 {
 	const int32 SafeBeeCount = FMath::Max(0, ColonyBeeCount);
@@ -651,6 +672,7 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	}
 	else if (Event.SubscriptionTag == FName(TEXT("HoneyProduction")))
 	{
+		ApplyHoneyRipenessUpdate();
 		ApplyHoneyProductionUpdate();
 	}
 	else if (Event.SubscriptionTag == FName(TEXT("ColonyPopulation")))

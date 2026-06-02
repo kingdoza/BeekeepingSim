@@ -61,7 +61,7 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 기반 parameter 주입 지점
-- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`)를 소유하는 actor
+- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태를 소유하는 actor
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
@@ -114,6 +114,7 @@
 - colony population 계수 설정: `BeeIncreaseCoefficient`, `BeeDecreaseCoefficient`
 - honey production bucket 설정: `HoneyProductionBucketMinutes=60`, `bApplyHoneyProductionOnBeginPlayBucket=false` 기본
 - honey production 계수/분배 설정: `HoneyProductionCoefficient`, `HoneyDistributionDeviationRatio`
+- honey ripeness 설정/API: `HoneyRipenessIncreasePerBucket`, `ApplyHoneyRipenessUpdate()`
 - pollen patty consumption bucket 설정: `PollenPattyConsumptionBucketMinutes=60`, `bApplyPollenPattyConsumptionOnBeginPlayBucket=false` 기본
 - pollen patty consumption 설정: `PollenPattyConsumptionAmountPerBucket`, `PollenPattyConsumptionSide(Leftmost/Rightmost)`, `PollenPattyConsumptionAreaTags`
 - colony population의 `ItemEggLayingBonus`는 선택된 active 화분떡 1개(`UPollenPattyItemDefinition`)의 `EggLayingMultiplier`를 사용한다.
@@ -141,7 +142,9 @@
 - `SetColonyBeeCount`, `ApplyColonyPopulationUpdate()` 등 일반 spawn amount 갱신 경로에서는 active comb의 face target 비율을 보존하며 total spawn만 갱신한다.
 - 초기 배치/초기 채움 경로(`RefreshCombLayoutAndParameters`, `ApplyInitialCombSetupForBeginPlay`)에서는 active comb target을 face spawn값으로 명시 reset한다.
 - `ApplyColonyPopulationUpdate()` 경로에서는 lifted comb slot을 제외한 active comb에만 spawn/target 갱신을 적용한다.
-- `ApplyHoneyProductionUpdate()` 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량을 적용
+- `HoneyProduction` bucket event에서는 `ApplyHoneyRipenessUpdate()` 후 `ApplyHoneyProductionUpdate()` 순서로 처리한다.
+- `ApplyHoneyRipenessUpdate()`는 들림 여부와 무관하게 이미 full 상태인 모든 active comb의 숙성도만 증가시킨다.
+- `ApplyHoneyProductionUpdate()` 직접 호출 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량만 적용한다.
 - 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
 - cursor part focus 등록:
   - lid component part (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -211,6 +214,7 @@
   - `BackFaceTargetBeeCount`는 `0..BackFaceSpawnAmount` clamp
   - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
+  - `CurrentHoneyRipeness`는 `0..MaxHoneyRipeness` clamp
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
   - `BackShare = Total / 2`
@@ -228,8 +232,10 @@
   - `User.TargetBeeCount` (Int32, face별 분배값)
 - honey visual 적용:
   - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
+  - ripeness ratio: `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)`
   - front/back plane relative location을 empty/full 위치 사이에서 보간
   - material index 0 scalar parameter(`HoneyAmount`)에 fill ratio 적용
+  - material index 0 scalar parameter(`HoneyRipeness`)에 ripeness ratio 적용
 
 ### `AWorldItemPickup`
 
@@ -275,7 +281,7 @@
 - `ABeehive`는 `AEnvironmentTimeOfDayActor`를 직접 참조하지 않으며, bucket listener 이벤트의 `Hour24`를 받아서만 갱신한다.
 - `ABeehive`의 queen 위치 갱신도 Environment actor 직접 참조 없이 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트로만 수행한다.
 - `ABeehive`의 colony population 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`ColonyPopulation`)로만 수행한다.
-- `ABeehive`의 honey production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
+- `ABeehive`의 honey ripeness + production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
 - `ABeehive`의 pollen patty 고정 소모도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`PollenPattyConsumption`)로 수행한다.
 - 같은 60분 경계에서는 subscription 순서를 `HoneyProduction` 먼저, `ColonyPopulation` 다음으로 두어 꿀 생산이 기존 벌 수 기준으로 선행 처리된다.
 - 같은 경계에서 `ColonyPopulation`과 `PollenPattyConsumption`이 함께 발생하면 population update가 먼저 실행되고, 이후 consumption이 실행된다.
@@ -292,6 +298,7 @@
   - `ItemEggLayingBonus`는 selected active pollen patty가 `UPollenPattyItemDefinition`이면 `Max(1.0, EggLayingMultiplier)`, 아니면 `1.0`이다.
   - `ItemLifespanBonus`/`Decrease`는 화분떡 bonus와 분리되어 기존 `1.0f` 정책을 유지한다.
 - queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
+- honey ripeness는 `HoneyProduction` bucket에서 생산 전에 이미 full 상태였던 comb에만 증가한다. 같은 bucket에서 production으로 처음 full이 된 comb는 다음 bucket부터 숙성된다.
 - honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
@@ -491,3 +498,20 @@
 - PartFocus primary prompt action text는 common action component에서 engaged 상태 기준으로 시작/해제 텍스트를 전환한다.
 - `ABeehive` lid action은 별도 subclass 없이 common `UCursorPartFocusActionComponent`의 authored text로 `열기`/`닫기`를 표시할 수 있다.
 - `UBeehiveCombPartFocusActionComponent`는 common resolver 기본 정책으로 소비장 `들기`/`넣기` primary prompt를 제공한다.
+
+## Update 2026-06-02 (Honey Ripeness)
+
+- `ABeehiveCombActor`에 꿀 숙성도 상태를 추가했다.
+  - `MaxHoneyRipeness`
+  - `CurrentHoneyRipeness`
+  - `HoneyRipenessMaterialParameterName`
+  - `AddHoneyRipeness`
+  - `SetCurrentHoneyRipeness`
+  - `GetCurrentHoneyRipeness`
+  - `GetHoneyRipenessRatio`
+  - `IsHoneyFull`
+- `ApplyHoneyVisualState()`는 기존 `HoneyAmount`와 함께 `HoneyRipeness` scalar parameter를 front/back honey material instance 양쪽에 주입한다.
+- `ABeehive`에 `HoneyRipenessIncreasePerBucket`와 `ApplyHoneyRipenessUpdate()`를 추가했다.
+- `HoneyProduction` bucket branch는 `ApplyHoneyRipenessUpdate()` 후 `ApplyHoneyProductionUpdate()` 순서로 처리한다.
+- `GetGameTimeBucketSubscriptions_Implementation()`에는 별도 `HoneyRipeness` subscription을 추가하지 않는다.
+- `ApplyHoneyProductionUpdate()` 직접 호출은 숙성을 수행하지 않고 꿀 생산만 수행한다.

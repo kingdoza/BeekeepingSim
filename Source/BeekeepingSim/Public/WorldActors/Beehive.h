@@ -146,6 +146,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Production")
 	void ApplyHoneyProductionUpdate();
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Ripeness")
+	void ApplyHoneyRipenessUpdate();
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Production")
 	float CalculateTotalHoneyIncreaseAmount() const;
 
@@ -299,6 +302,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0"))
 	float HoneyProductionCoefficient = 0.01f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Ripeness", meta = (ClampMin = "0.0"))
+	float HoneyRipenessIncreasePerBucket = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HoneyDistributionDeviationRatio = 0.5f;
