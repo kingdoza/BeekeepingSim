@@ -33,5 +33,8 @@ struct FItemActionExecutionResult
 	int32 StackDelta = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action")
+	float DurabilityDelta = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action")
 	FText Message;
 };

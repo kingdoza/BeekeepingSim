@@ -17,17 +17,18 @@
   - 옵션 C: 특정 concrete item/action에 하드코딩한다.
   - 옵션 D: `UItemDefinition`은 유지하고, active-use 내구도 감소 전용 하위 item definition class를 추가한다.
 - 권장 옵션: 옵션 D. 기존 `UItemDefinition`을 범용 설정 창고로 키우지 않으면서, `UPollenPattyItemDefinition`처럼 특정 아이템군 데이터만 subclass에 둘 수 있다.
-- 답변: 옵션 D. 예: `UActiveUseDurabilityItemDefinition : public UItemDefinition`에 `DurabilityDrainPerSecond`, `bRequireEffectSucceeded`, `bRemoveItemWhenDepleted`를 둔다.
+- 답변: 옵션 D. 예: `UActiveUseDurabilityItemDefinition : public UItemDefinition`에 `DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`를 둔다.
 
 2. 내구도 감소가 발생하는 정확한 active 조건
 - 질문 내용: 어떤 상태를 “사용영역에 active 중”으로 볼 것인가?
-- 필요한 이유: 현재 `UCursorItemUseAreaScopeComponent`는 scope 활성, 선택 아이템 매칭, LMB use session, hovered active descriptor, `ApplyUseEffect` 성공 여부가 각각 분리되어 있다. 감소 조건을 넓게 잡으면 영역 밖에서도 내구도가 줄거나, 효과가 실패해도 자원이 소모될 수 있다.
+- 필요한 이유: 현재 `UCursorItemUseAreaScopeComponent`는 scope 활성, 선택 아이템 매칭, LMB use session, hovered active descriptor, `ApplyUseEffect` 성공 여부가 각각 분리되어 있다. 아이템에 따라 “target에 실제 사용됐을 때만 닳는 도구”와 “LMB active 동안 계속 닳는 도구”가 모두 필요할 수 있다.
 - 선택지
-  - 옵션 A: LMB use session 중이고, 현재 커서가 matching active use-area descriptor 위에 있으며, `CanApplyUseEffect`가 true일 때 감소한다.
-  - 옵션 B: 옵션 A에 더해 `ApplyUseEffect` 결과가 `bSucceeded=true`일 때만 감소한다.
-  - 옵션 C: use-area가 표시되는 동안 또는 LMB를 누르고 있는 동안이면 hover/effect 성공과 무관하게 감소한다.
-- 권장 옵션: 옵션 B. 실제 효과가 적용된 Tick에만 내구도가 감소해 도메인 효과와 자원 소모가 어긋나지 않는다.
-- 답변: 옵션 B. 단, 전용 item definition의 `bRequireEffectSucceeded=false`인 경우에는 옵션 A 정책으로 완화할 수 있다. 기본값은 true로 둔다. 여기서 `bRequireEffectSucceeded=true`의 의미는 실제 수치 변화가 발생했는지가 아니라, `ApplyUseEffect`가 유효한 action target을 찾아 `bSucceeded=true`를 반환했는지로 정의한다.
+  - 옵션 A: `WhenUseEffectSucceeded` - LMB use session 중이고, matching active use-area 위에서 `ApplyUseEffect`가 `bSucceeded=true`를 반환한 Tick에만 감소한다.
+  - 옵션 B: `WhileOverValidUseArea` - LMB use session 중이고, matching active use-area 위에서 `CanApplyUseEffect`가 true이면 `ApplyUseEffect` 성공 여부와 무관하게 감소한다.
+  - 옵션 C: `WhileUseSessionActive` - `BeginUse`가 성공해 LMB active use session이 유지되는 동안 use-area hover/target 여부와 무관하게 감소한다.
+  - 옵션 D: 전용 item definition에 `DrainPolicy` enum을 두고 아이템별로 옵션 A/B/C 중 하나를 선택한다.
+- 권장 옵션: 옵션 D. 내구도 감소 조건은 item definition authoring 정책으로 분리하고, 기본값은 기존 target-bound 동작에 가까운 `WhenUseEffectSucceeded`로 둔다.
+- 답변: 옵션 D. `DrainPolicy` 값은 `WhenUseEffectSucceeded`, `WhileOverValidUseArea`, `WhileUseSessionActive`를 제공한다. `WhenUseEffectSucceeded`의 `bSucceeded=true` 의미는 실제 수치 변화가 발생했는지가 아니라, `ApplyUseEffect`가 유효한 action target을 찾아 성공 결과를 반환했는지로 정의한다.
 
 3. 내구도 0 도달 시 처리
 - 질문 내용: active-use 내구도 감소로 selected item durability가 0 이하가 되면 어떻게 처리할 것인가?

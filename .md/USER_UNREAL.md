@@ -556,3 +556,31 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - FocusEngaged 상태에서 훈연기를 hold-use하면 벌통 `AggressionValue`가 감소하는지 확인한다.
 - item stack/durability가 감소하지 않는지 확인한다.
 - 자동 회복 없이 감소된 aggression 값이 유지되는지 확인한다.
+
+## Active-Use Durability DataAsset 전환 (2026-06-02)
+
+1. 훈연기/소독약 item definition 전환
+- 훈연기/소독약 아이템 definition asset을 `UActiveUseDurabilityItemDefinition` 기반으로 생성/교체한다.
+- 기존 ActionSpec(`USmokerUseAction`, `UDisinfectantUseAction`)은 유지한다.
+
+2. 필수 설정
+- `bUsesDurability = true`
+- `MaxDurability > 0`
+- `MaxStack = 1`
+- `DurabilityDrainPerSecond` 값을 초당 소모량으로 설정
+- `DrainPolicy` 설정
+  - `WhenUseEffectSucceeded`: 유효 target에 effect가 성공한 Tick만 내구도 감소
+  - `WhileOverValidUseArea`: 유효 사용영역 위에서 사용 중이면 내구도 감소
+  - `WhileUseSessionActive`: LMB active use session 동안 사용영역/target과 무관하게 내구도 감소
+- `bRemoveItemWhenDepleted` 정책 선택
+  - true: 내구도 0 시 아이템 제거
+  - false: 내구도 0 아이템 유지(이후 use begin/effect 차단)
+
+3. 벌솔 정책 확인
+- 벌솔 item definition은 `UActiveUseDurabilityItemDefinition`으로 바꾸지 않는다.
+- 벌솔은 기존처럼 active-use durability drain이 발생하지 않아야 한다.
+
+4. PIE 검증
+- 벌통 FocusEngaged + 훈연기/소독약 hold-use 중 유효 area에서 durability가 Tick 기반으로 감소하는지 확인한다.
+- 유효 area 밖 또는 effect 실패 tick에서는 durability가 감소하지 않는지 확인한다.
+- durability 0 도달 시 현재 use session이 종료되는지 확인한다.

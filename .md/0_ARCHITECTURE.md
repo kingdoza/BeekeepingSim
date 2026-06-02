@@ -3,7 +3,7 @@
 ## 문서 기준
 
 - 기준일: 2026-06-02(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression 반영 후 현재 Source 구조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -269,3 +269,19 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `ABeehive`는 sanitation과 분리된 aggression 상태(`MaxAggressionValue=100`, `AggressionValue=100` 기본)를 소유한다.
 - `USmokerUseAction`(`UHoldItemUseAction` 기반)은 `Item.UseArea.Beehive.Smoker` 영역에서 hold-use 중 `ABeehive::DecreaseAggression`을 호출한다.
 - 현재 범위에서 aggression 자동 회복과 공격력 계산/피해 시스템 연동은 구현하지 않는다.
+
+## Update 2026-06-02 (Active-Use Durability Drain)
+
+- FocusEngaged item-use-area hold-use 경로에 active-use durability drain 계약을 추가했다.
+- `UItemDefinition` base class는 확장하지 않고 `UActiveUseDurabilityItemDefinition` subclass를 추가했다.
+- `UActiveUseDurabilityItemDefinition::DrainPolicy`가 drain 조건을 결정한다: `WhenUseEffectSucceeded`, `WhileOverValidUseArea`, `WhileUseSessionActive`.
+- 대상 아이템 invariant:
+  - `bUsesDurability=true`
+  - `MaxDurability>0`
+  - `MaxStack==1`
+- `FItemActionExecutionResult`는 `DurabilityDelta`를 포함하며 stack delta와 독립적으로 해석된다.
+- 실제 selected item durability mutation authority는 `UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta(...)`다.
+- `UCursorItemUseAreaScopeComponent`는 `ApplyUseEffect` 결과와 `ResolveActiveUseDurabilityDelta(...)`를 합산해 durability를 적용하며, `WhileUseSessionActive` 정책은 hovered use-area 없이도 active use session 중 drain된다.
+- durability 0 도달 시 현재 use session을 `EndUseSession(false)`로 종료한다.
+- 훈연기/소독약은 DataAsset을 `UActiveUseDurabilityItemDefinition`으로 전환한 경우에만 drain이 적용된다.
+- 벌솔(`UBeeBrushUseAction`)은 기존처럼 durability drain 대상이 아니다.

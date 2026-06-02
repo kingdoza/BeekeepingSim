@@ -60,6 +60,30 @@ struct FHotbarItemAcquireResult
 };
 
 USTRUCT(BlueprintType)
+struct FHotbarItemDurabilityMutationResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bApplied = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bItemDepleted = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bItemRemoved = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	float PreviousDurability = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	float NewDurability = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	FText Message;
+};
+
+USTRUCT(BlueprintType)
 struct FItemAcquireSpec
 {
 	GENERATED_BODY()
@@ -166,6 +190,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Hotbar")
 	bool ApplySelectedItemStackDelta(int32 StackDelta);
+
+	UFUNCTION(BlueprintCallable, Category = "Hotbar")
+	FHotbarItemDurabilityMutationResult ApplySelectedItemDurabilityDelta(float DurabilityDelta, bool bRemoveWhenDepleted);
 
 	UPROPERTY(BlueprintAssignable, Category = "Hotbar")
 	FBeekeeperHotbarChangedSignature OnHotbarChanged;

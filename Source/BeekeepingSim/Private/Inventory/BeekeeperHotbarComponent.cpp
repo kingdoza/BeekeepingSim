@@ -598,6 +598,63 @@ bool UBeekeeperHotbarComponent::ApplySelectedItemStackDelta(int32 StackDelta)
 	return true;
 }
 
+FHotbarItemDurabilityMutationResult UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta(float DurabilityDelta, bool bRemoveWhenDepleted)
+{
+	FHotbarItemDurabilityMutationResult Result;
+
+	if (FMath::IsNearlyZero(DurabilityDelta))
+	{
+		Result.Message = FText::FromString(TEXT("Durability delta is zero."));
+		return Result;
+	}
+
+	if (!IsIndexValid(SelectedIndex))
+	{
+		Result.Message = FText::FromString(TEXT("No selected slot exists."));
+		return Result;
+	}
+
+	UItemInstance* SelectedItem = Cast<UItemInstance>(Slots[SelectedIndex].ItemInstance.Get());
+	if (!SelectedItem)
+	{
+		Result.Message = FText::FromString(TEXT("No selected item exists."));
+		return Result;
+	}
+
+	if (!SelectedItem->HasDurability())
+	{
+		Result.Message = FText::FromString(TEXT("Selected item does not use durability."));
+		return Result;
+	}
+
+	Result.PreviousDurability = SelectedItem->GetCurrentDurability();
+	const float MaxDurability = FMath::Max(0.0f, SelectedItem->GetMaxDurability());
+	Result.NewDurability = FMath::Clamp(Result.PreviousDurability + DurabilityDelta, 0.0f, MaxDurability);
+	if (FMath::IsNearlyEqual(Result.PreviousDurability, Result.NewDurability))
+	{
+		Result.Message = FText::FromString(TEXT("Durability was unchanged."));
+		return Result;
+	}
+
+	SelectedItem->SetDurability(Result.NewDurability);
+	Result.bApplied = true;
+
+	if (Result.NewDurability <= 0.0f)
+	{
+		Result.bItemDepleted = true;
+		if (bRemoveWhenDepleted)
+		{
+			RememberSelectedIndex();
+			Slots[SelectedIndex].ItemInstance = nullptr;
+			Result.bItemRemoved = true;
+		}
+	}
+
+	ReevaluateSlotsInternal();
+	BroadcastHotbarChanged();
+	return Result;
+}
+
 void UBeekeeperHotbarComponent::BeginPlay()
 {
 	Super::BeginPlay();

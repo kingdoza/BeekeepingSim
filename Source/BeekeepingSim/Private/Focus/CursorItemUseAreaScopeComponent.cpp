@@ -9,6 +9,7 @@
 #include "Focus/FocusTargetComponent.h"
 #include "Focus/ItemUseAreaMeshProviderComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Inventory/ActiveUseDurabilityItemDefinition.h"
 #include "Inventory/BeekeeperHotbarComponent.h"
 #include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemActionContext.h"
@@ -51,14 +52,30 @@ void UCursorItemUseAreaScopeComponent::TickComponent(float DeltaTime, ELevelTick
 		const FItemActionContext TickContext = BuildItemActionContext(HoveredDescriptorIndex);
 		CachedHoldAction->TickUse(TickContext, DeltaTime);
 
+		FItemActionExecutionResult Result;
+		FItemActionContext DurabilityContext = BuildItemActionContext(INDEX_NONE);
+		bool bIsOverValidUseArea = false;
+
 		if (ActiveDescriptorIndices.Contains(HoveredDescriptorIndex))
 		{
 			const FItemActionContext EffectContext = BuildItemActionContext(HoveredDescriptorIndex);
 			if (CachedHoldAction->CanApplyUseEffect(EffectContext))
 			{
-				const FItemActionExecutionResult Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
-				ApplyUseEffectResultToSelectedItem(Result);
+				bIsOverValidUseArea = true;
+				DurabilityContext = EffectContext;
+				Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
 			}
+		}
+
+		Result.DurabilityDelta += CachedHoldAction->ResolveActiveUseDurabilityDelta(
+			DurabilityContext,
+			Result,
+			DeltaTime,
+			bIsOverValidUseArea);
+
+		if (Result.bConsumedItem || !FMath::IsNearlyZero(Result.DurabilityDelta))
+		{
+			ApplyUseEffectResultToSelectedItem(Result);
 		}
 	}
 }
@@ -563,7 +580,7 @@ FItemActionContext UCursorItemUseAreaScopeComponent::BuildItemActionContext(int3
 
 void UCursorItemUseAreaScopeComponent::ApplyUseEffectResultToSelectedItem(const FItemActionExecutionResult& Result)
 {
-	if (!Result.bConsumedItem || !OwnerHotbarComponent)
+	if (!OwnerHotbarComponent)
 	{
 		return;
 	}
@@ -574,17 +591,66 @@ void UCursorItemUseAreaScopeComponent::ApplyUseEffectResultToSelectedItem(const 
 		EffectTargetObject = RegisteredDescriptors[HoveredDescriptorIndex].EffectTargetObject;
 	}
 
-	const int32 EffectiveStackDelta = (Result.StackDelta != 0) ? Result.StackDelta : -1;
-	if (OwnerHotbarComponent->ApplySelectedItemStackDelta(EffectiveStackDelta))
+	bool bShouldRefreshSelectionAndDescriptors = false;
+	bool bPlacementRollbackExecuted = false;
+
+	if (Result.bConsumedItem)
 	{
-		RefreshSelectedItemAndAction();
-		RebuildItemUseAreaDescriptors();
-		return;
+		const int32 EffectiveStackDelta = (Result.StackDelta != 0) ? Result.StackDelta : -1;
+		if (OwnerHotbarComponent->ApplySelectedItemStackDelta(EffectiveStackDelta))
+		{
+			bShouldRefreshSelectionAndDescriptors = true;
+		}
+		else if (Result.bSucceeded && EffectTargetObject && EffectTargetObject->GetClass()->ImplementsInterface(UItemPlacementSlot::StaticClass()))
+		{
+			IItemPlacementSlot::Execute_ClearPlacedItem(EffectTargetObject);
+			bPlacementRollbackExecuted = true;
+		}
 	}
 
-	if (Result.bSucceeded && EffectTargetObject && EffectTargetObject->GetClass()->ImplementsInterface(UItemPlacementSlot::StaticClass()))
+	if (!FMath::IsNearlyZero(Result.DurabilityDelta))
 	{
-		IItemPlacementSlot::Execute_ClearPlacedItem(EffectTargetObject);
+		UItemInstance* SelectedItemInstance = OwnerHotbarComponent->GetSelectedItemInstance();
+		bool bRemoveWhenDepleted = true;
+		bool bWillDepleteAfterDelta = false;
+
+		if (SelectedItemInstance)
+		{
+			if (const UActiveUseDurabilityItemDefinition* ActiveUseDefinition = Cast<UActiveUseDurabilityItemDefinition>(SelectedItemInstance->GetDefinition()))
+			{
+				bRemoveWhenDepleted = ActiveUseDefinition->bRemoveItemWhenDepleted;
+			}
+
+			if (SelectedItemInstance->HasDurability())
+			{
+				const float PredictedNewDurability = FMath::Clamp(
+					SelectedItemInstance->GetCurrentDurability() + Result.DurabilityDelta,
+					0.0f,
+					FMath::Max(0.0f, SelectedItemInstance->GetMaxDurability()));
+				bWillDepleteAfterDelta = (PredictedNewDurability <= 0.0f);
+			}
+		}
+
+		if (bWillDepleteAfterDelta && bIsUseInProgress)
+		{
+			EndUseSession(false);
+		}
+
+		const FHotbarItemDurabilityMutationResult DurabilityMutationResult =
+			OwnerHotbarComponent->ApplySelectedItemDurabilityDelta(Result.DurabilityDelta, bRemoveWhenDepleted);
+		if (DurabilityMutationResult.bApplied)
+		{
+			bShouldRefreshSelectionAndDescriptors = true;
+			if (DurabilityMutationResult.bItemDepleted && bIsUseInProgress)
+			{
+				EndUseSession(false);
+			}
+		}
+	}
+
+	if (bShouldRefreshSelectionAndDescriptors || bPlacementRollbackExecuted)
+	{
+		RefreshSelectedItemAndAction();
 		RebuildItemUseAreaDescriptors();
 	}
 }

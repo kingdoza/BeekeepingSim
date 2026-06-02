@@ -128,7 +128,8 @@
   - `Hold Tick`: `TickUse(Context, DeltaTime)`
   - `active + valid hovered area`: `CanApplyUseEffect` 확인 후 `ApplyUseEffect(Context, DeltaTime)`
   - `Release/Cancel/Deactivate`: `EndUse(Context, bWasCanceled)`
-- `ApplyUseEffect` 결과의 stack 변화(`bConsumedItem`, `StackDelta`)는 scope가 해석해 hotbar authority API로 반영한다.
+- `ApplyUseEffect` 결과의 stack 변화(`bConsumedItem`, `StackDelta`)와 durability 변화(`DurabilityDelta`)는 scope가 독립 해석해 hotbar authority API로 반영한다.
+- durability가 0에 도달한 경우 scope는 현재 hold-use session을 `EndUseSession(false)`로 종료한다.
 - FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리한다.
 - FocusEngaged host가 item-use-area를 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
 - Anchored cursor FocusEngaged 진입 시 hotbar 선택은 비워진다. item-use area는 engaged 이후 hotbar에서 대상 아이템을 다시 선택했을 때 활성화된다.
@@ -350,3 +351,14 @@
 - 모든 표시 entry는 공통 availability(`bEnabled`, `DisabledReason`)를 제공하며, disabled entry는 UI에서 반투명 표시 대상이다.
 - `UCursorPartFocusActionComponent`의 기본 primary prompt action text는 not-engaged 상태에서 `PrimaryPromptActionText`, engaged 상태에서 `EngagedPrimaryPromptActionText`를 사용한다.
 - 복잡한 상태 기반 명칭은 subclass가 resolver를 override해 처리한다.
+
+## Update 2026-06-02 (Item Use Area Durability Routing)
+
+- `UCursorItemUseAreaScopeComponent`는 hold-use tick에서 아래 순서로 결과를 해석한다.
+  - hovered active use-area가 있고 `CanApplyUseEffect`가 true이면 `ApplyUseEffect(Context, DeltaTime)` 실행
+  - `ResolveActiveUseDurabilityDelta(Context, EffectResult, DeltaTime, bIsOverValidUseArea)`를 `Result.DurabilityDelta`에 합산
+  - `ApplyUseEffectResultToSelectedItem(Result)`
+- `ApplyUseEffectResultToSelectedItem`는 stack mutation(`bConsumedItem`/`StackDelta`)과 durability mutation(`DurabilityDelta`)을 독립 처리한다.
+- durability mutation은 `UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta` authority API를 사용한다.
+- `DrainPolicy == WhileUseSessionActive`인 active-use item은 hovered use-area가 없어도 active use session 중 durability-only result를 처리한다.
+- durability 0 도달 시 현재 use session은 취소가 아니라 자연 종료(`EndUseSession(false)`)로 끝난다.

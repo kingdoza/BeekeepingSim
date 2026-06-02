@@ -29,8 +29,11 @@ FocusEngaged item-use-area에서 특정 hold-use 아이템이 active use 중일 
 
 - 설정 위치: `UItemDefinition` base class가 아니라 전용 subclass
 - 권장 class: `UActiveUseDurabilityItemDefinition : public UItemDefinition`
-- active 조건: LMB use session 중, hovered matching active use-area 위, `CanApplyUseEffect` true, 그리고 기본적으로 `ApplyUseEffect` 결과가 `bSucceeded=true`
-- `bRequireEffectSucceeded=true`의 의미: 실제 수치 변화가 있었는지가 아니라, action이 유효한 target을 찾아 `bSucceeded=true`를 반환했는지
+- active 조건은 전용 item definition의 `DrainPolicy`가 결정한다.
+  - `WhenUseEffectSucceeded`: matching active use-area 위에서 `ApplyUseEffect`가 `bSucceeded=true`를 반환한 Tick에만 감소
+  - `WhileOverValidUseArea`: matching active use-area 위에서 `CanApplyUseEffect`가 true이면 effect success와 무관하게 감소
+  - `WhileUseSessionActive`: `BeginUse` 성공 후 LMB active use session 동안 use-area hover/target과 무관하게 감소
+- `WhenUseEffectSucceeded`의 `bSucceeded=true` 의미: 실제 수치 변화가 있었는지가 아니라, action이 유효한 target을 찾아 성공 결과를 반환했는지
 - 0 도달 처리: `bRemoveItemWhenDepleted`가 단일 기준
   - true: selected slot item 제거 + active use session 종료
   - false: durability 0 상태로 item 유지 + 이후 use begin/effect 차단
@@ -83,6 +86,14 @@ Source:
 #include "Inventory/ItemDefinition.h"
 #include "ActiveUseDurabilityItemDefinition.generated.h"
 
+UENUM(BlueprintType)
+enum class EActiveUseDurabilityDrainPolicy : uint8
+{
+	WhenUseEffectSucceeded,
+	WhileOverValidUseArea,
+	WhileUseSessionActive
+};
+
 UCLASS(BlueprintType)
 class BEEKEEPINGSIM_API UActiveUseDurabilityItemDefinition : public UItemDefinition
 {
@@ -93,7 +104,7 @@ public:
 	float DurabilityDrainPerSecond = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Active Use Durability")
-	bool bRequireEffectSucceeded = true;
+	EActiveUseDurabilityDrainPolicy DrainPolicy = EActiveUseDurabilityDrainPolicy::WhenUseEffectSucceeded;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Active Use Durability")
 	bool bRemoveItemWhenDepleted = true;
@@ -136,7 +147,8 @@ UFUNCTION(BlueprintPure, Category = "Item Action|Use Area")
 virtual float ResolveActiveUseDurabilityDelta(
 	const FItemActionContext& Context,
 	const FItemActionExecutionResult& EffectResult,
-	float DeltaTime
+	float DeltaTime,
+	bool bIsOverValidUseArea
 ) const;
 ```
 
@@ -150,7 +162,9 @@ virtual float ResolveActiveUseDurabilityDelta(
   - `MaxStack!=1`
   - `DurabilityDrainPerSecond<=0`
 - source item durability가 이미 0 이하이면 0.
-- `bRequireEffectSucceeded=true`이고 `EffectResult.bSucceeded=false`이면 0.
+- `DrainPolicy == WhileUseSessionActive`이면 use-area/effect result와 무관하게 감소한다.
+- `DrainPolicy == WhileOverValidUseArea`이고 `bIsOverValidUseArea=false`이면 0.
+- `DrainPolicy == WhenUseEffectSucceeded`이고 `bIsOverValidUseArea=false` 또는 `EffectResult.bSucceeded=false`이면 0.
 - 그 외에는 `-DurabilityDrainPerSecond * Max(0, DeltaTime)` 반환.
 
 `UHoldItemUseAction`의 사용 가능 판정도 보강한다.
@@ -235,8 +249,27 @@ FHotbarItemDurabilityMutationResult ApplySelectedItemDurabilityDelta(
 권장 흐름:
 
 ```cpp
-FItemActionExecutionResult Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
-Result.DurabilityDelta += CachedHoldAction->ResolveActiveUseDurabilityDelta(EffectContext, Result, DeltaTime);
+FItemActionExecutionResult Result;
+bool bIsOverValidUseArea = false;
+FItemActionContext DurabilityContext = BuildItemActionContext(INDEX_NONE);
+
+if (ActiveDescriptorIndices.Contains(HoveredDescriptorIndex))
+{
+	const FItemActionContext EffectContext = BuildItemActionContext(HoveredDescriptorIndex);
+	if (CachedHoldAction->CanApplyUseEffect(EffectContext))
+	{
+		bIsOverValidUseArea = true;
+		DurabilityContext = EffectContext;
+		Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
+	}
+}
+
+Result.DurabilityDelta += CachedHoldAction->ResolveActiveUseDurabilityDelta(
+	DurabilityContext,
+	Result,
+	DeltaTime,
+	bIsOverValidUseArea
+);
 ApplyUseEffectResultToSelectedItem(Result);
 ```
 
@@ -247,6 +280,7 @@ ApplyUseEffectResultToSelectedItem(Result);
 - 현재 구현은 `!Result.bConsumedItem`이면 즉시 return한다. 이 구조를 유지하면 durability-only result가 무시된다. 반드시 수정한다.
 - stack mutation은 기존 `bConsumedItem`/`StackDelta`/placement rollback 정책을 보존한다.
 - durability mutation은 `Result.DurabilityDelta`가 0이 아닐 때만 Hotbar API를 호출한다.
+- `DrainPolicy == WhileUseSessionActive`인 경우에는 hovered active descriptor가 없어도 durability-only result가 처리되어야 한다.
 - durability mutation에 넘기는 `bRemoveWhenDepleted` 값은 selected item definition의 `UActiveUseDurabilityItemDefinition::bRemoveItemWhenDepleted`에서 읽는다.
 - durability가 0에 도달하면 `EndUseSession(false)`를 호출해 active use를 자연 종료한다.
   - item이 제거되는 경우에도 먼저 세션을 종료해 held presentation active end 이벤트가 누락되지 않게 한다.
@@ -270,7 +304,7 @@ Content 수동 작업은 C++ 구현에서 하지 않는다. 구현 완료 후 `.
   - `MaxDurability>0`
   - `MaxStack=1`
   - `DurabilityDrainPerSecond` 설정
-  - `bRequireEffectSucceeded=true`
+  - `DrainPolicy` 설정
   - `bRemoveItemWhenDepleted` 설정
 - 기존 ActionSpec은 유지한다.
 
@@ -296,7 +330,7 @@ Content 수동 작업은 C++ 구현에서 하지 않는다. 구현 완료 후 `.
 ## 검색 검증
 
 ```powershell
-rg "ActiveUseDurabilityItemDefinition|DurabilityDrainPerSecond|bRequireEffectSucceeded|bRemoveItemWhenDepleted" Source/BeekeepingSim .md
+rg "ActiveUseDurabilityItemDefinition|EActiveUseDurabilityDrainPolicy|DurabilityDrainPerSecond|DrainPolicy|bRemoveItemWhenDepleted" Source/BeekeepingSim .md
 rg "DurabilityDelta|ApplySelectedItemDurabilityDelta|FHotbarItemDurabilityMutationResult|ResolveActiveUseDurabilityDelta" Source/BeekeepingSim .md
 rg "ApplyUseEffectResultToSelectedItem|bConsumedItem|StackDelta" Source/BeekeepingSim/Private/Focus Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory
 rg "BeeBrushUseAction" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory .md

@@ -14,6 +14,7 @@
 - `Source/BeekeepingSim/Private/Inventory/ItemAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/HoldItemUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/ActiveUseDurabilityItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/DisinfectantUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/DisinfectantUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/SmokerUseAction.h`
@@ -53,6 +54,7 @@
 - `UItemInstance`: 런타임 아이템 상태와 action 소유 객체
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
+- `UActiveUseDurabilityItemDefinition`: active-use durability drain spec(`DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`)를 소유하는 `UItemDefinition` subclass
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
@@ -61,7 +63,7 @@
 - `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
 - `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
 - `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
-- `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, 메시지를 담는 결과 DTO
+- `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, durability delta, 메시지를 담는 결과 DTO
 - `FItemAcquireSpec`: definition, quantity, durability override를 포함하는 state-aware acquire 요청 DTO
 - `FHotbarItemAcquireResult`: acquire 성공 여부, 추가 수량, 마지막 변경 slot/item instance를 전달하는 결과 DTO
 - `AItemPresentationActor`: first-person held/on-cursor 표시 actor 베이스
@@ -106,10 +108,11 @@
   - `CanBeginUse(Context)`와 `BeginUse(Context)`가 LMB use session 시작 여부를 결정한다.
   - `TickUse(Context, DeltaTime)`는 use session이 진행 중일 때 매 Tick 호출될 수 있다.
   - `CanApplyUseEffect(Context)`와 `ApplyUseEffect(Context, DeltaTime)`는 유효 item-use area target이 있을 때의 실질 효과 적용 경계다.
+  - `ResolveActiveUseDurabilityDelta(Context, EffectResult, DeltaTime, bIsOverValidUseArea)`는 active-use durability drain delta를 계산한다.
   - `EndUse(Context, bWasCanceled)`는 release/cancel/deactivate 경로에서 session 종료를 받는다.
 - `UHoldItemUseAction`는 C++ virtual API를 유지하면서 `BlueprintNativeEvent` hook(`ReceiveCanBeginUse`, `ReceiveBeginUse`, `ReceiveTickUse`, `ReceiveEndUse`, `ReceiveCanApplyUseEffect`, `ReceiveApplyUseEffect`)을 함께 제공한다.
-- `FItemActionExecutionResult::bConsumedItem`과 `StackDelta`는 action 결과 DTO다. 실제 stack 소비/증감 적용 주체는 호출 경로가 명시해야 하며 action base가 자동으로 inventory를 mutation하지 않는다.
-- Focus item-use-area 경로에서는 `UCursorItemUseAreaScopeComponent`가 `ApplyUseEffect` 결과를 해석하고, 실제 stack mutation은 `UBeekeeperHotbarComponent::ApplySelectedItemStackDelta` authority 경로를 사용한다.
+- `FItemActionExecutionResult::bConsumedItem`/`StackDelta`와 `DurabilityDelta`는 action 결과 DTO다. 실제 mutation 적용 주체는 호출 경로가 명시해야 하며 action base가 자동으로 inventory를 mutation하지 않는다.
+- Focus item-use-area 경로에서는 `UCursorItemUseAreaScopeComponent`가 `ApplyUseEffect` 결과를 해석하고, stack mutation은 `UBeekeeperHotbarComponent::ApplySelectedItemStackDelta`, durability mutation은 `ApplySelectedItemDurabilityDelta` authority 경로를 사용한다.
 - placement action은 `IItemPlacementSlot::TryPlaceItem`을 통해 월드 슬롯 배치를 요청한다.
 - placement 성공 후 stack delta 적용이 실패하면 scope가 slot interface(`ClearPlacedItem`)로 rollback한다.
 
@@ -132,6 +135,7 @@
   - `TryAcquireItem`
   - `TryAcquireItemBySpec`
   - `ApplySelectedItemStackDelta`
+  - `ApplySelectedItemDurabilityDelta`
   - `SwapSlots`
   - `MovePartialToSlot`
 - `UStorageBoxComponent`
@@ -174,7 +178,7 @@
 - FocusEngaged item-use-area 설계에서 실질 아이템사용효과의 owner는 item action이다.
 - Focus의 `UCursorItemUseAreaScopeComponent`는 선택 item의 `FindHoldItemUseAction()` 결과를 cache하고 LMB Press/Hold/Release를 hold-use lifecycle로 라우팅한다.
 - Hold-use item action은 use session 중 `TickUse(Context, DeltaTime)`와, 유효 area target 위에서 `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원한다.
-- `USmokerUseAction`은 `Item.UseArea.Beehive.Smoker` tag query와 함께 hold-use 시 `ABeehive::DecreaseAggression`만 호출하고 stack/durability를 소비하지 않는다.
+- `USmokerUseAction`은 `Item.UseArea.Beehive.Smoker` tag query와 함께 hold-use 시 `ABeehive::DecreaseAggression`을 호출한다. durability drain 적용 여부는 source item definition이 `UActiveUseDurabilityItemDefinition`인지에 따라 결정된다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
@@ -283,3 +287,29 @@
 - focus prompt disabled 상태 판정을 위해 hotbar acquire dry-run query를 추가하는 설계를 확정했다.
 - `PreviewAcquireItemBySpec`는 `TryAcquireItemBySpec`와 동일한 수용 가능성 규칙을 사용하되 hotbar 상태를 변경하지 않는다.
 - pickup과 회수 prompt entry는 공간 부족 또는 stack compatibility 실패 시 entry를 제거하지 않고 `bEnabled=false`로 표시할 수 있다.
+
+## Update 2026-06-02 (Active-Use Durability Drain)
+
+- 신규 item definition subclass:
+  - `UActiveUseDurabilityItemDefinition`
+  - 필드: `DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`
+  - `DrainPolicy`:
+    - `WhenUseEffectSucceeded`: active use-area 위에서 `ApplyUseEffect`가 `bSucceeded=true`를 반환한 Tick에만 drain
+    - `WhileOverValidUseArea`: active use-area 위에서 `CanApplyUseEffect`가 true이면 effect success와 무관하게 drain
+    - `WhileUseSessionActive`: `BeginUse` 성공 후 LMB active use session 동안 use-area hover/target과 무관하게 drain
+- action 결과 DTO 확장:
+  - `FItemActionExecutionResult::DurabilityDelta`
+  - 음수=소모, 양수=회복(현재 구현은 소모만 사용)
+- hold-use base 정책:
+  - `UHoldItemUseAction::ResolveActiveUseDurabilityDelta(...)`
+  - active-use durability definition이면 `bUsesDurability=true`, `MaxDurability>0`, `MaxStack==1`, `DurabilityDrainPerSecond>0`, `CurrentDurability>0` 조건에서만 delta 반환
+  - `DrainPolicy`가 durability 감소 조건을 결정하며 기본값은 `WhenUseEffectSucceeded`
+  - default `ReceiveCanBeginUse`/`ReceiveCanApplyUseEffect`는 durability 0 또는 invalid config를 사용 불가로 판정
+- hotbar authority API 추가:
+  - `FHotbarItemDurabilityMutationResult`
+  - `ApplySelectedItemDurabilityDelta(float DurabilityDelta, bool bRemoveWhenDepleted)`
+  - durability 0 도달 + `bRemoveWhenDepleted=true`면 selected slot item 제거
+  - stack count는 변경하지 않음
+- 적용 범위:
+  - 훈연기/소독약은 DataAsset이 `UActiveUseDurabilityItemDefinition` 기반으로 전환된 경우에만 active-use drain 적용
+  - 벌솔은 기존 durability 소모 없음 정책 유지

@@ -32,9 +32,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item Action|Use Area")
 	virtual FItemActionExecutionResult ApplyUseEffect(const FItemActionContext& Context, float DeltaTime);
 
+	UFUNCTION(BlueprintPure, Category = "Item Action|Use Area")
+	virtual float ResolveActiveUseDurabilityDelta(
+		const FItemActionContext& Context,
+		const FItemActionExecutionResult& EffectResult,
+		float DeltaTime,
+		bool bIsOverValidUseArea) const;
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action|Use Area")
 	FGameplayTagQuery UseAreaTagQuery;
+
+	bool HasUsableActiveUseDurability(const FItemActionContext& Context) const;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Item Action|Use Area")
 	bool ReceiveCanBeginUse(const FItemActionContext& Context) const;
