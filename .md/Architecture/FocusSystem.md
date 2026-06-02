@@ -8,6 +8,8 @@
 - `Source/BeekeepingSim/Private/Focus/FocusTargetComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/FocusActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/FocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/FocusSecondaryActionComponent.h`
+- `Source/BeekeepingSim/Private/Focus/FocusSecondaryActionComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/FocusInteractable.h`
 - `Source/BeekeepingSim/Public/Focus/BeekeepingSimFocusSettings.h`
 - `Source/BeekeepingSim/Public/Focus/AnchoredFocusActionComponent.h`
@@ -15,10 +17,15 @@
 - `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusTypes.h`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusProvider.h`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusScopeComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusScopeComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorPartFocusActionComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/CursorPartFocusRegistrationComponent.h`
+- `Source/BeekeepingSim/Private/Focus/CursorPartFocusRegistrationComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/ChildCursorPartFocusProviderComponent.h`
+- `Source/BeekeepingSim/Private/Focus/ChildCursorPartFocusProviderComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaTypes.h`
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshComponent.h`
 - `Source/BeekeepingSim/Private/Focus/ItemUseAreaMeshComponent.cpp`
@@ -26,6 +33,9 @@
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshProviderComponent.h`
 - `Source/BeekeepingSim/Private/Focus/ItemUseAreaMeshProviderComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshSource.h`
+- `Source/BeekeepingSim/Public/Focus/ItemUseAreaProvider.h`
+- `Source/BeekeepingSim/Public/Focus/ChildItemUseAreaProviderComponent.h`
+- `Source/BeekeepingSim/Private/Focus/ChildItemUseAreaProviderComponent.cpp`
 - `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
 - `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
 
@@ -35,6 +45,7 @@
 - 라인트레이스 기반 focus target 탐지
 - prompt data, prompt entry list, item rule, crosshair visibility 브로드캐스트
 - confirm/cancel/abort 흐름에서 FocusAction 실행 위임
+- FocusEngaged secondary input 실행 위임 및 legacy preview-secondary compatibility surface 유지
 - focus target outline과 `IFocusInteractable` 이벤트 전달
 - anchored focus camera blend 및 cursor/input mode 정책 제공
 - Host 내부 파츠 hover/click용 cursor part focus scope 제공
@@ -47,16 +58,21 @@
 - `UBeekeepingSimFocusSettings`: cursor part focus 등 Focus subsystem tuning 값을 보관하는 `UDeveloperSettings`
 - `UFocusTargetComponent`: prompt, item rule, outline, focus event dispatch 오너
 - `UFocusActionComponent`: confirm/cancel/abort 공통 액션 베이스
+- `UFocusSecondaryActionComponent`: legacy preview-target secondary action compatibility 베이스. 현재 active 입력 경로는 engaged PartFocus secondary다.
 - `UAnchoredFocusActionComponent`: 캐릭터 앵커 이동과 카메라 블렌드 액션
 - `UAnchoredFocusCursorActionComponent`: anchored action에 cursor/input mode 정책 추가
 - `UCursorPartFocusScopeComponent`: FocusEngaged Host 내부 파츠 hover/confirm/cancel/outline/prompt 스코프
 - `UCursorPartFocusActionComponent`: 파츠별 begin/cancel/abort lifecycle + tag/group 정책
 - `ECursorPartFocusPreviewInputKey`: PartFocus hover preview key 입력(`R`, `F`, `C`) 구분 enum
+- `ICursorPartFocusProvider`: actor/component가 host scope에 PartFocus descriptor를 공급하는 interface
+- `UCursorPartFocusRegistrationComponent`: host의 PartFocus descriptor rebuild/append orchestration component
+- `UChildCursorPartFocusProviderComponent`: child actor component tag/class 조건으로 child provider descriptor를 수집하는 component
 - `UCursorItemUseAreaScopeComponent`: FocusEngaged host 내부 item-use-area 수집/표시/hover/LMB hold-use scope
 - `UItemUseAreaMeshComponent`: item-use-area hit/visual/material/effect-target policy를 소유하는 mesh component
 - `IItemUseAreaActivationProvider`: item-use-area component별 active/inactive 판정 인터페이스
 - `UItemUseAreaMeshProviderComponent`: host/직접 child actor 및 child actor의 `IItemUseAreaMeshSource` 제공 mesh를 수집해 descriptor를 구성하는 provider
 - `IItemUseAreaMeshSource`: child actor가 직접 소유 component 외의 item-use-area mesh를 provider에 노출하는 C++ 확장 계약
+- `IItemUseAreaProvider` / `UChildItemUseAreaProviderComponent`: actor-level item-use-area provider compatibility 경로. 현재 runtime source-of-truth는 mesh provider component다.
 - `IFocusInteractable`: actor-level focus 이벤트 인터페이스
 
 ## State Model
@@ -259,12 +275,11 @@
 
 ## Update 2026-05-27
 
-- PreviewFocus 상태에서 secondary input(RMB 등)을 별도 라우팅하는 `UFocusSecondaryActionComponent` 기반 경로를 추가했다.
-- `UBeekeeperFocusComponent::HandleSecondaryInput()`은 다음 정책을 따른다.
-  - FocusEngaged 상태에서는 실행하지 않는다.
-  - 현재 preview target owner에서 `UFocusSecondaryActionComponent`를 찾는다.
-  - `CanExecuteSecondaryFocusAction` 통과 시 `ExecuteSecondaryFocusAction`을 호출한다.
-- Focus는 secondary action의 실제 inventory/world mutation을 직접 수행하지 않고 실행 위임만 담당한다.
+- `FocusSecondaryAction` 입력 바인딩 경로를 추가했다.
+- 현재 `UBeekeeperFocusComponent::HandleSecondaryInput()` 정책:
+  - non-engaged preview 상태에서는 false를 반환한다.
+  - FocusEngaged 상태에서 engaged action의 `HandleSecondaryInputWhileEngaged()`로 위임한다.
+- `UFocusSecondaryActionComponent`와 `UPlacedItemRetrieveFocusActionComponent`는 compatibility surface로 남아 있지만, 현재 placed item retrieve source of truth는 PartFocus secondary path다.
 
 ## Update 2026-05-27 (PartFocus Provider)
 

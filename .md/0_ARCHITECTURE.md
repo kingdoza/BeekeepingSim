@@ -2,8 +2,8 @@
 
 ## 문서 기준
 
-- 기준일: 2026-05-09(KST) Source 재대조 기준
-- 상태: 1차 구조 리팩토링과 보류 리팩토링 완료 후 현재 Source 구조 기준
+- 기준일: 2026-06-02(KST) Source 재대조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 100개
-  - Public header: 55개
-  - Private cpp/header: 45개
+- 현재 대상 C++ 파일 수: 159개
+  - Public header: 88개
+  - Private cpp/header: 71개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -59,12 +59,12 @@ Source/BeekeepingSim/
 - 현재 파일 분포:
   - Camera: Public 1 / Private 1
   - Character: Public 5 / Private 5
-  - Environment: Public 5 / Private 2
-  - Focus: Public 13 / Private 8
+  - Environment: Public 9 / Private 4
+  - Focus: Public 22 / Private 14
   - Interaction: Public 2 / Private 2
-  - Inventory: Public 11 / Private 9
-  - UI: Public 7 / Private 6
-  - WorldActors: Public 11 / Private 12
+  - Inventory: Public 18 / Private 15
+  - UI: Public 8 / Private 7
+  - WorldActors: Public 23 / Private 23
 
 ## 시스템 간 책임 흐름
 
@@ -113,7 +113,7 @@ Source/BeekeepingSim/
 - 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
 - `ABeehive`는 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area first host를 구현한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
-- Environment는 24시간 가속 시간과 하늘/조명/태양/달 연출을 단일 시간 값에서 평가한다.
+- Environment는 `AGameTimeOfDayActor`의 24시간 가속 시간과 `ADynamicSky`의 하늘/조명/태양/달 연출을 `ITimeOfDayProvider` 계약으로 분리한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
 - Runtime clock UI는 bucket system을 사용하지 않는다. `ABeekeeperController`가 `ITimeOfDayProvider`를 resolve하고, `AGameTimeOfDayActor`를 우선 구독해 `UTimeOfDayClockWidget`에 `Hour24`를 주입한다. (`AEnvironmentTimeOfDayActor`는 compatibility fallback)
 
@@ -158,12 +158,12 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 
 ## Update 2026-05-27
 
-- Focus preview target secondary input 경로를 추가했다.
+- `FocusSecondaryAction` 입력 경로를 추가했고, 현재 의미는 FocusEngaged host 내부 PartFocus secondary 입력이다.
   - `ABeekeeperCharacter::FocusSecondaryAction` 입력(`Started`) -> `FocusSecondaryInput()` -> `UBeekeeperFocusComponent::HandleSecondaryInput()`
-  - Focus는 preview target owner의 `UFocusSecondaryActionComponent` 실행만 위임한다.
-- WorldActors에 generic placed item 회수 흐름을 추가했다.
+  - non-engaged preview 상태에서 `HandleSecondaryInput()`은 false를 반환한다.
+- WorldActors에 generic placed item 회수 흐름을 추가했고, 현재 실행 경로는 host 내부 PartFocus secondary retrieve다.
   - `AItemPlacementSlotActor`가 spawn한 `APlacedItemActor`를 `InitializePlacedItem(SourceItemInstance, this)`로 초기화한다.
-  - hover + secondary input 시 회수 action이 state-aware hotbar acquire(`TryAcquireItemBySpec`)를 수행한다.
+  - PartFocus hovered secondary input 시 retrieve action이 state-aware hotbar acquire(`TryAcquireItemBySpec`)를 수행한다.
   - `bSuccess && AddedQuantity == 1`일 때만 성공
   - 성공 시 `IItemPlacementSlot::Execute_ClearPlacedItem`로 slot 점유를 해제한다.
 
@@ -266,6 +266,6 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 
 ## Update 2026-06-01 (Smoker + Beehive Aggression)
 
-- `ABeehive`는 sanitation과 분리된 aggression 상태(`MaxAggressionValue`, `AggressionValue`)를 소유한다.
+- `ABeehive`는 sanitation과 분리된 aggression 상태(`MaxAggressionValue=100`, `AggressionValue=100` 기본)를 소유한다.
 - `USmokerUseAction`(`UHoldItemUseAction` 기반)은 `Item.UseArea.Beehive.Smoker` 영역에서 hold-use 중 `ABeehive::DecreaseAggression`을 호출한다.
 - 현재 범위에서 aggression 자동 회복과 공격력 계산/피해 시스템 연동은 구현하지 않는다.

@@ -38,7 +38,7 @@ Core Redirect는 Blueprint/asset 직렬화 호환 목적이다. 새 rename을 �
 - UObject/UCLASS rename은 Core Redirect 계획 없이는 진행하지 않는다.
 - Content 참조가 확인된 Blueprint API는 대체 노드 migration 전까지 삭제하지 않는다.
 - Environment는 다른 gameplay 시스템에 의존하지 않는다. 다른 시스템이 시간에 반응할 때는 가능하면 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem`을 사용한다.
-- `ABeekeeperController`가 runtime clock 표시를 위해 `AEnvironmentTimeOfDayActor`를 resolve하는 경로는 Character-side local UI binding 예외다. Gameplay actor가 이 경로를 따라 Environment actor를 polling하면 안 된다.
+- `ABeekeeperController`가 runtime clock 표시를 위해 `ITimeOfDayProvider`를 resolve하는 경로는 Character-side local UI binding 예외다. 이 경로는 `AGameTimeOfDayActor`를 우선하고 `AEnvironmentTimeOfDayActor`는 compatibility fallback으로만 사용한다. Gameplay actor가 이 경로를 따라 Environment actor를 polling하면 안 된다.
 - Editor-only 보조 코드는 `#if WITH_EDITOR`와 editor dependency 조건을 명확히 둔다. 예: `BeehiveDualSwarmActorCustomization`은 runtime gameplay source of truth가 아니라 details panel 노출 제어용이다.
 - `UDeveloperSettings` 기반 tuning 값은 해당 system 문서에 source of truth를 기록한다. 예: Focus screen-edge cancel 두께는 `UBeekeepingSimFocusSettings`가 소유한다.
 

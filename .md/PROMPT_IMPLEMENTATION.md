@@ -1,117 +1,78 @@
-# 훈연기와 벌통 공격성 구현 프롬프트
+# Active-use 내구도 감소 구현 프롬프트
 
 ## 목표
 
-기존 소독약(`UDisinfectantUseAction`)과 동일한 FocusEngaged item-use-area hold-use 구조로 **훈연기 사용 시 해당 벌통의 공격성 수치가 내려가는 기능**을 구현한다.
+FocusEngaged item-use-area에서 특정 hold-use 아이템이 active use 중일 때, 매 Tick 선택 아이템의 durability를 감소시키는 기능을 구현한다.
 
-이번 작업 범위는 **공격성 수치와 훈연기 동작만**이다.
+이번 설계의 핵심은 다음과 같다.
 
-구현하지 않는 것:
-
-- 벌 공격/피해/공격력 시스템
-- `EffectiveAttackPower`, `BaseAttackPower`, 공격력 multiplier API
-- 공격성 자동 회복
-- 시간 bucket 기반 aggression recovery
-- Tick 기반 aggression recovery
-- 훈연기 stack/durability/fuel 소모
-- Content asset 직접 수정/저장
-
-## 확정 QnA
-
-반드시 `.md/QNA_ARCHITECTURE.md`의 `[훈연기와 벌통 공격성]` 답변을 기준으로 한다.
-
-- 공격성 초기값: `AggressionValue = MaxAggressionValue`, 기본 100/100
-- 공격성 자동 회복: 없음
-- 공격력 계산/구현: 이번 범위에서 제외
-- 훈연기 use-area: 기존 벌통 item-use-area에 `Item.UseArea.Beehive.Smoker` 태그를 추가하는 방식
-- 훈연기 자원 소모: 1차 구현에서는 없음
+- 기존 `UItemDefinition` base class는 active-use durability 설정으로 확장하지 않는다.
+- active-use 내구도 감소가 필요한 아이템은 전용 하위 item definition class를 사용한다.
+- 실제 selected item durability mutation은 `UBeekeeperHotbarComponent` authority API로 처리한다.
+- Focus scope는 입력/영역/결과 라우팅만 담당한다.
+- 훈연기와 소독약만 active-use durability drain 적용 대상이다. 벌솔은 기존 소모 없음 정책을 유지한다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/InventorySystem.md`
+- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
+
+## 확정 QnA
+
+반드시 `.md/QNA_ARCHITECTURE.md`의 `[사용영역 active 중 아이템 내구도 Tick 감소]` 답변을 기준으로 한다.
+
+- 설정 위치: `UItemDefinition` base class가 아니라 전용 subclass
+- 권장 class: `UActiveUseDurabilityItemDefinition : public UItemDefinition`
+- active 조건: LMB use session 중, hovered matching active use-area 위, `CanApplyUseEffect` true, 그리고 기본적으로 `ApplyUseEffect` 결과가 `bSucceeded=true`
+- `bRequireEffectSucceeded=true`의 의미: 실제 수치 변화가 있었는지가 아니라, action이 유효한 target을 찾아 `bSucceeded=true`를 반환했는지
+- 0 도달 처리: `bRemoveItemWhenDepleted`가 단일 기준
+  - true: selected slot item 제거 + active use session 종료
+  - false: durability 0 상태로 item 유지 + 이후 use begin/effect 차단
+- active-use durability drain 대상 item invariant:
+  - `bUsesDurability=true`
+  - `MaxDurability>0`
+  - `MaxStack==1`
+- mutation authority: `FItemActionExecutionResult`가 durability delta를 전달하고, `UCursorItemUseAreaScopeComponent`가 Hotbar API에 위임
+- 감소량: `DurabilityDrainPerSecond * DeltaTime` float delta, 별도 accumulator 없음
 
 ## 구현 대상
 
 Source:
 
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/Inventory/SmokerUseAction.h` 신규
-- `Source/BeekeepingSim/Private/Inventory/SmokerUseAction.cpp` 신규
+- `Source/BeekeepingSim/Public/Inventory/ActiveUseDurabilityItemDefinition.h` 신규
+- `Source/BeekeepingSim/Public/Inventory/ItemActionTypes.h`
+- `Source/BeekeepingSim/Public/Inventory/HoldItemUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/HoldItemUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h`
+- `Source/BeekeepingSim/Private/Inventory/BeekeeperHotbarComponent.cpp`
+- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
 
-Config:
-
-- `Config/DefaultGameplayTags.ini`
-
-문서:
+필요 시:
 
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- 필요 시 `.md/USER_UNREAL.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/USER_UNREAL.md`
+- `.md/PROMPT_REVIEW.md`
 
 수정 금지:
 
+- `UItemDefinition` base class에 active-use durability drain property 추가
 - 기존 UCLASS/USTRUCT/UENUM rename
 - 기존 BlueprintCallable/Public API 삭제 또는 rename
-- Core Redirect가 필요한 변경
-- 공격력/피해 시스템 추가
-- Content `.uasset` 직접 수정
+- Core Redirect가 필요한 rename
+- Content `.uasset` 직접 수정/저장
+- 벌솔 durability 소모 적용
 
-## 벌통 공격성 상태
+## 전용 ItemDefinition subclass
 
-`ABeehive`가 공격성 상태의 owner다. 위생성(`SanitationValue`)처럼 벌통 actor 내부 상태로 둔다.
-
-권장 public API:
-
-```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Aggression")
-void DecreaseAggression(float Delta);
-
-UFUNCTION(BlueprintCallable, Category = "Beehive|Aggression")
-void SetAggressionValue(float NewValue);
-
-UFUNCTION(BlueprintPure, Category = "Beehive|Aggression")
-float GetAggressionValue() const { return AggressionValue; }
-
-UFUNCTION(BlueprintPure, Category = "Beehive|Aggression")
-float GetAggressionRatio() const;
-```
-
-권장 property:
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Aggression", meta = (ClampMin = "0.0"))
-float MaxAggressionValue = 100.0f;
-
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Aggression", meta = (ClampMin = "0.0"))
-float AggressionValue = 100.0f;
-```
-
-동작:
-
-- 기본값은 `MaxAggressionValue=100`, `AggressionValue=100`.
-- `DecreaseAggression(Delta)`는 `Delta <= 0`이면 no-op, 아니면 `SetAggressionValue(AggressionValue - Delta)`.
-- `SetAggressionValue(NewValue)`는 `0..MaxAggressionValue`로 clamp한다.
-- `GetAggressionRatio()`는 `MaxAggressionValue <= KINDA_SMALL_NUMBER`이면 0, 아니면 `AggressionValue / MaxAggressionValue`를 `0..1`로 clamp한다.
-- `OnConstruction`/`BeginPlay` 등 기존 초기화 흐름에서 필요하면 현재 값을 clamp한다. 단, BeginPlay에서 항상 max로 reset해서 placed instance authoring 값을 덮어쓰면 안 된다.
-
-주의:
-
-- 공격력 계산용 API/필드는 추가하지 않는다.
-- 공격성 회복 subscription을 `UGameTimeBucketSubsystem`에 추가하지 않는다.
-- 상태 변경 delegate는 1차 구현 범위에 넣지 않는다. Blueprint 표시가 필요해지면 별도 설계로 확장한다.
-
-## 훈연기 Use Action
-
-`USmokerUseAction`을 `UHoldItemUseAction` subclass로 추가한다. 구조는 `UDisinfectantUseAction`을 기준으로 한다.
+`UActiveUseDurabilityItemDefinition`을 추가한다.
 
 권장 header:
 
@@ -119,126 +80,236 @@ float AggressionValue = 100.0f;
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Inventory/HoldItemUseAction.h"
-#include "SmokerUseAction.generated.h"
+#include "Inventory/ItemDefinition.h"
+#include "ActiveUseDurabilityItemDefinition.generated.h"
 
-class ABeehive;
-
-UCLASS(Blueprintable, EditInlineNew, DefaultToInstanced)
-class BEEKEEPINGSIM_API USmokerUseAction : public UHoldItemUseAction
+UCLASS(BlueprintType)
+class BEEKEEPINGSIM_API UActiveUseDurabilityItemDefinition : public UItemDefinition
 {
 	GENERATED_BODY()
 
 public:
-	USmokerUseAction();
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Active Use Durability", meta = (ClampMin = "0.0"))
+	float DurabilityDrainPerSecond = 1.0f;
 
-	virtual bool BeginUse(const FItemActionContext& Context) override;
-	virtual void EndUse(const FItemActionContext& Context, bool bWasCanceled) override;
-	virtual FItemActionExecutionResult ApplyUseEffect(const FItemActionContext& Context, float DeltaTime) override;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Active Use Durability")
+	bool bRequireEffectSucceeded = true;
 
-protected:
-	UFUNCTION(BlueprintImplementableEvent, Category = "Smoker")
-	void ReceiveSmokerUseStarted(const FItemActionContext& Context);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Smoker")
-	void ReceiveSmokerUseEnded(const FItemActionContext& Context, bool bWasCanceled);
-
-private:
-	ABeehive* ResolveTargetBeehive(const FItemActionContext& Context) const;
-
-protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Smoker", meta = (ClampMin = "0.0"))
-	float AggressionDecreasePerSecond = 10.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Active Use Durability")
+	bool bRemoveItemWhenDepleted = true;
 };
-```
-
-동작:
-
-- 생성자에서 `Item.UseArea.Beehive.Smoker` tag query를 구성한다.
-- `BeginUse`:
-  - `Super::BeginUse(Context)` 실패 시 false
-  - 소독약과 동일하게 `Context.Character->GetBeekeeperHeldItemVisualizer()->BeginHeldItemUseActive()` 호출
-  - `ReceiveSmokerUseStarted(Context)` 호출
-- `EndUse`:
-  - 소독약과 동일하게 held item active 종료 호출
-  - `ReceiveSmokerUseEnded(Context, bWasCanceled)` 호출
-  - `Super::EndUse(Context, bWasCanceled)` 호출
-- `ApplyUseEffect`:
-  - `ResolveTargetBeehive(Context)` 실패 시 기본 실패 결과 반환
-  - `DecreaseAmount = Max(0, AggressionDecreasePerSecond) * Max(0, DeltaTime)`
-  - `Beehive->DecreaseAggression(DecreaseAmount)`
-  - `Result.bSucceeded = true`
-  - `Result.bConsumedItem = false` 유지
-  - `StackDelta` 변경 없음
-
-대상 resolve:
-
-```cpp
-if (ABeehive* ByEffectTarget = Cast<ABeehive>(Context.ItemUseEffectTargetObject))
-{
-	return ByEffectTarget;
-}
-return Cast<ABeehive>(Context.FocusEngagedHostActor);
-```
-
-## Gameplay Tag
-
-`Config/DefaultGameplayTags.ini`에 아래 tag를 추가한다.
-
-```ini
-+GameplayTagList=(Tag="Item.UseArea.Beehive.Smoker",DevComment="")
 ```
 
 주의:
 
-- `USmokerUseAction`은 `RequestGameplayTag(FName(TEXT("Item.UseArea.Beehive.Smoker")), false)` 패턴을 기존 action들과 맞춘다.
-- tag가 등록되지 않으면 query가 비어 의도치 않게 넓은 area와 매칭될 수 있으므로, config 추가와 검색 검증을 반드시 수행한다.
-- 기존 `Disinfectant`, `BeeBrush`, `PollenPatty` tag 정책은 이번 작업에서 리팩토링하지 않는다.
+- cpp 파일은 필요하지 않으면 만들지 않는다.
+- `UItemDefinition` base class에는 이 spec을 넣지 않는다.
+- class 추가이므로 Core Redirect는 필요 없다.
+- 기존 item asset을 이 subclass로 바꾸는 작업은 Content 수동 작업이다.
 
-## Blueprint/Unreal 수동 작업
+## Action Result 확장
 
-C++ 구현은 Content asset을 수정하지 않는다. 필요한 에디터 작업은 `.md/USER_UNREAL.md` 또는 최종 보고에 명시한다.
+`FItemActionExecutionResult`에 durability delta를 추가한다.
 
-필요 수동 작업:
+권장 필드:
 
-- 훈연기 item definition asset 생성 또는 기존 asset 수정
-  - ActionSpec에 `USmokerUseAction` 추가
-  - Held presentation actor는 smoke VFX가 있는 `AVfxItemPresentationActor` 계열 BP 권장
-- 벌통 BP의 기존 item-use-area component에 `Item.UseArea.Beehive.Smoker` 태그 추가
-  - 소독약과 같은 영역을 쓰려면 같은 `UItemUseAreaMeshComponent.AreaTags`에 Smoker tag를 추가한다.
-  - `EffectTargetPolicy`는 벌통 host를 target으로 resolve할 수 있는 기존 정책을 유지한다.
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Action")
+float DurabilityDelta = 0.0f;
+```
+
+정책:
+
+- 음수는 durability 감소, 양수는 회복으로 해석한다.
+- 이번 기능은 음수만 사용한다.
+- `bConsumedItem`/`StackDelta`와 독립적으로 해석한다.
+- `DurabilityDelta == 0`이면 durability mutation 없음.
+
+## Hold-use Action 공통 helper
+
+`UHoldItemUseAction`에 active-use durability drain 계산 helper를 추가한다.
+
+권장 public API:
+
+```cpp
+UFUNCTION(BlueprintPure, Category = "Item Action|Use Area")
+virtual float ResolveActiveUseDurabilityDelta(
+	const FItemActionContext& Context,
+	const FItemActionExecutionResult& EffectResult,
+	float DeltaTime
+) const;
+```
+
+동작:
+
+- `Context.SourceItemInstance`가 없으면 0.
+- source definition이 `UActiveUseDurabilityItemDefinition`이 아니면 0.
+- invalid config면 0.
+  - `bUsesDurability=false`
+  - `MaxDurability<=0`
+  - `MaxStack!=1`
+  - `DurabilityDrainPerSecond<=0`
+- source item durability가 이미 0 이하이면 0.
+- `bRequireEffectSucceeded=true`이고 `EffectResult.bSucceeded=false`이면 0.
+- 그 외에는 `-DurabilityDrainPerSecond * Max(0, DeltaTime)` 반환.
+
+`UHoldItemUseAction`의 사용 가능 판정도 보강한다.
+
+권장 private/protected helper:
+
+```cpp
+bool HasUsableActiveUseDurability(const FItemActionContext& Context) const;
+```
+
+정책:
+
+- source definition이 `UActiveUseDurabilityItemDefinition`이 아니면 true.
+- active-use durability definition이면 config가 유효해야 하고, current durability가 0보다 커야 true.
+- 이 helper를 기본 `ReceiveCanBeginUse_Implementation`과 `ReceiveCanApplyUseEffect_Implementation` 경로에 반영한다.
+- 기존 subclass가 `CanBeginUse`/`CanApplyUseEffect`를 override하지 않는 현재 구조를 깨지 않는다.
+
+## Hotbar durability mutation API
+
+`UBeekeeperHotbarComponent`에 selected item durability mutation API를 추가한다.
+
+권장 result struct:
+
+```cpp
+USTRUCT(BlueprintType)
+struct FHotbarItemDurabilityMutationResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bApplied = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bItemDepleted = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	bool bItemRemoved = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	float PreviousDurability = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	float NewDurability = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hotbar")
+	FText Message;
+};
+```
+
+권장 API:
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Hotbar")
+FHotbarItemDurabilityMutationResult ApplySelectedItemDurabilityDelta(
+	float DurabilityDelta,
+	bool bRemoveWhenDepleted
+);
+```
+
+동작:
+
+- `DurabilityDelta`가 거의 0이면 no-op 실패 결과.
+- selected slot이 없거나 selected item이 없으면 실패.
+- selected item이 durability를 사용하지 않으면 실패.
+- `PreviousDurability` 기록.
+- `NewDurability = Clamp(PreviousDurability + DurabilityDelta, 0, MaxDurability)`.
+- 값이 변하지 않으면 실패 또는 no-op으로 처리하되 delegate broadcast는 하지 않는다.
+- 값이 변하면 `SelectedItem->SetDurability(NewDurability)`.
+- `NewDurability <= 0`이면 `bItemDepleted=true`.
+- depleted이고 `bRemoveWhenDepleted=true`이면:
+  - `RememberSelectedIndex()`
+  - selected slot item clear
+  - `bItemRemoved=true`
+- mutation 발생 시 `ReevaluateSlotsInternal()` 후 `BroadcastHotbarChanged()`.
+- stack count는 변경하지 않는다.
+- storage item durability 변경 API는 이번 범위에 넣지 않는다.
+
+## CursorItemUseAreaScope result 해석
+
+`UCursorItemUseAreaScopeComponent::TickComponent`의 `ApplyUseEffect` 결과 처리 흐름을 확장한다.
+
+권장 흐름:
+
+```cpp
+FItemActionExecutionResult Result = CachedHoldAction->ApplyUseEffect(EffectContext, DeltaTime);
+Result.DurabilityDelta += CachedHoldAction->ResolveActiveUseDurabilityDelta(EffectContext, Result, DeltaTime);
+ApplyUseEffectResultToSelectedItem(Result);
+```
+
+`ApplyUseEffectResultToSelectedItem`는 stack mutation과 durability mutation을 독립 처리해야 한다.
+
+주의:
+
+- 현재 구현은 `!Result.bConsumedItem`이면 즉시 return한다. 이 구조를 유지하면 durability-only result가 무시된다. 반드시 수정한다.
+- stack mutation은 기존 `bConsumedItem`/`StackDelta`/placement rollback 정책을 보존한다.
+- durability mutation은 `Result.DurabilityDelta`가 0이 아닐 때만 Hotbar API를 호출한다.
+- durability mutation에 넘기는 `bRemoveWhenDepleted` 값은 selected item definition의 `UActiveUseDurabilityItemDefinition::bRemoveItemWhenDepleted`에서 읽는다.
+- durability가 0에 도달하면 `EndUseSession(false)`를 호출해 active use를 자연 종료한다.
+  - item이 제거되는 경우에도 먼저 세션을 종료해 held presentation active end 이벤트가 누락되지 않게 한다.
+  - item을 유지하는 경우에도 현재 use session은 종료하고 이후 begin/effect는 durability 0 차단에 맡긴다.
+- mutation 후 `RefreshSelectedItemAndAction()`과 `RebuildItemUseAreaDescriptors()`를 호출해 area/selection 상태를 갱신한다.
+
+## 훈연기/소독약 적용 방식
+
+C++ action class 자체에 item-specific durability field를 추가하지 않는다.
+
+- `USmokerUseAction`과 `UDisinfectantUseAction`은 기존처럼 domain effect를 적용하고 `Result.bSucceeded=true`를 반환한다.
+- durability drain 여부는 source item definition이 `UActiveUseDurabilityItemDefinition`인지로 결정한다.
+- 벌솔(`UBeeBrushUseAction`)은 이번 적용 대상이 아니다. 벌솔 asset을 전용 definition으로 바꾸지 않는 한 durability drain이 발생하지 않아야 한다.
+
+Content 수동 작업은 C++ 구현에서 하지 않는다. 구현 완료 후 `.md/USER_UNREAL.md` 또는 최종 보고에 아래 작업을 명시한다.
+
+- 훈연기 item definition asset을 `UActiveUseDurabilityItemDefinition` 기반 asset으로 생성/교체
+- 소독약 item definition asset을 `UActiveUseDurabilityItemDefinition` 기반 asset으로 생성/교체
+- 각 asset에서:
+  - `bUsesDurability=true`
+  - `MaxDurability>0`
+  - `MaxStack=1`
+  - `DurabilityDrainPerSecond` 설정
+  - `bRequireEffectSucceeded=true`
+  - `bRemoveItemWhenDepleted` 설정
+- 기존 ActionSpec은 유지한다.
 
 ## 문서 갱신
 
 구현 후 실제 API 이름과 일치하도록 아래 문서를 갱신한다.
 
 - `.md/0_ARCHITECTURE.md`
-  - `ABeehive`가 공격성 수치를 소유하고 훈연기로 감소시킨다는 요약 추가
-  - 공격력 계산은 이번 범위 제외임을 혼동 없게 기록
+  - active-use durability drain 요약
+  - 훈연기/소독약 적용 대상, 벌솔 제외
 - `.md/Architecture/InventorySystem.md`
-  - `USmokerUseAction` 추가
-  - hold-use 중 벌통 공격성 감소, item 소비 없음 기록
-- `.md/Architecture/WorldActorsSystem.md`
-  - `ABeehive` aggression 상태/API 기록
-  - item-use 확장에 smoker/aggression 항목 추가
+  - `UActiveUseDurabilityItemDefinition`
+  - `FItemActionExecutionResult::DurabilityDelta`
+  - `UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta`
+  - `UHoldItemUseAction::ResolveActiveUseDurabilityDelta`
+- `.md/Architecture/FocusSystem.md`
+  - `UCursorItemUseAreaScopeComponent`가 stack delta와 durability delta를 독립 해석한다는 내용
 - `.md/USER_UNREAL.md`
-  - Smoker item definition과 use-area tag 수동 설정 절차가 필요하면 추가
+  - 훈연기/소독약 DataAsset 수동 전환과 설정 절차
+
+문서 갱신은 구현 범위에 포함한다. 단, Content asset은 직접 수정하지 않는다.
 
 ## 검색 검증
 
 ```powershell
-rg "SmokerUseAction|AggressionValue|MaxAggressionValue|DecreaseAggression|GetAggressionRatio" Source/BeekeepingSim .md Config
-rg "Item.UseArea.Beehive.Smoker" Source/BeekeepingSim .md Config
-rg "EffectiveAttackPower|BaseAttackPower|AttackPower|MinAttackMultiplier" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+rg "ActiveUseDurabilityItemDefinition|DurabilityDrainPerSecond|bRequireEffectSucceeded|bRemoveItemWhenDepleted" Source/BeekeepingSim .md
+rg "DurabilityDelta|ApplySelectedItemDurabilityDelta|FHotbarItemDurabilityMutationResult|ResolveActiveUseDurabilityDelta" Source/BeekeepingSim .md
+rg "ApplyUseEffectResultToSelectedItem|bConsumedItem|StackDelta" Source/BeekeepingSim/Private/Focus Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory
+rg "BeeBrushUseAction" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory .md
 ```
 
 확인할 것:
 
-- `USmokerUseAction`이 `UHoldItemUseAction` 기반으로 추가되었다.
-- 훈연기 action이 소독약처럼 held item active lifecycle을 호출한다.
-- 훈연기 action이 `ABeehive::DecreaseAggression`만 호출하고 item 소비를 하지 않는다.
-- `Item.UseArea.Beehive.Smoker`가 config와 문서에 존재한다.
-- 공격력 관련 API/필드가 추가되지 않았다.
+- `UItemDefinition` base class에 active-use durability property가 추가되지 않았다.
+- `UPollenPattyItemDefinition` 기존 동작과 충돌하지 않는다.
+- `FItemActionExecutionResult::DurabilityDelta`가 `bConsumedItem`과 독립적으로 처리된다.
+- selected item durability mutation은 Hotbar API를 통해서만 수행된다.
+- durability 0 도달 시 active use session이 종료된다.
+- 벌솔에는 별도 durability drain 코드가 추가되지 않았다.
 
 ## 빌드 검증
 
@@ -254,9 +325,21 @@ rg "EffectiveAttackPower|BaseAttackPower|AttackPower|MinAttackMultiplier" Source
 
 아래 상황이면 구현을 멈추고 `.md/QNA_IMPLEMENTATION.md`에 질문한다.
 
-- 훈연기 구현에 공격력/피해 시스템 API가 필요해지는 경우
-- 공격성 회복 정책을 넣지 않으면 동작을 완성할 수 없는 경우
-- `ABeehive`에 aggression 상태를 추가하려면 기존 Blueprint-exposed API rename/delete가 필요해지는 경우
-- gameplay tag 추가가 Config 변경만으로 부족하고 Content asset migration이 필요한 경우
-- `USmokerUseAction` 추가가 기존 item action 생성/serialization 경로와 충돌하는 경우
-- Content asset compile/save가 구현 완료 조건이 되는 경우
+- `UItemDefinition` base class를 수정하지 않으면 구현이 불가능한 경우
+- 기존 `FItemActionExecutionResult` 확장이 Blueprint serialization 또는 기존 BP 노드와 충돌하는 경우
+- `UBeekeeperHotbarComponent` public API 추가만으로 selected item durability 상태 갱신이 불가능한 경우
+- `bRemoveItemWhenDepleted=false` 정책을 구현하려면 별도 repair/broken item 시스템이 필요해지는 경우
+- 훈연기/소독약 Content asset 전환이 C++ 구현 완료 조건이 되는 경우
+- UCLASS/USTRUCT/UENUM rename이 필요해지는 경우
+- Core Redirect 필요 여부가 불명확한 경우
+
+## 최종 보고 요구사항
+
+구현 완료 보고에는 반드시 아래를 포함한다.
+
+- 변경한 Source 파일
+- 변경한 문서 파일
+- UBT 빌드 결과 또는 미수행 사유
+- Content 수동 작업 목록
+- Core Redirect 불필요 여부
+- 훈연기/소독약은 opt-in DataAsset 전환 전까지 실제 drain이 발생하지 않을 수 있다는 점

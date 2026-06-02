@@ -154,7 +154,9 @@
 - descriptor 기본 tag:
   - lid: `Beehive.UseArea.Lid`
   - comb: `Beehive.UseArea.Comb`
-- `ABeehive`는 sanitation과 별도로 aggression 상태(`MaxAggressionValue`, `AggressionValue`)를 소유하며, `DecreaseAggression`, `SetAggressionValue`, `GetAggressionRatio` API를 제공한다.
+- `ABeehive`는 sanitation과 별도로 aggression 상태를 소유한다.
+  - `MaxAggressionValue=100`, `AggressionValue=100` 기본값으로 시작한다.
+  - `DecreaseAggression`, `SetAggressionValue`, `GetAggressionRatio` API를 제공한다.
 - aggression은 훈연기 hold-use 효과로만 감소하고, 현재 범위에서는 자동 회복/공격력 계산과 연결하지 않는다.
 - item-use 확장:
   - sanitation 상태: `SanitationValue`, `MaxSanitationValue`, `IncreaseSanitation`, `SetSanitationValue`, `GetSanitationRatio`

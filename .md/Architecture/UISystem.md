@@ -80,9 +80,6 @@
 - `UFocusPromptWidget::ClearPrompt`
 - `UFocusPromptWidget::GetCurrentPromptData`
 - `UFocusPromptWidget::OnPromptDataApplied`
-
-다중 prompt entry 구현 시 추가되는 Blueprint 표시 계약:
-
 - `UFocusPromptWidget::OnPromptEntriesApplied`
 
 `ShouldHideItemVisualForCurrentDrag`는 legacy wrapper다. 새 Blueprint 로직은 가능하면 `ShouldHideItemVisualForPartialDragPreview`, `IsPartialDragPreviewActive`, `GetPartialDragPreviewDisplayStackCount` 조합을 우선 사용한다.

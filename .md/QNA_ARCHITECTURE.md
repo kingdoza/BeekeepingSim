@@ -1,61 +1,82 @@
-### [훈연기와 벌통 공격성]
+# Architecture QnA
 
-1. 벌통 공격성의 초기값을 어떻게 둘지?
-- 질문 내용
-  - 훈연기는 벌통 공격성을 낮추는 hold-use item으로 설계한다. 이때 `ABeehive`의 초기 `AggressionValue`를 어떤 값으로 시작할지 결정이 필요하다.
-- 필요한 이유
-  - 초기 공격성이 낮으면 훈연기 효과가 체감되지 않고, 초기 공격성이 최대이면 "훈연기로 낮춘다"는 gameplay loop가 명확해진다.
-- 선택지
-  - 옵션 A: `AggressionValue`를 `MaxAggressionValue`와 동일하게 시작한다. 기본값은 100/100.
-  - 옵션 B: `AggressionValue`를 0으로 시작하고 외부 이벤트로 증가시킨다.
-  - 옵션 C: `InitialAggressionValue`를 별도 authoring 값으로 둔다.
-- 권장 옵션: 옵션 A. 벌통은 기본적으로 공격성을 가진 상태이고, 훈연기로 낮추는 흐름이 가장 직관적이다.
-- 답변 : 옵션A
+## 미해결 질문
 
-2. 훈연으로 낮아진 공격성이 자동 회복되어야 하는지?
-- 질문 내용
-  - 훈연기 사용 후 낮아진 벌통 공격성이 유지되는지, 시간이 지나며 회복되는지 결정이 필요하다.
-- 필요한 이유
-  - 자동 회복은 시간 bucket/상태 갱신 설계가 추가로 필요하고, 회복 없음은 소독약 효과 방식과 동일한 단순 누적 상태 변경으로 처리할 수 있다.
-- 선택지
-  - 옵션 A: 자동 회복 없음. 훈연으로 낮춘 공격성 값이 유지된다.
-  - 옵션 B: `UGameTimeBucketSubsystem` bucket 이벤트로 일정 시간마다 회복한다.
-  - 옵션 C: Tick 기반으로 연속 회복한다.
-- 권장 옵션: 옵션 A. 기존 소독약 효과 방식과 동일하게 먼저 구현하고, 회복은 실제 공격 시스템이 구체화될 때 추가한다.
-- 답변 : 옵션A
+- 없음
 
-3. 공격성에서 실제 공격력을 계산하는 공식을 어떻게 둘지?
-- 질문 내용
-  - `AggressionValue`가 내려갈 때 해당 벌통의 실제 공격력이 어떤 방식으로 낮아지는지 결정이 필요하다.
-- 필요한 이유
-  - 공격성이 0일 때 완전히 무력화할지, 최소 공격력은 남길지에 따라 밸런스와 API가 달라진다.
-- 선택지
-  - 옵션 A: `EffectiveAttackPower = BaseAttackPower * AggressionRatio`
-  - 옵션 B: `EffectiveAttackPower = BaseAttackPower * Lerp(MinAttackMultiplier, 1.0, AggressionRatio)`
-  - 옵션 C: `AggressionValue` 자체를 공격력으로 사용한다.
-- 권장 옵션: 옵션 B. `MinAttackMultiplier` 기본값을 0으로 두면 옵션 A와 동일하게 동작하면서, 이후 최소 공격력을 쉽게 조정할 수 있다.
-- 답변 : 옵션D. 이 설계는 공격성 수치와 훈연기 동작에만 집중. 공격력 관련 구현은 X.
+## 해결 완료
 
-4. 훈연기 적용 use-area를 어디에 둘지?
-- 질문 내용
-  - 훈연기가 벌통의 어느 item-use-area에서 동작해야 하는지 결정이 필요하다.
-- 필요한 이유
-  - 기존 item-use-area mesh/tag 계약을 재사용할지, 훈연기 전용 hit 영역을 추가할지에 따라 Blueprint 작업 범위가 달라진다.
-- 선택지
-  - 옵션 A: 기존 벌통 body/lid 등 host use-area에 `Item.UseArea.Beehive.Smoker` 태그를 추가한다.
-  - 옵션 B: 훈연기 전용 `UItemUseAreaMeshComponent`를 추가한다.
-  - 옵션 C: 모든 벌통 use-area에서 훈연기를 허용하도록 host actor fallback을 둔다.
-- 권장 옵션: 옵션 A. 소독약과 같은 item-use-area 효과 방식이므로 태그만 추가하는 편이 가장 일관적이다.
-- 답변 : 옵션A
+### [사용영역 active 중 아이템 내구도 Tick 감소]
 
-5. 훈연기 사용 중 자원을 소모할지?
-- 질문 내용
-  - 훈연기 사용 중 stack, durability, fuel 같은 자원을 소모할지 결정이 필요하다.
-- 필요한 이유
-  - 자원 소모를 넣으면 item stack/durability/remaining 정책과 UI 표시 범위가 함께 커진다.
+1. 내구도 감소 기능의 authoring 위치
+- 질문 내용: 특정 아이템이 item-use-area에서 active use 중일 때 내구도를 감소시키는 설정은 어디에 둘 것인가?
+- 필요한 이유: `UHoldItemUseAction`은 사용 세션과 효과 Tick을 소유하고, `UItemDefinition`은 durability/max durability를 소유한다. 설정 위치를 정해야 Blueprint/DataAsset authoring 경계와 재사용 범위가 명확해진다.
 - 선택지
-  - 옵션 A: 1차 구현에서는 자원 소모 없음.
-  - 옵션 B: durability를 감소시킨다.
-  - 옵션 C: 별도 fuel/remaining 시스템을 추가한다.
-- 권장 옵션: 옵션 A. 기존 소독약 효과 방식과 동일하게 hold-use 효과만 먼저 구현하고, 훈연기 연료는 별도 설계로 나중에 붙인다.
-- 답변 : 옵션A
+  - 옵션 A: `UItemDefinition` base class에 active-use durability drain spec을 추가한다.
+  - 옵션 B: `UHoldItemUseAction` subclass별 property로 둔다. `USmokerUseAction`, `UDisinfectantUseAction` 같은 action마다 별도 authoring한다.
+  - 옵션 C: 특정 concrete item/action에 하드코딩한다.
+  - 옵션 D: `UItemDefinition`은 유지하고, active-use 내구도 감소 전용 하위 item definition class를 추가한다.
+- 권장 옵션: 옵션 D. 기존 `UItemDefinition`을 범용 설정 창고로 키우지 않으면서, `UPollenPattyItemDefinition`처럼 특정 아이템군 데이터만 subclass에 둘 수 있다.
+- 답변: 옵션 D. 예: `UActiveUseDurabilityItemDefinition : public UItemDefinition`에 `DurabilityDrainPerSecond`, `bRequireEffectSucceeded`, `bRemoveItemWhenDepleted`를 둔다.
+
+2. 내구도 감소가 발생하는 정확한 active 조건
+- 질문 내용: 어떤 상태를 “사용영역에 active 중”으로 볼 것인가?
+- 필요한 이유: 현재 `UCursorItemUseAreaScopeComponent`는 scope 활성, 선택 아이템 매칭, LMB use session, hovered active descriptor, `ApplyUseEffect` 성공 여부가 각각 분리되어 있다. 감소 조건을 넓게 잡으면 영역 밖에서도 내구도가 줄거나, 효과가 실패해도 자원이 소모될 수 있다.
+- 선택지
+  - 옵션 A: LMB use session 중이고, 현재 커서가 matching active use-area descriptor 위에 있으며, `CanApplyUseEffect`가 true일 때 감소한다.
+  - 옵션 B: 옵션 A에 더해 `ApplyUseEffect` 결과가 `bSucceeded=true`일 때만 감소한다.
+  - 옵션 C: use-area가 표시되는 동안 또는 LMB를 누르고 있는 동안이면 hover/effect 성공과 무관하게 감소한다.
+- 권장 옵션: 옵션 B. 실제 효과가 적용된 Tick에만 내구도가 감소해 도메인 효과와 자원 소모가 어긋나지 않는다.
+- 답변: 옵션 B. 단, 전용 item definition의 `bRequireEffectSucceeded=false`인 경우에는 옵션 A 정책으로 완화할 수 있다. 기본값은 true로 둔다. 여기서 `bRequireEffectSucceeded=true`의 의미는 실제 수치 변화가 발생했는지가 아니라, `ApplyUseEffect`가 유효한 action target을 찾아 `bSucceeded=true`를 반환했는지로 정의한다.
+
+3. 내구도 0 도달 시 처리
+- 질문 내용: active-use 내구도 감소로 selected item durability가 0 이하가 되면 어떻게 처리할 것인가?
+- 필요한 이유: 현재 hotbar는 stack 소모 시 selected slot을 비울 수 있지만, durability 소진 전용 mutation API는 없다. 소진 시 세션 종료, held presentation 종료, slot 제거 여부를 확정해야 한다.
+- 선택지
+  - 옵션 A: durability가 0이 되면 selected slot item을 제거하고 active use session을 cancel/end 처리한다.
+  - 옵션 B: durability는 0으로 남기고 item은 유지하되 `CanBeginUse`/`CanApplyUseEffect`에서 사용 불가로 판정한다.
+  - 옵션 C: stack count를 1 감소시키고 durability를 max로 재설정한다.
+  - 옵션 D: 전용 item definition의 `bRemoveItemWhenDepleted` 값에 따른다. true면 옵션 A, false면 옵션 B 정책을 적용한다.
+- 권장 옵션: 옵션 D. 1번 항목에서 확정한 `bRemoveItemWhenDepleted`를 소진 처리의 단일 기준으로 삼아 item definition authoring과 runtime 동작을 일치시킨다.
+- 답변: 옵션 D. `bRemoveItemWhenDepleted=true`이면 selected slot item을 제거하고 active use session을 종료한다. `false`이면 durability 0 상태로 item을 유지하되 이후 use begin/effect 적용은 차단한다.
+
+4. stack 가능한 durability 아이템 허용 여부
+- 질문 내용: active-use 내구도 감소 대상 아이템의 `MaxStack > 1`을 허용할 것인가?
+- 필요한 이유: 현재 durability stack 병합은 같은 durability 값끼리만 허용한다. Tick마다 durability를 감소시키는 selected stack은 stack 전체가 같은 durability를 공유하게 되어 “한 개만 사용 중”인지 “스택 전체가 닳는지”가 불명확하다.
+- 선택지
+  - 옵션 A: active-use durability drain 대상은 `MaxStack == 1`만 허용한다.
+  - 옵션 B: `MaxStack > 1`도 허용하고 selected stack 전체 durability를 함께 감소시킨다.
+  - 옵션 C: 사용 시작 시 stack에서 1개를 분리해 별도 instance로 만든 뒤 그 instance만 감소시킨다.
+- 권장 옵션: 옵션 A. 현재 inventory 모델 변경 없이 명확한 invariant를 유지할 수 있다.
+- 답변: 옵션 A. `UActiveUseDurabilityItemDefinition` 사용 아이템은 `bUsesDurability=true`, `MaxDurability>0`, `MaxStack==1`을 유효 설정으로 본다.
+
+5. durability mutation authority와 API
+- 질문 내용: active-use 중 내구도 감소를 어떤 계층이 실제로 적용할 것인가?
+- 필요한 이유: 기존 원칙은 Inventory/Hotbar가 슬롯 상태 변경 authority이고, Focus scope는 입력/영역 라우터다. action이 `UItemInstance::SetDurability`를 직접 호출하면 delegate broadcast, slot 제거, selection 정리 정책이 흩어진다.
+- 선택지
+  - 옵션 A: `UBeekeeperHotbarComponent`에 `ApplySelectedItemDurabilityDelta(float)` 같은 public mutation API를 추가하고 scope가 이를 호출한다.
+  - 옵션 B: `UHoldItemUseAction`이 owning item instance의 durability를 직접 변경한다.
+  - 옵션 C: `FItemActionExecutionResult`에 durability delta 필드를 추가하고 scope가 기존 result 해석 흐름에서 hotbar API로 적용한다.
+- 권장 옵션: 옵션 C + 옵션 A. action은 “이번 Tick 감소량”을 결과로 표현하고, 실제 mutation은 Hotbar authority API가 처리한다.
+- 답변: 옵션 C + 옵션 A. `FItemActionExecutionResult`는 durability delta를 전달하고, `UCursorItemUseAreaScopeComponent`는 이를 `UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta`에 위임한다.
+
+6. 기존 훈연기/소독제/벌솔 정책 변경 여부
+- 질문 내용: 현재 존재하는 hold-use item 중 어떤 아이템부터 active-use durability drain을 적용할 것인가?
+- 필요한 이유: 기존 문서에는 `USmokerUseAction`이 stack/durability/fuel을 소비하지 않는다고 기록되어 있었다. 특정 기존 아이템에 적용하면 문서와 gameplay 계약이 바뀐다.
+- 선택지
+  - 옵션 A: 새 opt-in subclass만 추가하고 기존 아이템 DataAsset은 기본값 off로 유지한다.
+  - 옵션 B: 훈연기부터 opt-in해 aggression 감소와 함께 durability를 감소시킨다.
+  - 옵션 C: 모든 hold-use item에 기본 적용한다.
+  - 옵션 D: 훈연기와 소독약만 active-use durability drain을 적용하고, 벌솔은 기존 소모 없음 정책을 유지한다.
+- 권장 옵션: 옵션 D. 현재 요구는 특정 item-use 도구에 대한 내구도 소모이며, 훈연기/소독약은 continuous target effect와 함께 자원 소모를 붙이기 쉽다. 벌솔은 벌/여왕벌 상호작용 정책이 별도이므로 이번 적용 대상에서 제외한다.
+- 답변: 옵션 D. 훈연기와 소독약만 active-use durability drain을 적용한다.
+
+7. 감소량 단위와 Tick 누적 방식
+- 질문 내용: 내구도 감소량은 어떤 단위로 authoring하고, 프레임별 소수점 누적은 어떻게 처리할 것인가?
+- 필요한 이유: Tick마다 바로 float durability를 감소시키면 프레임레이트에는 독립적이지만, UI 표시와 0 도달 타이밍이 소수점 단위로 움직인다. 정수형 resource처럼 보이게 할지 float durability로 유지할지 정해야 한다.
+- 선택지
+  - 옵션 A: `DurabilityDrainPerSecond` float 값을 `DeltaTime`과 곱해 매 Tick float durability를 감소시킨다.
+  - 옵션 B: action 내부에 pending accumulator를 두고 정수 단위 이상 누적될 때만 감소시킨다.
+  - 옵션 C: 고정 interval timer 방식으로 n초마다 고정량을 감소시킨다.
+- 권장 옵션: 옵션 A. 기존 durability가 float이고, `ApplyUseEffect`도 per-second rate를 `DeltaTime`으로 적용하는 패턴을 사용한다.
+- 답변: 옵션 A. 별도 accumulator를 두지 않고 `DurabilityDrainPerSecond * DeltaTime`을 그대로 durability delta로 적용한다.

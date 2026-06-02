@@ -1,25 +1,5 @@
 # Inventory System
 
-## VFX Presentation Actor (2026-05-26)
-
-- Added `AVfxItemPresentationActor` as a reusable held-item VFX presentation subclass of `AItemPresentationActor`.
-- It owns one Niagara component (`UseVfxComponent`) and toggles VFX from active lifecycle callbacks:
-  - `ReceiveItemUseActiveStarted_Implementation` -> optional reset + `Activate(true)`
-  - `ReceiveItemUseActiveEnded_Implementation` -> `Deactivate()` or `DeactivateImmediate()`
-- VFX asset/transform/renderer parameters are authored on the Niagara component in BP/Details, not duplicated as separate C++ asset/transform properties.
-
-## Held Presentation Active Lifecycle (2026-05-26)
-
-- `UDisinfectantUseAction` routes hold-use start/end to `UBeekeeperHeldItemVisualizerComponent` only.
-- `UBeekeeperHeldItemVisualizerComponent` forwards active start/end to current `AItemPresentationActor` through base APIs:
-  - `BeginItemUseActive()`
-  - `EndItemUseActive(bool bCanceled)`
-- `AItemPresentationActor` owns only generic active state/events:
-  - `bIsItemUseActive`
-  - `ReceiveItemUseActiveStarted`
-  - `ReceiveItemUseActiveEnded`
-- VFX ownership stays in disinfectant presentation subclass/BP; action and visualizer do not access Niagara/audio components directly.
-
 ## Scope
 
 - `Source/BeekeepingSim/Public/Inventory/BeekeeperHotbarComponent.h`
@@ -38,6 +18,8 @@
 - `Source/BeekeepingSim/Private/Inventory/DisinfectantUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/SmokerUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/SmokerUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/BeeBrushUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/BeeBrushUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/PollenPattyUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
@@ -49,6 +31,8 @@
 - `Source/BeekeepingSim/Public/Inventory/HotbarPresentationTypes.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemPresentationActor.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemPresentationActor.cpp`
+- `Source/BeekeepingSim/Public/Inventory/VfxItemPresentationActor.h`
+- `Source/BeekeepingSim/Private/Inventory/VfxItemPresentationActor.cpp`
 - `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
 
@@ -56,9 +40,10 @@
 
 - hotbar/storage 슬롯 상태 오너십
 - item definition/instance/action 런타임 모델 제공
-- item stack 병합, 분할 이동, swap, acquire 결과 계산
+- item stack 병합, 분할 이동, swap, state-aware acquire 결과 계산
 - focus item rule을 hotbar enabled state로 반영
 - held/on-cursor presentation actor의 기반 class 제공
+- hold-use action의 use-area tag query와 지속 효과 lifecycle 제공
 
 ## Key Classes
 
@@ -70,14 +55,34 @@
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
+- `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
 - `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
 - `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
 - `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
 - `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, 메시지를 담는 결과 DTO
+- `FItemAcquireSpec`: definition, quantity, durability override를 포함하는 state-aware acquire 요청 DTO
+- `FHotbarItemAcquireResult`: acquire 성공 여부, 추가 수량, 마지막 변경 slot/item instance를 전달하는 결과 DTO
 - `AItemPresentationActor`: first-person held/on-cursor 표시 actor 베이스
+- `AVfxItemPresentationActor`: `AItemPresentationActor` 기반 held-item VFX presentation actor
 - `ItemStackMoveUtils`: private stack 계산/생성 helper
+
+## Held Presentation Active Lifecycle
+
+- `UDisinfectantUseAction` 같은 hold-use action은 held item visualizer에 active start/end만 알린다.
+- `UBeekeeperHeldItemVisualizerComponent`는 현재 `AItemPresentationActor`에 다음 base API를 호출한다:
+  - `BeginItemUseActive()`
+  - `EndItemUseActive(bool bCanceled)`
+- `AItemPresentationActor`는 generic active state/event만 소유한다:
+  - `bIsItemUseActive`
+  - `ReceiveItemUseActiveStarted`
+  - `ReceiveItemUseActiveEnded`
+- `AVfxItemPresentationActor`는 reusable held-item VFX presentation subclass다.
+  - `UseVfxComponent` Niagara component를 소유한다.
+  - active start에서 optional reset + `Activate(true)`를 수행한다.
+  - active end에서 `Deactivate()` 또는 `DeactivateImmediate()`를 수행한다.
+- VFX asset/transform/renderer parameter는 C++ 별도 property가 아니라 Niagara component details/BP에서 authoring한다.
 
 ## Item Model
 
@@ -125,6 +130,8 @@
 
 - `UBeekeeperHotbarComponent`
   - `TryAcquireItem`
+  - `TryAcquireItemBySpec`
+  - `ApplySelectedItemStackDelta`
   - `SwapSlots`
   - `MovePartialToSlot`
 - `UStorageBoxComponent`
