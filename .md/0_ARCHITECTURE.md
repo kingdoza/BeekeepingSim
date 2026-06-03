@@ -96,9 +96,11 @@ Source/BeekeepingSim/
 - `AQueenBeeActor`는 `BaseEggLayingPower`를 소유하며 colony population 증가량 계산의 기본 산란력으로 사용된다.
 - colony population 계산식 요약:
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
-  - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
+  - `Decrease = Min(ColonyBeeCount, ((ColonyBeeCount * BeeDecreaseCoefficient) + BeeDecreaseAbsoluteAmountPerBucket) / ItemLifespanBonus / TemperatureScore)`
   - `ItemEggLayingBonus`는 selected active pollen patty가 `UPollenPattyItemDefinition`이면 `Max(1.0, EggLayingMultiplier)`, 아니면 `1.0`
-  - `ItemLifespanBonus`와 `TemperatureScore`의 1차 기본값은 각각 `1.0`
+  - `BeeDecreaseCoefficient`는 현재 벌 수에 비례하는 감소율이고, `BeeDecreaseAbsoluteAmountPerBucket`는 population bucket 1회당 고정 감소량이며 기본값 `0.0f`로 기존 동작을 유지한다.
+  - `ItemLifespanBonus`와 `TemperatureScore`는 비례 감소량과 절대 감소량을 더한 전체 감소량에 적용된다.
+  - 감소량은 bucket 시작 시점의 기존 `ColonyBeeCount`를 초과하지 않으며, `ItemLifespanBonus`와 `TemperatureScore`의 1차 기본값은 각각 `1.0`
 - honey production 계산식 요약:
   - `TotalHoneyIncrease = ColonyBeeCount * HoneyProductionCoefficient`
   - `HoneyProduction` bucket event에서는 꿀 생산 전에 이미 full 상태인 active comb의 숙성도(`CurrentHoneyRipeness`)를 증가시킨다.

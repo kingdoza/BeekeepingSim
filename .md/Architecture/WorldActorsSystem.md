@@ -111,7 +111,7 @@
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
 - queen 위치 bucket 설정: `QueenBeeLocationBucketMinutes=60`, BeginPlay 즉시 적용 옵션 지원
 - colony population bucket 설정: `ColonyPopulationBucketMinutes=60`, `bApplyColonyPopulationOnBeginPlayBucket=false` 기본
-- colony population 계수 설정: `BeeIncreaseCoefficient`, `BeeDecreaseCoefficient`
+- colony population 계수 설정: `BeeIncreaseCoefficient`, `BeeDecreaseCoefficient`, `BeeDecreaseAbsoluteAmountPerBucket`
 - honey production bucket 설정: `HoneyProductionBucketMinutes=60`, `bApplyHoneyProductionOnBeginPlayBucket=false` 기본
 - honey production 계수/분배 설정: `HoneyProductionCoefficient`, `HoneyDistributionDeviationRatio`
 - honey ripeness 설정/API: `HoneyRipenessIncreasePerBucket`, `ApplyHoneyRipenessUpdate()`
@@ -293,10 +293,14 @@
   - 소모 실행: 선택된 1개에만 `ConsumeAmount(...)` 호출, 같은 bucket spillover 없음
 - colony population 계산식:
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
-  - `Decrease = ColonyBeeCount * BeeDecreaseCoefficient / ItemLifespanBonus / TemperatureScore`
+  - `ProportionalDecrease = ColonyBeeCount * BeeDecreaseCoefficient`
+  - `AbsoluteDecrease = BeeDecreaseAbsoluteAmountPerBucket`
+  - `Decrease = Min(ColonyBeeCount, (ProportionalDecrease + AbsoluteDecrease) / ItemLifespanBonus / TemperatureScore)`
   - 최종 적용은 `RoundToInt`를 마지막 단계에서만 수행하고 최소 0으로 clamp한다.
   - `ItemEggLayingBonus`는 selected active pollen patty가 `UPollenPattyItemDefinition`이면 `Max(1.0, EggLayingMultiplier)`, 아니면 `1.0`이다.
-  - `ItemLifespanBonus`/`Decrease`는 화분떡 bonus와 분리되어 기존 `1.0f` 정책을 유지한다.
+  - `BeeDecreaseCoefficient`는 현재 벌 수에 비례하는 감소율이고, `BeeDecreaseAbsoluteAmountPerBucket`는 population bucket 1회당 고정 감소량이며 기본값 `0.0f`로 기존 동작을 유지한다.
+  - `ItemEggLayingBonus`는 증가 항 전용이며, `ItemLifespanBonus`와 `TemperatureScore`는 비례 감소량과 절대 감소량을 더한 전체 감소 항에 적용된다.
+  - 감소량은 bucket 시작 시점의 기존 `ColonyBeeCount`를 초과하지 않으며, `ItemLifespanBonus`와 `TemperatureScore`는 기존 `1.0f` placeholder 정책을 유지한다.
 - queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
 - honey ripeness는 `HoneyProduction` bucket에서 생산 전에 이미 full 상태였던 comb에만 증가한다. 같은 bucket에서 production으로 처음 full이 된 comb는 다음 bucket부터 숙성된다.
 - honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.

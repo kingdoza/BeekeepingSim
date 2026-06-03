@@ -294,6 +294,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population", meta = (ClampMin = "0.0"))
 	float BeeDecreaseCoefficient = 1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population", meta = (ClampMin = "0.0"))
+	float BeeDecreaseAbsoluteAmountPerBucket = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Honey Production Time", meta = (ClampMin = "1", ClampMax = "1440"))
 	int32 HoneyProductionBucketMinutes = 60;
 

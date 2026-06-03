@@ -312,9 +312,13 @@ float ABeehive::CalculateBeeDecreaseAmount() const
 {
 	const float CurrentBeeCount = static_cast<float>(FMath::Max(0, ColonyBeeCount));
 	const float DecreaseCoefficient = FMath::Max(0.0f, BeeDecreaseCoefficient);
+	const float AbsoluteDecreaseAmount = FMath::Max(0.0f, BeeDecreaseAbsoluteAmountPerBucket);
 	const float ItemLifespanBonus = FMath::Max(KINDA_SMALL_NUMBER, GetItemLifespanBonus());
 	const float TemperatureScore = FMath::Max(KINDA_SMALL_NUMBER, GetTemperatureScore());
-	return CurrentBeeCount * DecreaseCoefficient / ItemLifespanBonus / TemperatureScore;
+	const float RawDecrease = ((CurrentBeeCount * DecreaseCoefficient) + AbsoluteDecreaseAmount)
+		/ ItemLifespanBonus
+		/ TemperatureScore;
+	return FMath::Min(CurrentBeeCount, FMath::Max(0.0f, RawDecrease));
 }
 
 float ABeehive::GetItemEggLayingBonus() const
