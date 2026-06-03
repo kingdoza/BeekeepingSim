@@ -137,6 +137,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey Ripeness")
 	float GetHoneyRipenessRatio() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb Disease")
+	void SetBeeDiseaseValue(float NewDiseaseValue);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Comb Disease")
+	float GetBeeDiseaseValue() const { return BeeDiseaseValue; }
+
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Comb")
 	void FlipCombFace();
 
@@ -248,6 +254,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Honey Ripeness", meta = (ClampMin = "0.0"))
 	float CurrentHoneyRipeness = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb Disease", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BeeDiseaseValue = 0.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Honey")
 	FVector FrontHoneyEmptyRelativeLocation = FVector::ZeroVector;

@@ -196,6 +196,9 @@ struct BEEKEEPINGSIM_API FBeehiveDualSwarmNiagaraParameters
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bee Swarm", meta = (ClampMin = "0.0"))
 	float IngoingSpeedMax = 160.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bee Swarm", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Disease = 0.0f;
 };
 
 USTRUCT(BlueprintType)

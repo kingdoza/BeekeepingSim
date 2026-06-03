@@ -37,6 +37,7 @@ namespace BeehiveAttractionSwarmNames
 	static const FName NoisePower(TEXT("User.NoisePower"));
 	static const FName SpawnSphereRadius(TEXT("User.SpawnSphereRadius"));
 	static const FName SpawnAmount(TEXT("User.SpawnAmount"));
+	static const FName Disease(TEXT("User.Disease"));
 }
 
 namespace BeehiveCombSlotNames
@@ -185,6 +186,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	SetSanitationValue(SanitationValue);
 	RebuildCursorPartFocusDescriptors();
 }
 
@@ -206,6 +208,7 @@ void ABeehive::BeginPlay()
 	LogHoneyDiagnosticCombState(TEXT("BeginPlay_AfterRefreshCombLayoutAndParameters"), this, CombSlotComponents);
 	ApplyInitialCombSetupForBeginPlay();
 	LogHoneyDiagnosticCombState(TEXT("BeginPlay_AfterApplyInitialCombSetup"), this, CombSlotComponents);
+	SetSanitationValue(SanitationValue);
 	RebuildCursorPartFocusDescriptors();
 
 	if (UWorld* World = GetWorld())
@@ -257,6 +260,7 @@ void ABeehive::ApplyAttractionSwarmSettings()
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::AttractionPower, FMath::Max(0.0f, AttractionSwarmSettings.AttractionPower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::NoisePower, FMath::Max(0.0f, AttractionSwarmSettings.NoisePower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::SpawnSphereRadius, FMath::Max(0.0f, AttractionSwarmSettings.SpawnSphereRadius));
+	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::Disease, GetSanitationDiseaseRatio());
 
 	const int32 SpawnAmount = CalculateAttractionSwarmSpawnAmount();
 	AttractionSwarmNiagara->SetVariableInt(BeehiveAttractionSwarmNames::SpawnAmount, SpawnAmount);
@@ -315,10 +319,12 @@ float ABeehive::CalculateBeeDecreaseAmount() const
 	const float AbsoluteDecreaseAmount = FMath::Max(0.0f, BeeDecreaseAbsoluteAmountPerBucket);
 	const float ItemLifespanBonus = FMath::Max(KINDA_SMALL_NUMBER, GetItemLifespanBonus());
 	const float TemperatureScore = FMath::Max(KINDA_SMALL_NUMBER, GetTemperatureScore());
-	const float RawDecrease = ((CurrentBeeCount * DecreaseCoefficient) + AbsoluteDecreaseAmount)
+	const float SanitationDecreaseMultiplier = GetSanitationBeeDecreaseMultiplier();
+	const float BaseDecrease = (((CurrentBeeCount * DecreaseCoefficient) + AbsoluteDecreaseAmount)
 		/ ItemLifespanBonus
-		/ TemperatureScore;
-	return FMath::Min(CurrentBeeCount, FMath::Max(0.0f, RawDecrease));
+		/ TemperatureScore)
+		* SanitationDecreaseMultiplier;
+	return FMath::Min(CurrentBeeCount, FMath::Max(0.0f, BaseDecrease));
 }
 
 float ABeehive::GetItemEggLayingBonus() const
@@ -415,6 +421,7 @@ void ABeehive::SetSanitationValue(float NewValue)
 {
 	const float SafeMax = FMath::Max(0.0f, MaxSanitationValue);
 	SanitationValue = FMath::Clamp(NewValue, 0.0f, SafeMax);
+	RefreshHiveDiseaseVisuals();
 }
 
 float ABeehive::GetSanitationRatio() const
@@ -426,6 +433,31 @@ float ABeehive::GetSanitationRatio() const
 	}
 
 	return FMath::Clamp(SanitationValue / SafeMax, 0.0f, 1.0f);
+}
+
+float ABeehive::GetSanitationDiseaseRatio() const
+{
+	const float SafeMaxSanitation = FMath::Max(0.0f, MaxSanitationValue);
+	const float EffectiveThreshold = FMath::Clamp(SanitationDiseaseThreshold, 0.0f, SafeMaxSanitation);
+	if (EffectiveThreshold <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const float SafeSanitationValue = FMath::Clamp(SanitationValue, 0.0f, SafeMaxSanitation);
+	if (SafeSanitationValue >= EffectiveThreshold)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp((EffectiveThreshold - SafeSanitationValue) / EffectiveThreshold, 0.0f, 1.0f);
+}
+
+float ABeehive::GetSanitationBeeDecreaseMultiplier() const
+{
+	const float DiseaseRatio = GetSanitationDiseaseRatio();
+	const float SafeMaxMultiplier = FMath::Max(1.0f, MaxSanitationBeeDecreaseMultiplier);
+	return FMath::Lerp(1.0f, SafeMaxMultiplier, DiseaseRatio);
 }
 
 void ABeehive::DecreaseAggression(float Delta)
@@ -555,6 +587,7 @@ void ABeehive::RefreshCombStateFromSlots()
 	}
 
 	RefreshCombSpawnAmounts(false, true);
+	RefreshHiveDiseaseVisuals();
 	RebuildCursorPartFocusDescriptors();
 	RebuildItemUseAreaDescriptorsIfAvailable();
 }
@@ -788,6 +821,7 @@ FBeehiveDualSwarmNiagaraParameters ABeehive::BuildDualSwarmParameters() const
 	FBeehiveDualSwarmNiagaraParameters Parameters;
 	Parameters.StartShapeExtent = DualSwarmCommonSettings.StartShapeExtent;
 	Parameters.EndShapeExtent = DualSwarmCommonSettings.EndShapeExtent;
+	Parameters.Disease = GetSanitationDiseaseRatio();
 
 	const float BeeCount = static_cast<float>(FMath::Max(0, ColonyBeeCount));
 	const float SpawnScale = FMath::Max(0.0f, DualSwarmCommonSettings.SpawnAmountScale);
@@ -1339,6 +1373,8 @@ void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb, bool bPreserveTarge
 		{
 			CombActor->SetTotalSpawnAmountAndResetTargetBeeCounts(CombPlaneSize, SpawnAmount);
 		}
+
+		CombActor->SetBeeDiseaseValue(GetSanitationDiseaseRatio());
 	}
 }
 
@@ -1582,6 +1618,42 @@ void ABeehive::RebuildItemUseAreaDescriptorsIfAvailable()
 	}
 }
 
+void ABeehive::RefreshHiveDiseaseVisuals()
+{
+	const float DiseaseRatio = GetSanitationDiseaseRatio();
+	if (AttractionSwarmNiagara)
+	{
+		AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::Disease, DiseaseRatio);
+	}
+
+	ApplySettingsToDualSwarmChildActor();
+	ApplyDiseaseToCombActors(DiseaseRatio);
+	ApplyDiseaseToQueenBee(DiseaseRatio);
+}
+
+void ABeehive::ApplyDiseaseToCombActors(float DiseaseRatio)
+{
+	const float ClampedDiseaseRatio = FMath::Clamp(DiseaseRatio, 0.0f, 1.0f);
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+		if (CombActor)
+		{
+			CombActor->SetBeeDiseaseValue(ClampedDiseaseRatio);
+		}
+	}
+}
+
+void ABeehive::ApplyDiseaseToQueenBee(float DiseaseRatio)
+{
+	AQueenBeeActor* QueenBee = GetQueenBeeActor();
+	if (QueenBee)
+	{
+		QueenBee->SetDiseaseValue(DiseaseRatio);
+	}
+}
+
 UPrimitiveComponent* ABeehive::FindPrimitiveComponentByTag(FName ComponentTag) const
 {
 	if (ComponentTag.IsNone())
@@ -1631,6 +1703,7 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();
+	SetSanitationValue(SanitationValue);
 	RebuildCursorPartFocusDescriptors();
 }
 

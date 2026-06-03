@@ -2,6 +2,8 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 
 AQueenBeeActor::AQueenBeeActor()
 {
@@ -14,10 +16,75 @@ AQueenBeeActor::AQueenBeeActor()
 	QueenBeeMesh->SetupAttachment(Root);
 }
 
+void AQueenBeeActor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyDiseaseMaterialParameter();
+}
+
+void AQueenBeeActor::BeginPlay()
+{
+	Super::BeginPlay();
+	ApplyDiseaseMaterialParameter();
+}
+
 void AQueenBeeActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
 	const float YawDelta = FMath::FRandRange(-YawJitterDegreesPerTick, YawJitterDegreesPerTick);
 	AddActorLocalRotation(FRotator(0.0f, YawDelta, 0.0f));
+}
+
+void AQueenBeeActor::SetDiseaseValue(float NewDiseaseValue)
+{
+	DiseaseValue = FMath::Clamp(NewDiseaseValue, 0.0f, 1.0f);
+	ApplyDiseaseMaterialParameter();
+}
+
+void AQueenBeeActor::EnsureDiseaseMaterialInstances()
+{
+	DiseaseMaterialInstances.Reset();
+	if (!QueenBeeMesh)
+	{
+		return;
+	}
+
+	const int32 MaterialCount = QueenBeeMesh->GetNumMaterials();
+	DiseaseMaterialInstances.SetNum(MaterialCount);
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+	{
+		UMaterialInterface* CurrentMaterial = QueenBeeMesh->GetMaterial(MaterialIndex);
+		if (!CurrentMaterial)
+		{
+			DiseaseMaterialInstances[MaterialIndex] = nullptr;
+			continue;
+		}
+
+		if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(CurrentMaterial))
+		{
+			DiseaseMaterialInstances[MaterialIndex] = ExistingDynamicMaterial;
+			continue;
+		}
+
+		DiseaseMaterialInstances[MaterialIndex] = QueenBeeMesh->CreateDynamicMaterialInstance(MaterialIndex, CurrentMaterial);
+	}
+}
+
+void AQueenBeeActor::ApplyDiseaseMaterialParameter()
+{
+	DiseaseValue = FMath::Clamp(DiseaseValue, 0.0f, 1.0f);
+	EnsureDiseaseMaterialInstances();
+	if (DiseaseMaterialParameterName.IsNone())
+	{
+		return;
+	}
+
+	for (TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance : DiseaseMaterialInstances)
+	{
+		if (MaterialInstance)
+		{
+			MaterialInstance->SetScalarParameterValue(DiseaseMaterialParameterName, DiseaseValue);
+		}
+	}
 }

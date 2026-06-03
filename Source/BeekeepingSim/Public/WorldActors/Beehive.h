@@ -167,6 +167,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation")
 	float GetSanitationRatio() const;
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation Disease")
+	float GetSanitationDiseaseRatio() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Sanitation Disease")
+	float GetSanitationBeeDecreaseMultiplier() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Aggression")
 	void DecreaseAggression(float Delta);
 
@@ -333,6 +339,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation", meta = (ClampMin = "0.0"))
 	float SanitationValue = 0.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation Disease", meta = (ClampMin = "0.0"))
+	float SanitationDiseaseThreshold = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation Disease", meta = (ClampMin = "1.0"))
+	float MaxSanitationBeeDecreaseMultiplier = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Aggression", meta = (ClampMin = "0.0"))
 	float MaxAggressionValue = 100.0f;
 
@@ -404,6 +416,9 @@ private:
 	void RefreshCurrentCombCountFromSlots();
 	void RegisterCombPartsToScope();
 	void RebuildItemUseAreaDescriptorsIfAvailable();
+	void RefreshHiveDiseaseVisuals();
+	void ApplyDiseaseToCombActors(float DiseaseRatio);
+	void ApplyDiseaseToQueenBee(float DiseaseRatio);
 	void BindCombPartFocusActionDelegates(ABeehiveCombActor* CombActor, UCursorPartFocusActionComponent* ActionComponent);
 	bool IsManagedActiveCombActor(const ABeehiveCombActor* CombActor) const;
 	AItemPlacementSlotActor* FindPollenPattyConsumptionTargetSlot(UPlacedItemRemainingComponent*& OutRemainingComponent) const;

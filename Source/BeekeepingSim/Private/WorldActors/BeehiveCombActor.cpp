@@ -18,6 +18,7 @@ namespace BeehiveCombActorNames
 	static const FName PlaneSize(TEXT("User.PlaneSize"));
 	static const FName SpawnAmount(TEXT("User.SpawnAmount"));
 	static const FName TargetBeeCount(TEXT("User.TargetBeeCount"));
+	static const FName Disease(TEXT("User.Disease"));
 }
 
 ABeehiveCombActor::ABeehiveCombActor()
@@ -320,6 +321,7 @@ void ABeehiveCombActor::ApplyNiagaraUserParameters()
 		FrontFaceBeeNiagara->SetVariableVec2(BeehiveCombActorNames::PlaneSize, PlaneSize);
 		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, FrontSpawnAmount);
 		FrontFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, FrontFaceTargetBeeCount);
+		FrontFaceBeeNiagara->SetVariableFloat(BeehiveCombActorNames::Disease, FMath::Clamp(BeeDiseaseValue, 0.0f, 1.0f));
 	}
 
 	if (BackFaceBeeNiagara)
@@ -327,6 +329,7 @@ void ABeehiveCombActor::ApplyNiagaraUserParameters()
 		BackFaceBeeNiagara->SetVariableVec2(BeehiveCombActorNames::PlaneSize, PlaneSize);
 		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::SpawnAmount, BackSpawnAmount);
 		BackFaceBeeNiagara->SetVariableInt(BeehiveCombActorNames::TargetBeeCount, BackFaceTargetBeeCount);
+		BackFaceBeeNiagara->SetVariableFloat(BeehiveCombActorNames::Disease, FMath::Clamp(BeeDiseaseValue, 0.0f, 1.0f));
 	}
 }
 
@@ -416,6 +419,12 @@ float ABeehiveCombActor::GetHoneyRipenessRatio() const
 {
 	const float SafeMaxRipeness = FMath::Max(KINDA_SMALL_NUMBER, MaxHoneyRipeness);
 	return FMath::Clamp(CurrentHoneyRipeness / SafeMaxRipeness, 0.0f, 1.0f);
+}
+
+void ABeehiveCombActor::SetBeeDiseaseValue(float NewDiseaseValue)
+{
+	BeeDiseaseValue = FMath::Clamp(NewDiseaseValue, 0.0f, 1.0f);
+	ApplyNiagaraUserParameters();
 }
 
 void ABeehiveCombActor::SanitizeHoneyState()
