@@ -1,16 +1,15 @@
-# 리뷰 프롬프트: 벌통 위생 기반 질병/벌 수 감소 구현
+# 리뷰 프롬프트: 벌통 질병 VFX 단일화 구현
 
 ## 리뷰 목적
 
-이번 리뷰는 `ABeehive`의 위생도(`SanitationValue`)가 disease source of truth로 동작하고, colony population 감소량 및 벌통/벌떼/소비장/여왕벌 시각 파라미터에 설계대로 반영되는지 검증한다.
+이번 리뷰는 `ABeehive`의 위생도(`SanitationValue`) 기반 disease 계산과 colony population 감소 정책은 유지하면서, disease 시각 표현이 `ABeehive::DiseaseVfxNiagara` 단일 경로로만 적용되는지 검증한다.
 
 핵심:
 - disease ratio 계산 owner는 `ABeehive`
 - population 감소 계산 owner는 `ABeehive::CalculateBeeDecreaseAmount()`
 - disease visual 전파 owner는 `ABeehive::RefreshHiveDiseaseVisuals()`
-- 소비장 front/back Niagara 적용 owner는 `ABeehiveCombActor`
-- outgoing/ingoing Niagara 적용 owner는 `ABeehiveDualSwarmActor`
-- queen material 적용 owner는 `AQueenBeeActor`
+- active disease visual target은 `ABeehive::DiseaseVfxNiagara.User.Disease`
+- attraction/outgoing/ingoing/comb/queen 직접 Disease 적용 코드는 삭제가 아니라 주석처리된 legacy path
 
 제외:
 - `Content/` asset 직접 수정/저장
@@ -66,22 +65,24 @@
 6. `Decrease = Min(ColonyBeeCount, BaseDecrease)` clamp가 유지되는가?
 7. `ApplyColonyPopulationUpdate()`의 최종 `RoundToInt` 위치가 유지되는가?
 8. `SetSanitationValue()`가 clamp 후 `RefreshHiveDiseaseVisuals()`를 호출하는가?
-9. OnConstruction/BeginPlay/PostEdit/comb state refresh 경로에서 새 active 대상에 disease가 반영되는가?
-10. `FBeehiveDualSwarmNiagaraParameters`는 field 추가만 수행했고, `ApplyDualSwarmParameters()`가 outgoing/ingoing `User.Disease`를 모두 설정하는가?
-11. `ABeehiveCombActor::SetBeeDiseaseValue()`가 `0..1` clamp 후 front/back Niagara `User.Disease`를 모두 설정하는가?
-12. `ApplyCombBeeParameters(...)`와 `SetTotalSpawnAmount...` 시그니처가 유지되는가?
-13. `AQueenBeeActor::SetDiseaseValue()`가 queen mesh material slot 전체에 `DiseaseMaterialParameterName` scalar를 적용하는가?
-14. `BaseEggLayingPower`와 tick yaw jitter 정책이 변경되지 않았는가?
-15. Content asset 수정 없이 수동 설정 항목만 `.md/USER_UNREAL.md`에 기록되었는가?
-16. Core Redirect가 필요한 rename/delete가 없는가?
+9. `ABeehive` 생성자에서 `DiseaseVfxNiagara`가 `CreateDefaultSubobject<UNiagaraComponent>`로 생성되고 `Root`에 attach되는가?
+10. `RefreshHiveDiseaseVisuals()`가 `DiseaseVfxNiagara->SetVariableFloat("User.Disease", DiseaseRatio)`만 수행하는가?
+11. OnConstruction/BeginPlay/PostEdit/SetSanitationValue 경로에서 `DiseaseVfxNiagara.User.Disease`가 즉시 갱신되는가?
+12. attraction/outgoing/ingoing/comb front/back/queen material의 직접 Disease 적용 라인이 주석처리되어 있는가?
+13. `FBeehiveDualSwarmNiagaraParameters::Disease`, `SetBeeDiseaseValue(...)`, `SetDiseaseValue(...)`, `DiseaseMaterialParameterName` 등 기존 API/property가 삭제 또는 rename되지 않았는가?
+14. `ApplyCombBeeParameters(...)`와 `SetTotalSpawnAmount...` 시그니처가 유지되는가?
+15. `BaseEggLayingPower`와 tick yaw jitter 정책이 변경되지 않았는가?
+16. Content asset 수정 없이 `BP_Beehive.DiseaseVfxNiagara` 수동 설정 항목만 `.md/USER_UNREAL.md`에 기록되었는가?
+17. Core Redirect가 필요한 rename/delete가 없는가?
 
 ---
 
 ## 검색 검증
 
 ```powershell
-rg "SanitationDiseaseThreshold|MaxSanitationBeeDecreaseMultiplier|GetSanitationDiseaseRatio|GetSanitationBeeDecreaseMultiplier|RefreshHiveDiseaseVisuals" Source/BeekeepingSim .md
-rg "User.Disease|DiseaseMaterialParameterName|SetDiseaseValue|BeeDiseaseValue|SetBeeDiseaseValue" Source/BeekeepingSim .md
+rg "DiseaseVfxNiagara|BeehiveDiseaseVfxNames|RefreshHiveDiseaseVisuals|User.Disease" Source/BeekeepingSim .md
+rg "SetBeeDiseaseValue|ApplyDiseaseToCombActors|ApplyDiseaseToQueenBee|SetDiseaseValue|DiseaseMaterialParameterName" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+rg "SetVariableFloat\\(.*Disease|SetScalarParameterValue\\(.*Disease|Parameters\\.Disease" Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/WorldActors
 rg "CalculateBeeDecreaseAmount|SanitationDecreaseMultiplier|BaseDecrease|BeeDecreaseAbsoluteAmountPerBucket" Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/WorldActors .md
 rg "ApplyCombBeeParameters|SetTotalSpawnAmountAndResetTargetBeeCounts|SetTotalSpawnAmountPreservingTargetRatios" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp
 ```
@@ -90,7 +91,8 @@ rg "ApplyCombBeeParameters|SetTotalSpawnAmountAndResetTargetBeeCounts|SetTotalSp
 - 기존 BlueprintCallable/Public API 삭제 또는 rename 없음
 - `ColonyPopulation` subscription과 `LatestOnly` 유지
 - disease 전용 bucket/subsystem/tick actor 없음
-- attraction/outgoing/ingoing/comb front/back/queen이 같은 `DiseaseRatio` source를 사용
+- `RefreshHiveDiseaseVisuals()`의 active output은 `DiseaseVfxNiagara.User.Disease` 단일 경로
+- attraction/outgoing/ingoing/comb front/back/queen 직접 Disease 적용은 주석처리된 legacy path
 
 ---
 
@@ -110,12 +112,14 @@ rg "ApplyCombBeeParameters|SetTotalSpawnAmountAndResetTargetBeeCounts|SetTotalSp
 
 ## 수동 검증 포인트
 
-1. `SanitationValue >= SanitationDiseaseThreshold`이면 모든 Disease 표현값이 0인지 확인
-2. `SanitationValue`가 threshold 아래로 내려가면 Disease 표현값이 `0..1`로 증가하는지 확인
-3. 소독약 hold-use로 `SanitationValue`가 증가하면 Disease 표현값이 즉시 낮아지는지 확인
-4. `MaxSanitationBeeDecreaseMultiplier > 1`일 때 population bucket 감소량이 증가하는지 확인
-5. 감소량이 커져도 기존 `ColonyBeeCount`를 초과하지 않는지 확인
-6. Niagara System과 queen material에 `.md/USER_UNREAL.md`의 `Disease` parameter가 준비되어 있는지 확인
+1. `BP_Beehive.DiseaseVfxNiagara`에 질병 VFX Niagara System이 지정되어 있는지 확인
+2. 질병 VFX Niagara System에 float user parameter `User.Disease`가 있는지 확인
+3. `SanitationValue >= SanitationDiseaseThreshold`이면 `DiseaseVfxNiagara.User.Disease`가 0인지 확인
+4. `SanitationValue`가 threshold 아래로 내려가면 `DiseaseVfxNiagara.User.Disease`가 `0..1`로 증가하는지 확인
+5. 소독약 hold-use로 `SanitationValue`가 증가하면 `DiseaseVfxNiagara.User.Disease`가 즉시 낮아지는지 확인
+6. `MaxSanitationBeeDecreaseMultiplier > 1`일 때 population bucket 감소량이 증가하는지 확인
+7. 감소량이 커져도 기존 `ColonyBeeCount`를 초과하지 않는지 확인
+8. 벌떼 Niagara/소비장 Niagara/QueenBee material이 더 이상 Disease 직접 표현 경로에 의존하지 않는지 확인
 
 ---
 

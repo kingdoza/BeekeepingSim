@@ -14,7 +14,8 @@ namespace BeehiveDualSwarmActorNames
 	static const FName SpeedMin(TEXT("User.SpeedMin"));
 	static const FName SpeedMax(TEXT("User.SpeedMax"));
 	static const FName IsReverse(TEXT("User.bIsReverse"));
-	static const FName Disease(TEXT("User.Disease"));
+	// Legacy direct disease path disabled; ABeehive::DiseaseVfxNiagara now represents disease.
+	// static const FName Disease(TEXT("User.Disease"));
 }
 
 ABeehiveDualSwarmActor::ABeehiveDualSwarmActor()
@@ -74,14 +75,14 @@ void ABeehiveDualSwarmActor::ApplyDualSwarmParameters(const FBeehiveDualSwarmNia
 	OutgoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpawnAmount, FMath::Max(0.0f, Parameters.OutgoingSpawnAmount));
 	OutgoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpeedMin, OutgoingSpeedMin);
 	OutgoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpeedMax, OutgoingSpeedMax);
-	OutgoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::Disease, FMath::Clamp(Parameters.Disease, 0.0f, 1.0f));
+	// OutgoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::Disease, FMath::Clamp(Parameters.Disease, 0.0f, 1.0f));
 
 	IngoingNiagara->SetVariableVec3(BeehiveDualSwarmActorNames::StartShapeExtent, Parameters.StartShapeExtent);
 	IngoingNiagara->SetVariableVec3(BeehiveDualSwarmActorNames::EndShapeExtent, Parameters.EndShapeExtent);
 	IngoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpawnAmount, FMath::Max(0.0f, Parameters.IngoingSpawnAmount));
 	IngoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpeedMin, IngoingSpeedMin);
 	IngoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::SpeedMax, IngoingSpeedMax);
-	IngoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::Disease, FMath::Clamp(Parameters.Disease, 0.0f, 1.0f));
+	// IngoingNiagara->SetVariableFloat(BeehiveDualSwarmActorNames::Disease, FMath::Clamp(Parameters.Disease, 0.0f, 1.0f));
 }
 
 void ABeehiveDualSwarmActor::ApplySwarmSpline(USplineComponent* InSwarmSpline)

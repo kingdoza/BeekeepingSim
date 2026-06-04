@@ -19,13 +19,15 @@ AQueenBeeActor::AQueenBeeActor()
 void AQueenBeeActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	ApplyDiseaseMaterialParameter();
+	// Disease is now represented by ABeehive::DiseaseVfxNiagara.
+	// ApplyDiseaseMaterialParameter();
 }
 
 void AQueenBeeActor::BeginPlay()
 {
 	Super::BeginPlay();
-	ApplyDiseaseMaterialParameter();
+	// Disease is now represented by ABeehive::DiseaseVfxNiagara.
+	// ApplyDiseaseMaterialParameter();
 }
 
 void AQueenBeeActor::Tick(float DeltaTime)
@@ -39,7 +41,8 @@ void AQueenBeeActor::Tick(float DeltaTime)
 void AQueenBeeActor::SetDiseaseValue(float NewDiseaseValue)
 {
 	DiseaseValue = FMath::Clamp(NewDiseaseValue, 0.0f, 1.0f);
-	ApplyDiseaseMaterialParameter();
+	// Disease is now represented by ABeehive::DiseaseVfxNiagara.
+	// ApplyDiseaseMaterialParameter();
 }
 
 void AQueenBeeActor::EnsureDiseaseMaterialInstances()
@@ -84,7 +87,7 @@ void AQueenBeeActor::ApplyDiseaseMaterialParameter()
 	{
 		if (MaterialInstance)
 		{
-			MaterialInstance->SetScalarParameterValue(DiseaseMaterialParameterName, DiseaseValue);
+			// MaterialInstance->SetScalarParameterValue(DiseaseMaterialParameterName, DiseaseValue);
 		}
 	}
 }

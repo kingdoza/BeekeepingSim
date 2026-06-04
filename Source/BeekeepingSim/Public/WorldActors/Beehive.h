@@ -213,6 +213,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Attraction Swarm")
 	TObjectPtr<UNiagaraComponent> AttractionSwarmNiagara;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Sanitation Disease")
+	TObjectPtr<UNiagaraComponent> DiseaseVfxNiagara;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
 	TObjectPtr<UChildActorComponent> QueenBeeChildActor;
 

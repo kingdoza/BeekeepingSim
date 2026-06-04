@@ -603,24 +603,21 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 
 ## Beehive Sanitation Disease Visual 설정 (2026-06-03)
 
-1. 벌통/벌떼 Niagara user parameter 확인
-- `BP_Beehive`의 `AttractionSwarmNiagara` Niagara System에 float user parameter `User.Disease`를 추가하거나 기존 parameter가 있는지 확인한다.
-- `ABeehiveDualSwarmActor` 기반 BP의 outgoing Niagara와 ingoing Niagara System에 float user parameter `User.Disease`를 추가하거나 기존 parameter가 있는지 확인한다.
-- C++은 `ABeehive::GetSanitationDiseaseRatio()` 값을 `User.Disease`로 주입한다.
+1. 벌통 질병 VFX Niagara 설정
+- `BP_Beehive`의 native component `DiseaseVfxNiagara`에 질병 VFX Niagara System을 지정한다.
+- `DiseaseVfxNiagara`의 relative transform은 `BP_Beehive` Details에서 authoring한다.
+- 해당 Niagara System에는 float user parameter `User.Disease`가 필요하다.
+- C++은 `ABeehive::GetSanitationDiseaseRatio()` 값을 `DiseaseVfxNiagara.User.Disease`로 주입한다.
 
-2. 소비장 Niagara user parameter 확인
-- `BP_BeehiveComb` 또는 `ABeehiveCombActor` 기반 소비장 BP의 `FrontFaceBeeNiagara`, `BackFaceBeeNiagara` Niagara System에 float user parameter `User.Disease`를 추가하거나 기존 parameter가 있는지 확인한다.
-- Disease는 소비장 item state에 저장되지 않으며, 벌통 위생 상태에서 다시 주입된다.
+2. 기존 직접 Disease parameter 정책
+- `AttractionSwarmNiagara`, `ABeehiveDualSwarmActor` outgoing/ingoing Niagara, 소비장 front/back bee Niagara의 `User.Disease`는 현재 필수 수동 작업이 아니다.
+- 여왕벌 material scalar parameter `Disease`도 현재 필수 수동 작업이 아니다.
+- 관련 C++ property/API는 legacy 호환을 위해 유지되지만, 직접 적용 코드는 주석처리되어 있다.
 
-3. 여왕벌 material parameter 확인
-- 여왕벌 mesh material에 scalar parameter `Disease`를 추가하거나 기존 parameter가 있는지 확인한다.
-- `AQueenBeeActor.DiseaseMaterialParameterName`을 변경한 경우 material scalar parameter 이름도 동일해야 한다.
-- C++은 queen mesh의 모든 material slot dynamic material instance에 `Disease` 값을 주입한다.
-
-4. 벌통 설정 및 PIE 검증
+3. 벌통 설정 및 PIE 검증
 - `ABeehive.SanitationDiseaseThreshold`를 0보다 크게 설정해야 disease ratio가 발생한다.
 - `MaxSanitationBeeDecreaseMultiplier`가 1보다 크면 disease ratio에 따라 colony population 감소량이 증가한다.
-- `SanitationValue >= SanitationDiseaseThreshold`이면 모든 Disease 표현값이 0인지 확인한다.
-- 소독약 hold-use로 `SanitationValue`가 증가할 때 Disease 표현값이 즉시 낮아지는지 확인한다.
-- `SanitationValue = 0`이고 threshold가 0보다 크면 Disease 표현값이 1인지 확인한다.
-- C++은 파라미터를 주입하지만, Niagara/System material이 `Disease`를 실제 연출에 사용하지 않으면 시각 변화가 없을 수 있다.
+- `SanitationValue >= SanitationDiseaseThreshold`이면 `DiseaseVfxNiagara.User.Disease`가 0인지 확인한다.
+- 소독약 hold-use로 `SanitationValue`가 증가할 때 `DiseaseVfxNiagara.User.Disease`가 즉시 낮아지는지 확인한다.
+- `SanitationValue = 0`이고 threshold가 0보다 크면 `DiseaseVfxNiagara.User.Disease`가 1인지 확인한다.
+- C++은 파라미터를 주입하지만, 지정된 Niagara System이 `User.Disease`를 실제 연출에 사용하지 않으면 시각 변화가 없을 수 있다.

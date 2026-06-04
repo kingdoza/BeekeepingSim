@@ -37,6 +37,12 @@ namespace BeehiveAttractionSwarmNames
 	static const FName NoisePower(TEXT("User.NoisePower"));
 	static const FName SpawnSphereRadius(TEXT("User.SpawnSphereRadius"));
 	static const FName SpawnAmount(TEXT("User.SpawnAmount"));
+	// Legacy direct disease path disabled; ABeehive::DiseaseVfxNiagara now represents disease.
+	// static const FName Disease(TEXT("User.Disease"));
+}
+
+namespace BeehiveDiseaseVfxNames
+{
 	static const FName Disease(TEXT("User.Disease"));
 }
 
@@ -144,6 +150,9 @@ ABeehive::ABeehive()
 
 	AttractionSwarmNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("AttractionSwarmNiagara"));
 	AttractionSwarmNiagara->SetupAttachment(Root);
+
+	DiseaseVfxNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DiseaseVfxNiagara"));
+	DiseaseVfxNiagara->SetupAttachment(Root);
 
 	QueenBeeChildActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("QueenBeeChildActor"));
 	QueenBeeChildActor->SetupAttachment(Root);
@@ -260,7 +269,7 @@ void ABeehive::ApplyAttractionSwarmSettings()
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::AttractionPower, FMath::Max(0.0f, AttractionSwarmSettings.AttractionPower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::NoisePower, FMath::Max(0.0f, AttractionSwarmSettings.NoisePower));
 	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::SpawnSphereRadius, FMath::Max(0.0f, AttractionSwarmSettings.SpawnSphereRadius));
-	AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::Disease, GetSanitationDiseaseRatio());
+	// AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::Disease, GetSanitationDiseaseRatio());
 
 	const int32 SpawnAmount = CalculateAttractionSwarmSpawnAmount();
 	AttractionSwarmNiagara->SetVariableInt(BeehiveAttractionSwarmNames::SpawnAmount, SpawnAmount);
@@ -821,7 +830,7 @@ FBeehiveDualSwarmNiagaraParameters ABeehive::BuildDualSwarmParameters() const
 	FBeehiveDualSwarmNiagaraParameters Parameters;
 	Parameters.StartShapeExtent = DualSwarmCommonSettings.StartShapeExtent;
 	Parameters.EndShapeExtent = DualSwarmCommonSettings.EndShapeExtent;
-	Parameters.Disease = GetSanitationDiseaseRatio();
+	// Parameters.Disease = GetSanitationDiseaseRatio();
 
 	const float BeeCount = static_cast<float>(FMath::Max(0, ColonyBeeCount));
 	const float SpawnScale = FMath::Max(0.0f, DualSwarmCommonSettings.SpawnAmountScale);
@@ -1374,7 +1383,7 @@ void ABeehive::RefreshCombSpawnAmounts(bool bSkipLiftedComb, bool bPreserveTarge
 			CombActor->SetTotalSpawnAmountAndResetTargetBeeCounts(CombPlaneSize, SpawnAmount);
 		}
 
-		CombActor->SetBeeDiseaseValue(GetSanitationDiseaseRatio());
+		// CombActor->SetBeeDiseaseValue(GetSanitationDiseaseRatio());
 	}
 }
 
@@ -1621,37 +1630,42 @@ void ABeehive::RebuildItemUseAreaDescriptorsIfAvailable()
 void ABeehive::RefreshHiveDiseaseVisuals()
 {
 	const float DiseaseRatio = GetSanitationDiseaseRatio();
-	if (AttractionSwarmNiagara)
+	if (DiseaseVfxNiagara)
 	{
-		AttractionSwarmNiagara->SetVariableFloat(BeehiveAttractionSwarmNames::Disease, DiseaseRatio);
+		DiseaseVfxNiagara->SetVariableFloat(BeehiveDiseaseVfxNames::Disease, DiseaseRatio);
 	}
 
-	ApplySettingsToDualSwarmChildActor();
-	ApplyDiseaseToCombActors(DiseaseRatio);
-	ApplyDiseaseToQueenBee(DiseaseRatio);
+	// Legacy direct disease visual paths are disabled; DiseaseVfxNiagara is the only active visual output.
+	// ApplySettingsToDualSwarmChildActor();
+	// ApplyDiseaseToCombActors(DiseaseRatio);
+	// ApplyDiseaseToQueenBee(DiseaseRatio);
 }
 
 void ABeehive::ApplyDiseaseToCombActors(float DiseaseRatio)
 {
-	const float ClampedDiseaseRatio = FMath::Clamp(DiseaseRatio, 0.0f, 1.0f);
-	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
-	{
-		ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
-		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
-		if (CombActor)
-		{
-			CombActor->SetBeeDiseaseValue(ClampedDiseaseRatio);
-		}
-	}
+	static_cast<void>(DiseaseRatio);
+	// Legacy direct comb disease path disabled; ABeehive::DiseaseVfxNiagara now represents disease.
+	// const float ClampedDiseaseRatio = FMath::Clamp(DiseaseRatio, 0.0f, 1.0f);
+	// for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	// {
+	// 	ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+	// 	ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+	// 	if (CombActor)
+	// 	{
+	// 		CombActor->SetBeeDiseaseValue(ClampedDiseaseRatio);
+	// 	}
+	// }
 }
 
 void ABeehive::ApplyDiseaseToQueenBee(float DiseaseRatio)
 {
-	AQueenBeeActor* QueenBee = GetQueenBeeActor();
-	if (QueenBee)
-	{
-		QueenBee->SetDiseaseValue(DiseaseRatio);
-	}
+	static_cast<void>(DiseaseRatio);
+	// Legacy direct queen disease path disabled; ABeehive::DiseaseVfxNiagara now represents disease.
+	// AQueenBeeActor* QueenBee = GetQueenBeeActor();
+	// if (QueenBee)
+	// {
+	// 	QueenBee->SetDiseaseValue(DiseaseRatio);
+	// }
 }
 
 UPrimitiveComponent* ABeehive::FindPrimitiveComponentByTag(FName ComponentTag) const

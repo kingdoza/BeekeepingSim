@@ -60,12 +60,12 @@
 
 ## Key Classes
 
-- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수/위생 질병값 기반 parameter 주입 지점
-- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태와 벌 disease 시각값을 소유하는 actor
+- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner
+- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
-- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유 + material `Disease` scalar 적용
+- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유 + legacy disease material API 유지
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
@@ -105,6 +105,7 @@
 - `UCursorItemUseAreaScopeComponent` 1개 (`ItemUseAreaScope`)
 - `USplineComponent` 1개 (`SwarmSpline`)를 직접 소유하며 레벨 인스턴스별 편집 대상
 - `UNiagaraComponent` 1개 (`AttractionSwarmNiagara`)
+- `UNiagaraComponent` 1개 (`DiseaseVfxNiagara`)를 직접 소유하며 Niagara System/transform은 BP/Details에서 authoring
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
@@ -165,7 +166,8 @@
   - sanitation 상태: `SanitationValue`, `MaxSanitationValue`, `IncreaseSanitation`, `SetSanitationValue`, `GetSanitationRatio`
   - sanitation disease 설정/API: `SanitationDiseaseThreshold`, `MaxSanitationBeeDecreaseMultiplier`, `GetSanitationDiseaseRatio()`, `GetSanitationBeeDecreaseMultiplier()`
   - `SetSanitationValue()`는 위생값 clamp 후 `RefreshHiveDiseaseVisuals()`로 질병 시각값을 즉시 갱신한다.
-  - 질병 시각값 source of truth는 항상 `ABeehive::GetSanitationDiseaseRatio()`이며, attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material에 전파된다.
+  - 질병 시각값 source of truth는 항상 `ABeehive::GetSanitationDiseaseRatio()`이며, 현재 활성 시각 출력 대상은 `ABeehive::DiseaseVfxNiagara.User.Disease` 단일 경로다.
+  - attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material의 직접 `Disease` 적용 코드는 legacy path로 유지하되 주석처리되어 있다.
   - `ABeehive`는 pollen slot 상태를 직접 소유하지 않는다.
   - pollen slot은 `AItemPlacementSlotActor` child actor로 authoring하며, occupied 상태는 slot actor의 `PlacedActor`가 소유한다.
   - slot actor는 `IItemUseAreaActivationProvider`로 occupied 여부를 판단한다.
@@ -180,7 +182,7 @@
 - `ApplySwarmSpline(USplineComponent*)`로 Beehive 소유 spline reference를 주입받는다.
 - `ApplySplineBindings()`에서 주입받은 spline으로 `User.SwarmSpline`, `User.SplineLength`, `User.bIsReverse`를 양쪽 Niagara에 명시 적용
 - `ApplyDualSwarmParameters()`에서 공통 shape + 방향별 spawn/speed 적용
-- `ApplyDualSwarmParameters()`는 `FBeehiveDualSwarmNiagaraParameters::Disease`를 `User.Disease` float로 outgoing/ingoing 양쪽 Niagara에 적용한다.
+- `FBeehiveDualSwarmNiagaraParameters::Disease` field는 legacy API로 유지하지만, outgoing/ingoing `User.Disease` 직접 적용 코드는 주석처리되어 있다.
 - 자체적으로 spawn/speed/shape를 계산하지 않으며 source of truth는 `ABeehive`
 - `IFocusInteractable` 구현
 
@@ -219,7 +221,7 @@
   - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
   - `CurrentHoneyRipeness`는 `0..MaxHoneyRipeness` clamp
-  - `BeeDiseaseValue`는 `0..1` clamp된 런타임 시각값이며 벌통 위생 상태에서 재주입된다.
+  - `BeeDiseaseValue`는 `0..1` clamp된 legacy 런타임 시각값이며, front/back Niagara 직접 주입 경로는 주석처리되어 있다.
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
   - `BackShare = Total / 2`
@@ -235,7 +237,7 @@
   - `User.PlaneSize` (Vector2D)
   - `User.SpawnAmount` (Int32, face별 분배값)
   - `User.TargetBeeCount` (Int32, face별 분배값)
-  - `User.Disease` (Float, front/back 동일 disease ratio)
+  - legacy `User.Disease` 직접 적용 경로는 주석처리되어 있다.
 - honey visual 적용:
   - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
   - ripeness ratio: `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)`
@@ -248,8 +250,8 @@
 - `USceneComponent` root
 - `UStaticMeshComponent` queen bee mesh
 - `BaseEggLayingPower`는 colony population 증가량 계산의 기본 산란력이다.
-- `DiseaseMaterialParameterName` 기본값은 `Disease`이며, `SetDiseaseValue(...)`는 `0..1` clamp 후 queen mesh의 모든 material slot dynamic material instance에 scalar를 적용한다.
-- `OnConstruction`/`BeginPlay`에서도 현재 `DiseaseValue`를 material에 재적용한다.
+- `DiseaseMaterialParameterName`, `DiseaseValue`, `SetDiseaseValue(...)`는 legacy API로 유지되며, `SetDiseaseValue(...)`는 값을 `0..1`로 clamp한다.
+- queen mesh material scalar `Disease` 직접 적용 경로는 주석처리되어 있고, disease 시각 출력은 `ABeehive::DiseaseVfxNiagara`가 담당한다.
 - Tick yaw jitter 정책은 disease 시각값과 분리되어 유지된다.
 
 ### `AWorldItemPickup`
@@ -369,7 +371,7 @@
   - `User.NoisePower` (Float)
   - `User.SpawnSphereRadius` (Float)
   - `User.SpawnAmount` (Int32, via `SetVariableInt`)
-  - `User.Disease` (Float, `ABeehive::GetSanitationDiseaseRatio()`)
+- legacy `User.Disease` 직접 적용 경로는 주석처리되어 있으며, disease 시각 출력은 `DiseaseVfxNiagara.User.Disease` 단일 경로를 사용한다.
 - `SpawnAmount` 계산식:
   - `RoundToInt(ColonyBeeCount * SpawnAmountScale)`
   - clamp to `0..MaxSpawnAmount`
@@ -547,9 +549,6 @@
   - `GetSanitationBeeDecreaseMultiplier()`: disease ratio로 `1.0..MaxSanitationBeeDecreaseMultiplier` 감소 배율 계산
 - colony population 감소 항은 비례 감소 + 절대 감소에 `ItemLifespanBonus`/`TemperatureScore`를 적용한 뒤 `SanitationDecreaseMultiplier`를 곱하고, 기존 `ColonyBeeCount`로 clamp한다.
 - `SetSanitationValue()`는 `RefreshHiveDiseaseVisuals()`를 통해 disease 시각값을 즉시 전파한다.
-- disease 시각값 적용 대상:
-  - `ABeehive` attraction swarm `User.Disease`
-  - `ABeehiveDualSwarmActor` outgoing/ingoing `User.Disease`
-  - `ABeehiveCombActor` front/back bee Niagara `User.Disease`
-  - `AQueenBeeActor` material scalar `Disease`
+- disease 시각값 적용 대상은 `ABeehive::DiseaseVfxNiagara.User.Disease` 단일 경로다.
+- attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material의 직접 `Disease` 적용 코드는 legacy path로 남아 있으나 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.

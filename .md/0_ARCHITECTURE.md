@@ -84,7 +84,7 @@ Source/BeekeepingSim/
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
 - `ABeehive`는 시간 bucket 구독(`PollenPattyConsumption`)을 통해 화분떡을 고정량(`PollenPattyConsumptionAmountPerBucket`) 소모한다.
-- `ABeehive`는 `SanitationValue` 기반 질병값(`GetSanitationDiseaseRatio()`, `0..1`)의 source of truth이며, 위생값 변경 시 attraction/outgoing/ingoing swarm, active comb front/back Niagara, queen material에 `Disease` 시각값을 즉시 전파한다.
+- `ABeehive`는 `SanitationValue` 기반 질병값(`GetSanitationDiseaseRatio()`, `0..1`)의 source of truth이며, 위생값 변경 시 자체 `DiseaseVfxNiagara.User.Disease`에 질병 시각값을 즉시 주입한다.
 - `ABeehive`의 `ItemEggLayingBonus`는 화분떡 소모 대상 선택 정책과 동일하게 고른 active 화분떡 1개의 `UPollenPattyItemDefinition::EggLayingMultiplier`를 사용한다.
 - 화분떡 소모량은 벌 수/온도/bucket 길이와 무관한 고정값이며, bucket 길이는 소모 주기만 바꾼다.
 - 소모 대상은 `PollenPattyConsumptionAreaTags`와 slot의 configured `AreaTags`(`AItemPlacementSlotActor::GetSlotAreaTags`) 매칭으로 식별한다.
@@ -314,5 +314,6 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `ABeehive`의 `SanitationValue`가 sanitation disease의 source of truth다.
 - `GetSanitationDiseaseRatio()`는 `SanitationDiseaseThreshold`와 `MaxSanitationValue`로 `0..1` disease ratio를 계산한다.
 - `GetSanitationBeeDecreaseMultiplier()`는 disease ratio를 colony population 감소 항에 적용할 배율로 변환한다.
-- `SetSanitationValue()`는 `RefreshHiveDiseaseVisuals()`를 통해 attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material에 `Disease` 시각값을 즉시 전파한다.
+- `SetSanitationValue()`는 `RefreshHiveDiseaseVisuals()`를 통해 `ABeehive::DiseaseVfxNiagara.User.Disease`에 `GetSanitationDiseaseRatio()` 값을 즉시 주입한다.
+- attraction/outgoing/ingoing swarm, active comb front/back Niagara, queen material의 직접 `Disease` 적용 경로는 legacy path로 남기되 C++ 적용 코드는 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.
