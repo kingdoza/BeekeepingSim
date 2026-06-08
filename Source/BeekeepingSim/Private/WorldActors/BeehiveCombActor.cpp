@@ -73,6 +73,18 @@ ABeehiveCombActor::ABeehiveCombActor()
 	BackHoneyPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BackHoneyPlane"));
 	BackHoneyPlane->SetupAttachment(CombMesh);
 
+	FrontWaxCappingPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FrontWaxCappingPlane"));
+	FrontWaxCappingPlane->SetupAttachment(CombMesh);
+	FrontWaxCappingPlane->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FrontWaxCappingPlane->SetCollisionResponseToAllChannels(ECR_Ignore);
+	FrontWaxCappingPlane->SetHiddenInGame(true);
+
+	BackWaxCappingPlane = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BackWaxCappingPlane"));
+	BackWaxCappingPlane->SetupAttachment(CombMesh);
+	BackWaxCappingPlane->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BackWaxCappingPlane->SetCollisionResponseToAllChannels(ECR_Ignore);
+	BackWaxCappingPlane->SetHiddenInGame(true);
+
 	BeeBrushUseAreaMesh = CreateDefaultSubobject<UItemUseAreaMeshComponent>(TEXT("BeeBrushUseAreaMesh"));
 	BeeBrushUseAreaMesh->SetupAttachment(CombMesh);
 	BeeBrushUseAreaMesh->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner);
@@ -468,6 +480,32 @@ void ABeehiveCombActor::EnsureHoneyMaterialInstances()
 	{
 		BackHoneyMaterialInstance = nullptr;
 	}
+
+	if (FrontWaxCappingPlane)
+	{
+		UMaterialInterface* CurrentMaterial = FrontWaxCappingPlane->GetMaterial(0);
+		if (!FrontWaxCappingMaterialInstance || CurrentMaterial != FrontWaxCappingMaterialInstance)
+		{
+			FrontWaxCappingMaterialInstance = FrontWaxCappingPlane->CreateDynamicMaterialInstance(0, CurrentMaterial);
+		}
+	}
+	else
+	{
+		FrontWaxCappingMaterialInstance = nullptr;
+	}
+
+	if (BackWaxCappingPlane)
+	{
+		UMaterialInterface* CurrentMaterial = BackWaxCappingPlane->GetMaterial(0);
+		if (!BackWaxCappingMaterialInstance || CurrentMaterial != BackWaxCappingMaterialInstance)
+		{
+			BackWaxCappingMaterialInstance = BackWaxCappingPlane->CreateDynamicMaterialInstance(0, CurrentMaterial);
+		}
+	}
+	else
+	{
+		BackWaxCappingMaterialInstance = nullptr;
+	}
 }
 
 void ABeehiveCombActor::ApplyHoneyVisualState()
@@ -496,6 +534,33 @@ void ABeehiveCombActor::ApplyHoneyVisualState()
 	{
 		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyMaterialParameterName, FillRatio);
 		BackHoneyMaterialInstance->SetScalarParameterValue(HoneyRipenessMaterialParameterName, RipenessRatio);
+	}
+
+	if (FrontWaxCappingMaterialInstance)
+	{
+		FrontWaxCappingMaterialInstance->SetScalarParameterValue(HoneyRipenessMaterialParameterName, RipenessRatio);
+	}
+
+	if (BackWaxCappingMaterialInstance)
+	{
+		BackWaxCappingMaterialInstance->SetScalarParameterValue(HoneyRipenessMaterialParameterName, RipenessRatio);
+	}
+
+	ApplyHoneyCappingVisualState();
+}
+
+void ABeehiveCombActor::ApplyHoneyCappingVisualState()
+{
+	const bool bShowCapping = IsHoneyFull();
+
+	if (FrontWaxCappingPlane)
+	{
+		FrontWaxCappingPlane->SetHiddenInGame(!bShowCapping);
+	}
+
+	if (BackWaxCappingPlane)
+	{
+		BackWaxCappingPlane->SetHiddenInGame(!bShowCapping);
 	}
 }
 

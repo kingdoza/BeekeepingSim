@@ -61,7 +61,7 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner
-- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
+- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + full honey 밀랍/capping plane 표시를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
@@ -207,6 +207,7 @@
 - `UBeehiveCombPartFocusActionComponent` 1개 (`PartFocusAction`)
 - `USceneComponent` 2개 (`QueenFrontAttachPoint`, `QueenBackAttachPoint`)
 - `UStaticMeshComponent` 2개 (`FrontHoneyPlane`, `BackHoneyPlane`)
+- `UStaticMeshComponent` 2개 (`FrontWaxCappingPlane`, `BackWaxCappingPlane`)
 - visible face 상태: `EBeehiveCombVisibleFace` (`Front`/`Back`)
 - flip API: `FlipCombFace`, `SetVisibleCombFace`, `GetVisibleCombFace`
 - 방향 포함 flip API: `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
@@ -221,6 +222,7 @@
   - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
   - `CurrentHoneyRipeness`는 `0..MaxHoneyRipeness` clamp
+  - full honey 밀랍/capping 표시 여부는 별도 저장 상태가 아니라 `IsHoneyFull()` 파생값이다.
   - `BeeDiseaseValue`는 `0..1` clamp된 legacy 런타임 시각값이며, front/back Niagara 직접 주입 경로는 주석처리되어 있다.
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
@@ -243,7 +245,9 @@
   - ripeness ratio: `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)`
   - front/back plane relative location을 empty/full 위치 사이에서 보간
   - material index 0 scalar parameter(`HoneyAmount`)에 fill ratio 적용
-  - material index 0 scalar parameter(`HoneyRipeness`)에 ripeness ratio 적용
+  - `FrontHoneyPlane`/`BackHoneyPlane` material index 0 scalar parameter(`HoneyRipeness`)에 ripeness ratio 적용
+  - `FrontWaxCappingPlane`/`BackWaxCappingPlane` material index 0 scalar parameter(`HoneyRipeness`)에도 같은 ripeness ratio 적용
+  - `FrontWaxCappingPlane`/`BackWaxCappingPlane`은 Editor/Blueprint authoring 중에는 보이게 두고, runtime에서는 `IsHoneyFull()` 기반 hidden-in-game 상태로 제어
 
 ### `AQueenBeeActor`
 
@@ -552,3 +556,18 @@
 - disease 시각값 적용 대상은 `ABeehive::DiseaseVfxNiagara.User.Disease` 단일 경로다.
 - attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material의 직접 `Disease` 적용 코드는 legacy path로 남아 있으나 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.
+
+## Update 2026-06-08 (Comb Wax Capping Visual)
+
+- 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor` 내부 native visual state로 확정했다.
+- 새 native component:
+  - `FrontWaxCappingPlane`
+  - `BackWaxCappingPlane`
+- 표시 조건은 `CurrentHoney`를 저장 상태로 둔 기존 honey model에서 파생한다.
+  - Editor/Blueprint authoring viewport: 앞/뒤 capping plane visible 유지
+  - Runtime `IsHoneyFull()` true: 앞/뒤 capping plane hidden-in-game 해제
+  - Runtime `IsHoneyFull()` false: 앞/뒤 capping plane hidden-in-game
+- capping 표시 여부는 `FBeehiveCombItemState`에 저장하지 않는다. 회수/재배치 후 `HoneyAmount` 복원에 따른 `IsHoneyFull()` 결과로 재계산한다.
+- capping plane material도 기존 `HoneyRipenessMaterialParameterName`을 사용하며, `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값을 `HoneyRipeness` scalar parameter에 주입한다.
+- 꿀 생산 bucket, 숙성도 bucket, inventory state 계약은 변경하지 않는다.
+- `BP_BeehiveComb`/소비장 BP에서는 새 native plane component의 mesh/material/relative transform을 수동 authoring한다.

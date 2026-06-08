@@ -207,6 +207,12 @@ protected:
 	TObjectPtr<UStaticMeshComponent> BackHoneyPlane;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> FrontWaxCappingPlane;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> BackWaxCappingPlane;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UItemUseAreaMeshComponent> BeeBrushUseAreaMesh;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped"))
@@ -229,6 +235,7 @@ private:
 	void SanitizeHoneyState();
 	void SanitizeHoneyRipenessState();
 	void ApplyHoneyVisualState();
+	void ApplyHoneyCappingVisualState();
 	void EnsureHoneyMaterialInstances();
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
@@ -281,6 +288,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BackHoneyMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FrontWaxCappingMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BackWaxCappingMaterialInstance;
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
 	EBeehiveCombVisibleFace VisibleCombFace = EBeehiveCombVisibleFace::Front;

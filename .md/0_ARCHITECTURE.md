@@ -111,7 +111,8 @@ Source/BeekeepingSim/
   - `HoneyProduction` bucket event에서는 꿀 생산 전에 이미 full 상태인 active comb의 숙성도(`CurrentHoneyRipeness`)를 증가시킨다.
   - 같은 60분 bucket 경계에서는 `HoneyProduction`을 `ColonyPopulation`보다 먼저 처리한다.
   - `ABeehiveCombActor`는 절대 꿀 양(`CurrentHoney`)을 저장하고, 시각값은 `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)` fill ratio를 사용한다.
-  - `ABeehiveCombActor`는 절대 숙성도(`CurrentHoneyRipeness`)를 저장하고, material에는 `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)` ratio를 `HoneyRipeness`로 주입한다.
+  - `ABeehiveCombActor`는 절대 숙성도(`CurrentHoneyRipeness`)를 저장하고, honey plane과 wax/capping plane material에는 `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)` ratio를 `HoneyRipeness`로 주입한다.
+  - `ABeehiveCombActor`의 full honey 밀랍/capping 표시는 별도 저장 상태 없이 `IsHoneyFull()` 파생값으로 `FrontWaxCappingPlane`/`BackWaxCappingPlane` runtime hidden-in-game 상태를 제어한다.
 - FocusEngaged host 내부 파츠 상호작용은 `UCursorPartFocusScopeComponent`가 담당하고, 전역 focus 단일 오너(`UBeekeeperFocusComponent`)와 분리된다.
 - 파츠별 동작은 전용 C++ subclass 대신 공통 `UCursorPartFocusActionComponent` + BP Begin/Cancel/Abort 이벤트 구현을 기본 경로로 사용한다.
 - Host FocusEngaged 이후 파츠 입력은 `LMB`(begin/cancel)와 `R/F/C`(hover preview key action)로 분리한다.
@@ -317,3 +318,10 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `SetSanitationValue()`는 `RefreshHiveDiseaseVisuals()`를 통해 `ABeehive::DiseaseVfxNiagara.User.Disease`에 `GetSanitationDiseaseRatio()` 값을 즉시 주입한다.
 - attraction/outgoing/ingoing swarm, active comb front/back Niagara, queen material의 직접 `Disease` 적용 경로는 legacy path로 남기되 C++ 적용 코드는 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.
+
+## Update 2026-06-08 (Comb Wax Capping Visual)
+
+- 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor`의 native 앞/뒤 plane component로 처리한다.
+- 표시 여부는 `CurrentHoney`/`MaxHoneyPerComb` 기반 `IsHoneyFull()`에서 파생하며, runtime에서는 hidden-in-game으로 숨기고 Editor/Blueprint authoring viewport에서는 배치 조정을 위해 보이게 둔다. `FBeehiveCombItemState`에는 새 필드를 추가하지 않는다.
+- `FrontWaxCappingPlane`/`BackWaxCappingPlane` material에도 기존 `HoneyRipeness` scalar parameter를 `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값으로 주입한다.
+- 꿀 생산/숙성 bucket과 inventory state 계약은 그대로 유지한다.

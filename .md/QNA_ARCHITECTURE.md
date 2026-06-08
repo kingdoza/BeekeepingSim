@@ -6,6 +6,18 @@
 
 ## 해결 완료
 
+### [소비장 밀랍 plane 표시]
+
+1. 소비장 full honey 시 밀랍 plane authoring 경로
+- 질문 내용: 소비장의 꿀이 full 상태가 되었을 때 앞/뒤 밀랍 plane을 어떤 경로로 소유하고 표시할 것인가?
+- 필요한 이유: 현재 C++에는 `ABeehiveCombActor`의 `FrontHoneyPlane`/`BackHoneyPlane`만 있고, 별도 wax/capping plane native component는 없다. 기능 구현은 `BP_BeehiveComb` 같은 Content/Editor 수동 설정이 필요할 수 있으므로 native component 추가와 BP-authored component 바인딩 중 하나를 확정해야 한다.
+- 선택지
+  - 옵션 A: `ABeehiveCombActor`에 `FrontWaxCappingPlane`/`BackWaxCappingPlane` native component를 추가하고, `IsHoneyFull()` 파생 상태로 hidden-in-game을 제어한다.
+  - 옵션 B: 새 component 없이 기존 `FrontHoneyPlane`/`BackHoneyPlane` material에 wax/capping 표시 scalar parameter를 추가한다.
+  - 옵션 C: 밀랍 plane은 Blueprint에서 자유롭게 만들고, C++은 component tag로 front/back wax component를 찾아 visibility만 제어한다.
+- 권장 옵션: 옵션 A. 현재 honey plane과 bee plane이 소비장 actor의 native component로 관리되고 있으므로, full honey의 capping 표시도 `ABeehiveCombActor` 내부 파생 visual state로 두는 편이 상태 오너와 표시 경계가 가장 명확하다. 단, 기존 BP에 이미 밀랍 plane component가 있으면 옵션 C가 더 낮은 migration 비용일 수 있다.
+- 답변 : 옵션A
+
 ### [사용영역 active 중 아이템 내구도 Tick 감소]
 
 1. 내구도 감소 기능의 authoring 위치

@@ -601,6 +601,30 @@ PartFocus outline은 기존 `UFocusTargetComponent`와 같은 CustomDepth 기반
 - 이번 bucket에서 처음 full이 된 소비장은 같은 bucket에서 숙성되지 않고 다음 `HoneyProduction` bucket부터 숙성되는지 확인한다.
 - 소비장 회수 후 재배치 시 `HoneyAmount`, `HoneyRipeness`, visible face가 모두 복원되는지 확인한다.
 
+## Comb Wax Capping Visual 설정 (2026-06-08)
+
+1. 소비장 Blueprint component 확인
+- `BP_BeehiveComb` 또는 `ABeehiveCombActor` 기반 소비장 BP에서 native component가 보이는지 확인한다.
+  - `FrontWaxCappingPlane`
+  - `BackWaxCappingPlane`
+
+2. capping plane authoring
+- 각 plane에 밀랍/capping mesh 또는 plane mesh를 지정한다.
+- 각 plane에 밀랍/capping material을 지정한다.
+- capping material에는 scalar parameter `HoneyRipeness`를 추가한다.
+  - C++은 `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값을 `HoneyRipeness`에 주입한다.
+  - 기존 honey plane의 `HoneyRipeness`와 같은 소비장 전체 숙성도 값이다.
+- 각 plane의 relative transform을 `FrontHoneyPlane`/`BackHoneyPlane`과 맞춰 조정한다.
+- 기본 full 미만 상태에서는 두 plane이 보이지 않아야 한다.
+
+3. PIE 검증
+- `CurrentHoney >= MaxHoneyPerComb` 상태에서는 `FrontWaxCappingPlane`과 `BackWaxCappingPlane`이 모두 보여야 한다.
+- full 미만 상태에서는 두 plane이 모두 보이지 않아야 한다.
+- full 상태에서 숙성도가 증가하면 capping material의 `HoneyRipeness` 표현이 `0..1` 범위로 변해야 한다.
+- full 상태의 소비장을 들어올리거나 뒤집어도 capping plane이 소비장과 함께 움직여야 한다.
+- full 상태의 소비장을 회수한 뒤 재배치하면 `HoneyAmount` 복원 후 capping plane이 다시 보여야 한다.
+- full 미만 상태로 회수/재배치한 소비장은 capping plane이 보이지 않아야 한다.
+
 ## Beehive Sanitation Disease Visual 설정 (2026-06-03)
 
 1. 벌통 질병 VFX Niagara 설정
