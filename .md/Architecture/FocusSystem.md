@@ -124,7 +124,7 @@
 - `Component Tags = ItemUseArea` fallback과 actor-level provider 호출은 runtime 수집 경로에서 사용하지 않는다.
 - placement action이 성공한 뒤 stack delta 반영이 실패하면, target이 `IItemPlacementSlot`일 때 `ClearPlacedItem` rollback을 수행한다.
 - item-use session 중 처리:
-  - `LMB Press`: `BeginUse(Context)`
+  - `LMB Press`: `CanBeginUse(Context)`가 true이면 `BeginUse(Context)`, false이면 item-use가 입력을 소비하지 않고 PartFocus/Fallback 경로로 넘긴다.
   - `Hold Tick`: `TickUse(Context, DeltaTime)`
   - `active + valid hovered area`: `CanApplyUseEffect` 확인 후 `ApplyUseEffect(Context, DeltaTime)`
   - `Release/Cancel/Deactivate`: `EndUse(Context, bWasCanceled)`
@@ -133,8 +133,8 @@
 - hold-use action은 cursor 위치가 필요해도 mouse deproject/line trace를 반복하지 않고 context hit fields를 사용한다.
 - `ApplyUseEffect` 결과의 stack 변화(`bConsumedItem`, `StackDelta`)와 durability 변화(`DurabilityDelta`)는 scope가 독립 해석해 hotbar authority API로 반영한다.
 - durability가 0에 도달한 경우 scope는 현재 hold-use session을 `EndUseSession(false)`로 종료한다.
-- FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리한다.
-- FocusEngaged host가 item-use-area를 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
+- FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으며 `CanBeginUse(Context)`가 true이면 LMB는 item-use action으로 처리한다.
+- FocusEngaged host가 item-use-area를 지원하지 않거나, 선택 아이템이 없거나, selected action의 `CanBeginUse(Context)`가 false이면 기존 FocusAction/PartFocus 입력 정책을 따른다.
 - Anchored cursor FocusEngaged 진입 시 hotbar 선택은 비워진다. item-use area는 engaged 이후 hotbar에서 대상 아이템을 다시 선택했을 때 활성화된다.
 - 사용영역 표시/점멸은 LMB와 무관하며, host가 item-use-area를 지원하고 대상 아이템이 선택된 동안 대응 영역을 표시한다.
 - item-use area 활성 중에는 PartFocus outline보다 item-use area 표시를 우선하며, 결정된 정책 기준으로 선택 아이템이 있을 때 PartFocus outline은 숨긴다.
@@ -195,7 +195,7 @@
   - `GetPartFocusDragDeltaSinceLastUpdate()`
   - drag update 전에 scope가 screen delta를 갱신한 뒤 action lifecycle에 전달
 - `UAnchoredFocusCursorActionComponent`는 engaged 입력 라우터로 유지된다.
-- item-use-area hold-use는 기존 press begin/release end를 유지하며, 입력 소비 시 PartFocus gesture를 시작하지 않는다.
+- item-use-area hold-use는 기존 press begin/release end를 유지하며, `CanBeginUse(Context)`가 true라 입력 소비된 경우에만 PartFocus gesture를 시작하지 않는다.
 - edge cancel click은 release 확정 시점에서만 판정한다(press/release 모두 edge cancel 영역 + threshold 이하).
 
 ## Settings Contract

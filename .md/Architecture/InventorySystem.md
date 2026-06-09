@@ -60,7 +60,7 @@
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
-- `UCombUncappingUseAction`: 작업대 소비장 capping use-area에서 context hit point 기반 원형 brush로 현재 visible face의 wax capping mask를 제거하는 hold-use action
+- `UCombUncappingUseAction`: 작업대 소비장 capping use-area에서 context hit point 기반 원형 brush로 현재 visible face의 wax capping mask를 제거하는 hold-use action. 작업대 comb PartFocus 잡기 상태에서는 begin/apply를 차단한다.
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
 - `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
@@ -329,11 +329,12 @@
 ## Update 2026-06-08 (Comb Uncapping Use Action + Capping State)
 
 - `UCombUncappingUseAction`을 추가했다. (`UHoldItemUseAction` 기반)
-- use-area query tag: `Item.UseArea.UncappingTable.Comb`
+- use-area query tag: `Item.UseArea.UncappingTable.HoneyComb`
 - 효과 적용 정책:
   - target: `Context.ItemUseEffectTargetObject`의 `ABeehiveCombActor`
   - hit: `Context.bHasItemUseAreaHit`와 `Context.ItemUseAreaImpactPoint`
   - 현재 visible face의 front/back capping use-area mesh만 유효하다.
+  - `Context.FocusEngagedHostActor`가 `AUncappingTable`이고 comb slot이 PartFocus 잡기 상태가 아닐 때만 begin/apply가 유효하다.
   - `MinStampInterval`과 `MinStampDistanceCm`를 모두 만족할 때 brush stamp를 허용한다.
   - 실제 mask pixel이 하나 이상 `>0`에서 `0`으로 바뀐 tick에만 `FItemActionExecutionResult::bSucceeded=true`다.
   - 이미 제거된 영역을 문지른 no-op stamp는 `bSucceeded=false`다.

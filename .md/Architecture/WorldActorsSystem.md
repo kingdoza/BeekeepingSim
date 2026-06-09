@@ -69,7 +69,7 @@
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner
 - `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
-- `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다.
+- `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다. 작업대 comb PartFocus 잡기 상태 source of truth(`bCombPartFocusEngaged`)를 소유하고, 잡기/놓기/강제 종료 Blueprint hook을 제공한다.
 - `UCombUncappingPartFocusActionComponent`: 작업대 소비장 horizontal drag flip과 PartFocus secondary retrieve bridge를 담당하는 action component. 벌통 lift/shake/lid tag 정책은 포함하지 않는다.
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -155,6 +155,7 @@
 - `HoneyProduction` bucket event에서는 `ApplyHoneyRipenessUpdate()` 후 `ApplyHoneyProductionUpdate()` 순서로 처리한다.
 - `ApplyHoneyRipenessUpdate()`는 들림 여부와 무관하게 이미 full 상태인 모든 active comb의 숙성도만 증가시킨다.
 - `ApplyHoneyProductionUpdate()` 직접 호출 경로에서는 들림 여부와 무관하게 모든 active comb에 꿀 증가량만 적용한다.
+- wax capping 자동 재생성은 벌통 honey ripeness/production 업데이트에서 active comb mutation 직후 `TryRegenerateWaxCapping()`으로만 수행한다.
 - 공통 plane size source of truth는 `ABeehive::CombPlaneSize`이며 active comb actor에 일괄 주입
 - cursor part focus 등록:
   - lid component part (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
@@ -209,6 +210,12 @@
 - `AItemPlacementSlotActor` subclass이며 `ABeehiveCombActor`만 accept한다.
 - empty slot item-use-area tag는 `Item.UseArea.UncappingTable`이다.
 - place 성공 후 `ABeehiveCombActor::ApplyStateFromItemInstance(SourceItemInstance)`를 호출한다.
+- `CombPartFocusAction`의 begin/cancel/abort delegate로 `bCombPartFocusEngaged`를 갱신하고, 변경 시 owning `AUncappingTable`의 PartFocus/item-use-area descriptors를 rebuild한다.
+- 잡기/놓기/강제 종료 BP hook:
+  - `ReceiveCombGrabbed(CombActor, InteractingCharacter)`
+  - `ReceiveCombReleased(CombActor, InteractingCharacter)`
+  - `ReceiveCombGrabAborted(CombActor, InteractingCharacter)`
+- 작업대 소비장 들어올림/원위치 애니메이션은 C++ Tick/component가 아니라 `BP_UncappingTableCombSlot`에서 `AttachComponent` relative transform을 움직이는 방식으로 구현한다.
 - occupied comb descriptor:
   - `PartId = "UncappingTable.Comb"`
   - `OwnerActor = CombActor`
@@ -269,6 +276,7 @@
   - capping mask `255`는 밀랍 남음, `0`은 제거됨이다.
   - face 완료 기준은 `GetWaxCappingRemainingRatio(Face) <= UncappedThreshold`다.
   - capping plane 표시 조건은 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다.
+  - `TryRegenerateWaxCapping()`은 `WaxCappingRegenerationRipenessThreshold` 이상으로 숙성된 full honey 소비장의 제거된 face mask를 face 단위로 `255` 복원한다.
   - `BeeDiseaseValue`는 `0..1` clamp된 legacy 런타임 시각값이며, front/back Niagara 직접 주입 경로는 주석처리되어 있다.
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
@@ -631,7 +639,14 @@
 - capping visual은 byte buffer에서 transient `UTexture2D`를 갱신해 material parameter `WaxCappingMask`로 주입한다.
 - 작업대 capping use-area active 조건:
   - host가 `AUncappingTable`
+  - `AUncappingTableCombSlot::IsCombPartFocusEngaged()`가 false
   - `IsHoneyFull()`
   - component face가 현재 visible face
   - face remaining ratio가 `UncappedThreshold`보다 큼
 - 이번 범위에서 벌통 소비장 lift/shake 정책, honey production/ripeness bucket, 채밀/수확/꿀 아이템 생산은 변경하지 않는다.
+
+## Update 2026-06-09 (Wax Capping Regeneration)
+
+- `ABeehiveCombActor`에 `TryRegenerateWaxCapping()`과 `WaxCappingRegenerationRipenessThreshold`를 추가했다.
+- 재생성 조건은 `IsHoneyFull()`이고 `GetHoneyRipenessRatio() >= WaxCappingRegenerationRipenessThreshold`인 경우다.
+- `ABeehive::ApplyHoneyRipenessUpdate()`와 `ABeehive::DistributeHoneyIncreaseToCombs()`만 자동 재생성을 호출한다. 작업대 배치, `SetCurrentHoney*`, `ApplyStateFromItemInstance()` 경로는 capping mask를 자동 복원하지 않는다.

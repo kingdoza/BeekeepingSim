@@ -5,16 +5,27 @@
 #include "GameplayTagContainer.h"
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/UncappingTable.h"
+#include "WorldActors/UncappingTableCombSlot.h"
 
 UCombUncappingUseAction::UCombUncappingUseAction()
 {
-	const FGameplayTag UncappingAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Item.UseArea.UncappingTable.Comb")), false);
+	const FGameplayTag UncappingAreaTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Item.UseArea.UncappingTable.HoneyComb")), false);
 	if (UncappingAreaTag.IsValid())
 	{
 		FGameplayTagQueryExpression Expression;
 		Expression.AllTagsMatch().AddTag(UncappingAreaTag);
 		UseAreaTagQuery.Build(Expression);
 	}
+}
+
+bool UCombUncappingUseAction::CanBeginUse(const FItemActionContext& Context) const
+{
+	if (!Super::CanBeginUse(Context))
+	{
+		return false;
+	}
+
+	return CanUseOnCurrentUncappingTableContext(Context);
 }
 
 void UCombUncappingUseAction::TickUse(const FItemActionContext& Context, float DeltaTime)
@@ -36,14 +47,7 @@ bool UCombUncappingUseAction::CanApplyUseEffect(const FItemActionContext& Contex
 		return false;
 	}
 
-	const ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Context.ItemUseEffectTargetObject);
-	if (!CombActor || !Context.bHasItemUseAreaHit || !Context.ItemUseAreaHitComponent)
-	{
-		return false;
-	}
-
-	EBeehiveCombVisibleFace TargetFace;
-	return ResolveTargetFace(CombActor, Context.ItemUseAreaHitComponent, TargetFace);
+	return CanUseOnCurrentUncappingTableContext(Context);
 }
 
 FItemActionExecutionResult UCombUncappingUseAction::ApplyUseEffect(const FItemActionContext& Context, float DeltaTime)
@@ -52,7 +56,7 @@ FItemActionExecutionResult UCombUncappingUseAction::ApplyUseEffect(const FItemAc
 
 	FItemActionExecutionResult Result;
 	ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Context.ItemUseEffectTargetObject);
-	if (!CombActor || !Context.bHasItemUseAreaHit || !Context.ItemUseAreaHitComponent)
+	if (!CombActor || !CanUseOnCurrentUncappingTableContext(Context))
 	{
 		return Result;
 	}
@@ -123,6 +127,25 @@ bool UCombUncappingUseAction::ResolveTargetFace(
 	}
 
 	return false;
+}
+
+bool UCombUncappingUseAction::CanUseOnCurrentUncappingTableContext(const FItemActionContext& Context) const
+{
+	const AUncappingTable* UncappingTable = Cast<AUncappingTable>(Context.FocusEngagedHostActor);
+	const AUncappingTableCombSlot* CombSlot = UncappingTable ? UncappingTable->GetCombSlotActor() : nullptr;
+	if (!UncappingTable || !CombSlot || CombSlot->IsCombPartFocusEngaged())
+	{
+		return false;
+	}
+
+	const ABeehiveCombActor* CombActor = Cast<ABeehiveCombActor>(Context.ItemUseEffectTargetObject);
+	if (!CombActor || !Context.bHasItemUseAreaHit || !Context.ItemUseAreaHitComponent)
+	{
+		return false;
+	}
+
+	EBeehiveCombVisibleFace TargetFace;
+	return ResolveTargetFace(CombActor, Context.ItemUseAreaHitComponent, TargetFace);
 }
 
 void UCombUncappingUseAction::RebuildHostItemUseAreaDescriptors(const FItemActionContext& Context) const

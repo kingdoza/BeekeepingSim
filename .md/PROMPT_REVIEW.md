@@ -1,25 +1,10 @@
-# 리뷰 프롬프트: 밀도 작업대 + 소비장 capping mask 밀도질 구현
+# 작업대 소비장 BP 이동 Hook 리뷰 프롬프트
 
-## 리뷰 목적
+## 리뷰 목표
 
-이번 리뷰는 밀도 작업대와 소비장 밀도질 구현이 기존 Focus/Inventory/WorldActors 경계를 지키면서 동작하는지 검증한다.
+밀도작업대 소비장 PartFocus `잡기/놓기` 상태를 `BP_UncappingTableCombSlot`에서 안정적으로 받아 실제 이동 애니메이션을 구현할 수 있도록 추가한 C++ Blueprint hook이 요구사항대로 좁게 구현됐는지 검토한다.
 
-핵심:
-- `AUncappingTable`은 C++ native WorldActor이며 기존 anchored cursor FocusEngaged 경로를 사용한다.
-- 작업대 comb slot은 `AUncappingTableCombSlot` 전용 subclass다.
-- 작업대 PartFocus action은 `UCombUncappingPartFocusActionComponent`이며 `UBeehiveCombPartFocusActionComponent`를 직접 재사용하지 않는다.
-- 밀도질 action은 `UCombUncappingUseAction`이며 직접 cursor trace를 하지 않는다.
-- `ABeehiveCombActor`가 face별 capping mask byte buffer와 transient texture를 소유한다.
-- `FBeehiveCombItemState`가 capping mask를 저장/복원한다.
-- 이번 범위에서 채밀/수확, 꿀 아이템 생산, 밀도 도구 내구도 감소는 구현하지 않는다.
-
-제외:
-- `Content/` asset 직접 수정/저장
-- 기존 UCLASS/USTRUCT/UENUM rename
-- 기존 BlueprintCallable/Public API 삭제 또는 rename
-- Core Redirect 추가
-- 벌통 소비장 lift/shake 정책 변경
-- `ABeehive` honey production/ripeness bucket 변경
+이번 변경은 C++에서 이동 애니메이션을 구현하는 작업이 아니다. C++는 Blueprint 이벤트 제공과 호출 시점 보장만 담당해야 한다.
 
 ## 반드시 읽을 문서
 
@@ -28,129 +13,127 @@
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/CoreSystem.md`
 - `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/QNA_ARCHITECTURE.md`
-- `.md/QNA_IMPLEMENTATION.md`
-- `.md/USER_UNREAL.md`
+- 필요 시 `.md/QNA_REVIEW.md`
+- 필요 시 `.md/QNA_IMPLEMENTATION.md`
+- 필요 시 `.md/USER_UNREAL.md`
 
-참고:
-- `.md/QNA_IMPLEMENTATION.md`의 `FocusPrompt Asset 반영` 항목은 이번 구현 범위와 직접 관련 없다.
+## 리뷰 대상
 
-## 리뷰 범위 파일
-
-Source:
-- `Source/BeekeepingSim/Public/WorldActors/UncappingTable.h`
-- `Source/BeekeepingSim/Private/WorldActors/UncappingTable.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/UncappingTableCombSlot.h`
 - `Source/BeekeepingSim/Private/WorldActors/UncappingTableCombSlot.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/CombUncappingPartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/CombUncappingPartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/Inventory/CombUncappingUseAction.h`
-- `Source/BeekeepingSim/Private/Inventory/CombUncappingUseAction.cpp`
-- `Source/BeekeepingSim/Public/Inventory/ItemActionContext.h`
-- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
-- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
-- `Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h`
-- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
-
-Config:
-- `Config/DefaultGameplayTags.ini`
-
-문서:
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/USER_UNREAL.md`
-- `.md/PROMPT_REVIEW.md`
 
-## 핵심 검증 질문
+`Content/` 에셋은 수정 대상이 아니다.
 
-1. `AUncappingTable`이 `UFocusTargetComponent` + `UAnchoredFocusCursorActionComponent`를 사용하고 별도 input binding을 추가하지 않았는가?
-2. FocusEngaged 진입 시 hotbar 선택 clear는 기존 `UAnchoredFocusCursorActionComponent` 정책을 재사용하는가?
-3. `AUncappingTableCombSlot`은 `ABeehiveCombActor`만 accept하고 `ABeehiveCombSlotActor`를 상속하지 않는가?
-4. empty slot 배치는 `UItemPlacementUseAction` + item-use-area LMB 경로를 재사용하는가?
-   - 소비장 placement action query가 비어 있지 않다면 `Item.UseArea.UncappingTable` empty slot tag를 허용해야 한다.
-5. occupied comb 회수는 PartFocus secondary에서 comb의 `PlacementRetrieveAction`을 bridge하고, acquire 성공 후 `WriteStateToItemInstance`를 호출하는가?
-6. `UCombUncappingPartFocusActionComponent`가 `UBeehiveCombPartFocusActionComponent`를 상속하거나 직접 재사용하지 않는가?
-7. 작업대 flip은 horizontal drag threshold/dominance 기반이며 vertical shake/bee reduction/lid required tag를 포함하지 않는가?
-8. `FItemActionContext`의 hit fields가 `BeginUse`, `TickUse`, `ApplyUseEffect`, `EndUse` context에 가능한 한 현재 hover hit로 채워지는가?
-9. `UCursorItemUseAreaScopeComponent`가 hover trace hit를 cache하고, action이 직접 mouse deproject/line trace를 하지 않는가?
-10. `FBeehiveCombItemState`가 `HoneyAmount`, `HoneyRipeness`, visible face와 capping mask를 함께 보존하는가?
-11. 기존 `SetBeehiveCombState(...)`와 `SetBeehiveCombStateWithRipeness(...)`가 삭제/rename 없이 유지되는가?
-12. 저장 mask가 없거나 dimension mismatch이면 `ABeehiveCombActor::ApplyStateFromItemInstance`가 full mask fallback을 수행하는가?
-13. `ABeehiveCombActor::WriteStateToItemInstance`가 capping mask를 저장하는가?
-14. capping mask source of truth가 face별 `TArray<uint8>`이고 transient `UTexture2D`는 runtime visual 전용인가?
-15. `WaxCappingMask` texture parameter가 capping material dynamic instance에 주입되는가?
-16. capping plane 표시 조건이 face별 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`인가?
-17. full honey가 아니어도 mask를 reset하지 않는가?
-18. capping use-area active 조건이 host `AUncappingTable`, `IsHoneyFull()`, 현재 visible face, remaining mask ratio threshold를 모두 확인하는가?
-19. `UCombUncappingUseAction`의 query tag가 `Item.UseArea.UncappingTable.Comb`인가?
-20. `UCombUncappingUseAction`이 `MinStampInterval`과 `MinStampDistanceCm`를 둘 다 만족할 때만 stamp를 찍는가?
-21. 실제 mask pixel 변경이 있을 때만 `bSucceeded=true`이고 no-op stamp는 false인가?
-22. `UCombUncappingUseAction`이 `DurabilityDelta`를 만들지 않는가?
-23. 채밀/수확/꿀 아이템 생산 코드가 추가되지 않았는가?
-24. `Config/DefaultGameplayTags.ini`에 `Item.UseArea.UncappingTable`과 `Item.UseArea.UncappingTable.Comb`가 중복 없이 추가되었는가?
-25. Core Redirect가 추가되지 않았고 rename이 없는가?
+## 기대 구현 요약
 
-## 검색 검증
+### 1. Blueprint 이벤트
 
-```powershell
-rg "AUncappingTable|AUncappingTableCombSlot|UCombUncappingPartFocusActionComponent" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
-rg "UCombUncappingUseAction|Item.UseArea.UncappingTable.Comb" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory Config/DefaultGameplayTags.ini
-rg "bHasItemUseAreaHit|ItemUseAreaImpactPoint|ItemUseAreaImpactNormal|HoveredItemUseAreaHit" Source/BeekeepingSim/Public/Inventory/ItemActionContext.h Source/BeekeepingSim/Public/Focus/CursorItemUseAreaScopeComponent.h Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp
-rg "WaxCappingMask|FrontWaxCappingMask|BackWaxCappingMask|ApplyWaxCappingBrush|UncappedThreshold" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp Source/BeekeepingSim/Public/Inventory/ItemInstance.h Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp
-rg "UBeehiveCombPartFocusActionComponent" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+`AUncappingTableCombSlot`에 아래 이벤트가 추가되어야 한다.
+
+```cpp
+UFUNCTION(BlueprintImplementableEvent, Category = "Uncapping Table|Comb Slot", meta = (DisplayName = "Receive Comb Grabbed"))
+void ReceiveCombGrabbed(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
+
+UFUNCTION(BlueprintImplementableEvent, Category = "Uncapping Table|Comb Slot", meta = (DisplayName = "Receive Comb Released"))
+void ReceiveCombReleased(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
+
+UFUNCTION(BlueprintImplementableEvent, Category = "Uncapping Table|Comb Slot", meta = (DisplayName = "Receive Comb Grab Aborted"))
+void ReceiveCombGrabAborted(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
 ```
 
-확인할 것:
-- 작업대 전용 PartFocus action이 기존 벌통 action을 직접 재사용하지 않는다.
-- `UCombUncappingUseAction`은 직접 line trace를 하지 않는다.
-- `UCombUncappingUseAction`은 durability delta를 만들지 않는다.
-- `FBeehiveCombItemState`에 capping mask가 저장된다.
-- `ApplyStateFromItemInstance`가 mask 복원 또는 full fallback을 수행한다.
-- `WriteStateToItemInstance`가 mask를 저장한다.
+검토 포인트:
 
-## 빌드 검증
+- 이벤트는 `BlueprintImplementableEvent`여야 한다.
+- 이벤트는 `AUncappingTableCombSlot` 쪽 hook이어야 하며, `AUncappingTable`이나 `ABeehiveCombActor`에 둘 필요가 없다.
+- `CombActor`와 `InteractingCharacter`를 Blueprint로 넘겨야 한다.
+- UHT 빌드가 가능하도록 forward declaration/include가 충분해야 한다.
 
-권장:
+### 2. 이벤트 호출 시점
+
+기존 PartFocus delegate handler에서 호출되어야 한다.
+
+- `HandleCombPartFocusBegin`: `SetCombPartFocusEngaged(true)` 이후 `ReceiveCombGrabbed(...)`
+- `HandleCombPartFocusCancel`: `SetCombPartFocusEngaged(false)` 이후 `ReceiveCombReleased(...)`
+- `HandleCombPartFocusAbort`: `SetCombPartFocusEngaged(false)` 이후 `ReceiveCombGrabAborted(...)`
+
+검토 포인트:
+
+- 상태 갱신과 descriptor refresh가 먼저 일어나야 한다.
+- 소비장 조회는 `ActionComponent->GetOwner()`보다 슬롯 맥락의 `GetPlacedCombActor()`를 사용해야 한다.
+- `GetPlacedCombActor()`가 `nullptr`이면 이벤트 호출을 생략하는 것이 적절하다.
+- `InteractingCharacter`는 이벤트로 그대로 전달되어야 한다.
+- 기존 `bCombPartFocusEngaged` source of truth와 `RequestOwningUncappingTableRefresh()` 흐름을 깨지 않아야 한다.
+
+### 3. 범위 제한
+
+검토 포인트:
+
+- C++ Tick, Timeline 대체 로직, 새 lift component, transform 보간 로직이 추가되지 않아야 한다.
+- 벌통의 `UBeehiveCombLiftComponent`, `ABeehive`, `ABeehiveCombSlotActor` 동작을 건드리지 않아야 한다.
+- `UCombUncappingPartFocusActionComponent`의 horizontal drag flip 로직을 변경하지 않아야 한다.
+- `ABeehiveCombActor::SetVisibleCombFace`, `ApplyStateFromItemInstance`, brush/mask 로직을 변경하지 않아야 한다.
+- `Content/` 에셋을 수정하거나 저장하지 않아야 한다.
+- Core Redirect가 필요한 rename이 없어야 한다.
+
+### 4. 문서 반영
+
+검토 포인트:
+
+- `.md/0_ARCHITECTURE.md`에는 작업대 slot BP hook의 존재와 실제 이동이 BP 책임이라는 요지가 반영되어야 한다.
+- `.md/Architecture/WorldActorsSystem.md`에는 `AUncappingTableCombSlot`의 이벤트 hook과 BP 구현 책임이 반영되어야 한다.
+- `.md/USER_UNREAL.md`에는 `BP_UncappingTableCombSlot`에서 수동으로 해야 할 작업이 명확히 안내되어야 한다.
+- 문서가 C++에서 이동을 구현한 것처럼 오해를 만들지 않아야 한다.
+
+## 권장 검색
+
+```powershell
+rg -n "ReceiveCombGrabbed|ReceiveCombReleased|ReceiveCombGrabAborted|HandleCombPartFocus|SetCombPartFocusEngaged|GetPlacedCombActor" Source/BeekeepingSim/Public/WorldActors/UncappingTableCombSlot.h Source/BeekeepingSim/Private/WorldActors/UncappingTableCombSlot.cpp
+rg -n "BP_UncappingTableCombSlot|Receive Comb Grabbed|AttachComponent|잡기/놓기 애니메이션 Hook" .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md .md/USER_UNREAL.md
+```
+
+## 정적 확인
+
+- Begin/Cancel/Abort handler에서 이벤트 호출 순서가 상태 갱신 이후인지 확인한다.
+- 이벤트 호출이 현재 슬롯의 placed comb 기준인지 확인한다.
+- null comb에서 Blueprint 이벤트가 호출되지 않는지 확인한다.
+- `InteractingCharacter`가 dead parameter로 남지 않고 BP 이벤트에 전달되는지 확인한다.
+- 작업대 slot 외 클래스의 불필요한 변경이 없는지 확인한다.
+- `Content/` 변경이 없는지 확인한다.
+
+## 검증 명령
+
+공백/패치 검증:
+
+```powershell
+git diff --check -- Source/BeekeepingSim/Public/WorldActors/UncappingTableCombSlot.h Source/BeekeepingSim/Private/WorldActors/UncappingTableCombSlot.cpp .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md .md/USER_UNREAL.md .md/PROMPT_REVIEW.md
+```
+
+UBT 빌드:
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-구현 시점 빌드 결과:
-- `BeekeepingSimEditor Win64 Development`: 성공 (`Result: Succeeded`)
+## PIE 수동 확인
 
-## 수동 검증 포인트
+1. `BP_UncappingTableCombSlot`에서 `Receive Comb Grabbed`, `Receive Comb Released`, `Receive Comb Grab Aborted` 이벤트가 보이는지 확인한다.
+2. `Receive Comb Grabbed`에서 `AttachComponent` relative transform을 저장하고 들어 올리는 Timeline/Lerp를 연결한다.
+3. `Receive Comb Released`에서 저장한 rest transform으로 되돌리는 Timeline/Lerp를 연결한다.
+4. `Receive Comb Grab Aborted`에서 진행 중 애니메이션을 중단하고 rest transform으로 복귀시키는지 확인한다.
+5. 작업대에 소비장을 놓고 `잡기` 시 소비장이 이동하는지 확인한다.
+6. `놓기` 시 원위치로 돌아오는지 확인한다.
+7. 잡은 상태에서 horizontal drag flip이 기존처럼 동작하는지 확인한다.
+8. 벌통의 소비장 들기/내리기 동작이 기존처럼 유지되는지 확인한다.
 
-Editor/PIE에서 확인:
+## 리뷰 결과 작성 형식
 
-1. 밀도 작업대에 FocusConfirm으로 진입된다.
-2. FocusEngaged 진입 시 hotbar 선택이 비워진다.
-3. 소비장을 선택한 뒤 empty 작업대 slot에 LMB로 배치된다.
-4. 배치된 소비장은 PartFocus secondary로 회수된다.
-5. 회수 후 hotbar item instance에 honey amount/ripeness/visible face/capping mask가 보존된다.
-6. 재배치하면 capping mask가 복원된다.
-7. 밀도 도구를 선택하면 현재 visible face capping use-area만 표시된다.
-8. LMB hold로 커서 중심 원형 영역의 밀랍만 제거된다.
-9. 지워진 부분 아래의 honey plane이 보인다.
-10. 이미 지워진 영역을 문질러도 추가 변화가 없다.
-11. horizontal drag flip으로 visible face가 바뀐다.
-12. full honey가 아닌 소비장은 밀도질 use-area가 active가 아니다.
-13. 한 face가 threshold 이하로 제거되면 해당 face capping plane이 숨겨지고 use-area가 inactive된다.
-14. 양면 완료 여부는 `IsWaxCappingComplete()`로 확인된다.
+리뷰 결과는 `.md/AGENT_REVIEW.md` 기준으로 작성한다.
 
-## 리뷰 결과 출력 형식
-
-`.md/AGENT_REVIEW.md`의 출력 형식을 따른다.
-
-특히:
-- Findings를 우선 제시하고 `High -> Medium -> Low` 순서로 정렬
-- 각 Finding에 파일/라인, 원인, 영향, 수정 제안 포함
-- 이슈가 없으면 `No blocking issues found.`를 명시
-- Blueprint/API 영향과 Core Redirect 불필요 여부를 별도 확인
-- Content 수동 작업(`WaxCappingMask` material 연결, 밀도 도구 DataAsset, 작업대 BP authoring)을 명시
+- Findings first: severity, file/line, 문제, 영향, 수정 방향
+- 문제가 없으면 "검토 범위에서 발견된 blocking/major issue 없음"을 명확히 적는다.
+- 남은 리스크는 UBT/PIE/BP 수동 확인 여부와 연결해서 적는다.
+- 구현 요약은 findings 이후에 짧게 둔다.

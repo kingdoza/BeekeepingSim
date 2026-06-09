@@ -388,6 +388,7 @@ void ABeehive::ApplyHoneyRipenessUpdate()
 		}
 
 		CombActor->AddHoneyRipeness(RipenessIncrease);
+		CombActor->TryRegenerateWaxCapping();
 	}
 }
 
@@ -1305,6 +1306,7 @@ void ABeehive::DistributeHoneyIncreaseToCombs(float TotalHoneyIncrease)
 	{
 		const float HoneyIncrease = TotalHoneyIncrease * Weights[Index] / WeightSum;
 		ActiveCombs[Index]->AddHoneyAmount(HoneyIncrease);
+		ActiveCombs[Index]->TryRegenerateWaxCapping();
 	}
 }
 

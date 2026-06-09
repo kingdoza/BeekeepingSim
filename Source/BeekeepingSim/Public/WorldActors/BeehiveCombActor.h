@@ -136,6 +136,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Wax Capping")
 	bool ApplyWaxCappingBrush(UPrimitiveComponent* HitComponent, const FVector& WorldImpactPoint, float BrushRadiusCm);
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Wax Capping")
+	bool TryRegenerateWaxCapping();
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
 	float GetWaxCappingRemainingRatio(EBeehiveCombVisibleFace Face) const;
 
@@ -269,6 +272,7 @@ private:
 	const TArray<uint8>& GetWaxCappingMask(EBeehiveCombVisibleFace Face) const;
 	TObjectPtr<UTexture2D>& GetWaxCappingMaskTextureRef(EBeehiveCombVisibleFace Face);
 	void EnsureCappingMaskTextures();
+	void RefreshCappingMaskTextures();
 	void UpdateCappingMaskTexture(EBeehiveCombVisibleFace Face);
 	void ApplyWaxCappingMaskMaterialParameters();
 	void SyncVisibleCombFacePresentation();
@@ -326,6 +330,9 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float UncappedThreshold = 0.01f;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float WaxCappingRegenerationRipenessThreshold = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping")
 	FName WaxCappingMaskMaterialParameterName = TEXT("WaxCappingMask");

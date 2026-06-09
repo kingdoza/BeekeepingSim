@@ -137,7 +137,7 @@
   - 옵션 B: `UCombUncappingUseAction`, tag `Item.UseArea.Comb.Capping`
   - 옵션 C: `UWaxCappingRemovalUseAction`, tag `Item.UseArea.WaxCapping`
 - 권장 옵션: 옵션 B. 벌통 전용이 아니라 작업대/소비장 기능이므로 `Beehive`를 tag에 넣지 않는 편이 낫다.
-- 답변 : 옵션D. `UCombUncappingUseAction`, tag `Item.UseArea.UncappingTable.Comb`
+- 답변 : 옵션D. `UCombUncappingUseAction`, tag `Item.UseArea.UncappingTable.HoneyComb`
 
 3. brush 성공 판정과 내구도 감소 조건
 - 질문 내용: LMB hold 중 언제 `FItemActionExecutionResult::bSucceeded=true`로 볼 것인가?

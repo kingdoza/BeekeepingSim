@@ -187,7 +187,7 @@ bool UCursorItemUseAreaScopeComponent::HandleItemUsePressed()
 	const FItemActionContext Context = BuildItemActionContext(HoveredDescriptorIndex);
 	if (!CachedHoldAction->CanBeginUse(Context))
 	{
-		return true;
+		return false;
 	}
 
 	bIsUseInProgress = CachedHoldAction->BeginUse(Context);

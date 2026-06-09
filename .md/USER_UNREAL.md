@@ -22,7 +22,7 @@
 - local origin은 작업면 중심에 둔다.
 - component collision은 기본적으로 비활성/ignore 상태로 둔다.
 - PIE에서 runtime active descriptor가 선택된 use-area에만 query collision을 켜는지 확인한다.
-- `AreaTags`에는 `Item.UseArea.UncappingTable.Comb`가 포함되어야 한다.
+- `AreaTags`에는 `Item.UseArea.UncappingTable.HoneyComb`가 포함되어야 한다.
 - `EffectTargetPolicy`는 `ComponentOwner`로 유지한다.
 
 ## 3. capping material graph 연결
@@ -45,7 +45,7 @@
 ## 5. 밀도 도구 DataAsset 설정
 
 - 밀도 도구 item definition의 action spec에 `UCombUncappingUseAction`을 추가한다.
-- `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.Comb` use-area tag를 대상으로 한다.
+- `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.HoneyComb` use-area tag를 대상으로 한다.
 - 필요하면 아래 값을 item action spec에서 조정한다.
   - `BrushRadiusCm`
   - `MinStampInterval`
@@ -104,3 +104,25 @@
 - 채밀, 수확, 꿀 아이템 생산은 구현/검증 대상이 아니다.
 - 밀도 도구 active-use durability drain은 구현/검증 대상이 아니다.
 - Core Redirect 작업은 필요하지 않다.
+
+## 11. `BP_UncappingTableCombSlot` 잡기/놓기 애니메이션 Hook
+
+- `AUncappingTableCombSlot` 기반 `BP_UncappingTableCombSlot`에서 아래 새 이벤트가 보이는지 확인한다.
+  - `Receive Comb Grabbed`
+  - `Receive Comb Released`
+  - `Receive Comb Grab Aborted`
+- `Receive Comb Grabbed`:
+  - 현재 `AttachComponent` relative transform을 rest transform으로 저장한다.
+  - Timeline 또는 Lerp로 `AttachComponent`를 들어 올린 relative transform으로 이동한다.
+- `Receive Comb Released`:
+  - Timeline 또는 Lerp로 `AttachComponent`를 저장한 rest transform으로 되돌린다.
+- `Receive Comb Grab Aborted`:
+  - 진행 중인 애니메이션이 있으면 중단한다.
+  - 즉시 또는 짧은 보간으로 `AttachComponent`를 rest transform으로 되돌린다.
+- 소비장 actor 자체의 world transform을 직접 움직이지 않는다. 소비장은 slot의 `AttachComponent`에 attach되므로 `AttachComponent` relative transform을 움직이는 방식을 우선 사용한다.
+- 작업 후 `BP_UncappingTableCombSlot`을 compile/save한다.
+- PIE에서 확인한다.
+  - 작업대에 소비장을 놓고 `잡기` 시 소비장이 들어 올려진다.
+  - `놓기` 시 원위치로 돌아온다.
+  - 잡은 상태의 horizontal drag flip은 기존처럼 동작한다.
+  - 벌통 소비장 들기/내리기 동작은 기존처럼 유지된다.

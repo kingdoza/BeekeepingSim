@@ -1,6 +1,7 @@
 #include "WorldActors/UncappingTableCombSlot.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "Focus/CursorPartFocusActionComponent.h"
 #include "Focus/ItemUseAreaMeshComponent.h"
 #include "GameplayTagContainer.h"
 #include "Inventory/ItemDefinition.h"
@@ -18,6 +19,9 @@ namespace UncappingTableCombSlotNames
 AUncappingTableCombSlot::AUncappingTableCombSlot()
 {
 	CombPartFocusAction = CreateDefaultSubobject<UCombUncappingPartFocusActionComponent>(TEXT("CombPartFocusAction"));
+	CombPartFocusAction->OnPartFocusBegin.AddDynamic(this, &AUncappingTableCombSlot::HandleCombPartFocusBegin);
+	CombPartFocusAction->OnPartFocusCancel.AddDynamic(this, &AUncappingTableCombSlot::HandleCombPartFocusCancel);
+	CombPartFocusAction->OnPartFocusAbort.AddDynamic(this, &AUncappingTableCombSlot::HandleCombPartFocusAbort);
 
 	if (SlotMeshComponent)
 	{
@@ -96,6 +100,8 @@ bool AUncappingTableCombSlot::TryPlaceItem_Implementation(
 		return false;
 	}
 
+	SetCombPartFocusEngaged(false);
+
 	if (ABeehiveCombActor* CombActor = GetPlacedCombActor())
 	{
 		CombActor->ApplyStateFromItemInstance(SourceItemInstance);
@@ -108,6 +114,7 @@ bool AUncappingTableCombSlot::TryPlaceItem_Implementation(
 void AUncappingTableCombSlot::ClearPlacedItem_Implementation()
 {
 	Super::ClearPlacedItem_Implementation();
+	SetCombPartFocusEngaged(false);
 	RequestOwningUncappingTableRefresh();
 }
 
@@ -122,6 +129,62 @@ bool AUncappingTableCombSlot::CanAcceptOccupantActor(AActor* CandidateActor) con
 	return CandidateActor
 		&& CandidateActor->IsA<ABeehiveCombActor>()
 		&& Super::CanAcceptOccupantActor(CandidateActor);
+}
+
+void AUncappingTableCombSlot::HandleCombPartFocusBegin(
+	UCursorPartFocusActionComponent* ActionComponent,
+	UCursorPartFocusScopeComponent* ScopeComponent,
+	ABeekeeperCharacter* InteractingCharacter)
+{
+	(void)ActionComponent;
+	(void)ScopeComponent;
+
+	SetCombPartFocusEngaged(true);
+	if (ABeehiveCombActor* CombActor = GetPlacedCombActor())
+	{
+		ReceiveCombGrabbed(CombActor, InteractingCharacter);
+	}
+}
+
+void AUncappingTableCombSlot::HandleCombPartFocusCancel(
+	UCursorPartFocusActionComponent* ActionComponent,
+	UCursorPartFocusScopeComponent* ScopeComponent,
+	ABeekeeperCharacter* InteractingCharacter)
+{
+	(void)ActionComponent;
+	(void)ScopeComponent;
+
+	SetCombPartFocusEngaged(false);
+	if (ABeehiveCombActor* CombActor = GetPlacedCombActor())
+	{
+		ReceiveCombReleased(CombActor, InteractingCharacter);
+	}
+}
+
+void AUncappingTableCombSlot::HandleCombPartFocusAbort(
+	UCursorPartFocusActionComponent* ActionComponent,
+	UCursorPartFocusScopeComponent* ScopeComponent,
+	ABeekeeperCharacter* InteractingCharacter)
+{
+	(void)ActionComponent;
+	(void)ScopeComponent;
+
+	SetCombPartFocusEngaged(false);
+	if (ABeehiveCombActor* CombActor = GetPlacedCombActor())
+	{
+		ReceiveCombGrabAborted(CombActor, InteractingCharacter);
+	}
+}
+
+void AUncappingTableCombSlot::SetCombPartFocusEngaged(bool bNewEngaged)
+{
+	if (bCombPartFocusEngaged == bNewEngaged)
+	{
+		return;
+	}
+
+	bCombPartFocusEngaged = bNewEngaged;
+	RequestOwningUncappingTableRefresh();
 }
 
 void AUncappingTableCombSlot::RequestOwningUncappingTableRefresh() const

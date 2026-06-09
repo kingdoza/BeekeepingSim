@@ -16,6 +16,7 @@ class BEEKEEPINGSIM_API UCombUncappingUseAction : public UHoldItemUseAction
 public:
 	UCombUncappingUseAction();
 
+	virtual bool CanBeginUse(const FItemActionContext& Context) const override;
 	virtual void TickUse(const FItemActionContext& Context, float DeltaTime) override;
 	virtual void EndUse(const FItemActionContext& Context, bool bWasCanceled) override;
 	virtual bool CanApplyUseEffect(const FItemActionContext& Context) const override;
@@ -34,6 +35,7 @@ protected:
 private:
 	void ResetStampState();
 	bool ResolveTargetFace(const ABeehiveCombActor* CombActor, UPrimitiveComponent* HitComponent, EBeehiveCombVisibleFace& OutFace) const;
+	bool CanUseOnCurrentUncappingTableContext(const FItemActionContext& Context) const;
 	void RebuildHostItemUseAreaDescriptors(const FItemActionContext& Context) const;
 
 	bool bHasLastStamp = false;
