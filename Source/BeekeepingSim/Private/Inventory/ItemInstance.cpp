@@ -84,6 +84,29 @@ void UItemInstance::SetBeehiveCombStateWithRipeness(float HoneyAmount, float Hon
 	BeehiveCombState.HoneyAmount = FMath::Max(0.0f, HoneyAmount);
 	BeehiveCombState.HoneyRipeness = FMath::Max(0.0f, HoneyRipeness);
 	BeehiveCombState.bIsFrontFaceVisible = bIsFrontFaceVisible;
+	BeehiveCombState.CappingMaskWidth = 0;
+	BeehiveCombState.CappingMaskHeight = 0;
+	BeehiveCombState.FrontWaxCappingMask.Reset();
+	BeehiveCombState.BackWaxCappingMask.Reset();
+}
+
+void UItemInstance::SetBeehiveCombStateWithCapping(
+	float HoneyAmount,
+	float HoneyRipeness,
+	bool bIsFrontFaceVisible,
+	int32 CappingMaskWidth,
+	int32 CappingMaskHeight,
+	const TArray<uint8>& FrontWaxCappingMask,
+	const TArray<uint8>& BackWaxCappingMask)
+{
+	BeehiveCombState.bHasState = true;
+	BeehiveCombState.HoneyAmount = FMath::Max(0.0f, HoneyAmount);
+	BeehiveCombState.HoneyRipeness = FMath::Max(0.0f, HoneyRipeness);
+	BeehiveCombState.bIsFrontFaceVisible = bIsFrontFaceVisible;
+	BeehiveCombState.CappingMaskWidth = FMath::Max(0, CappingMaskWidth);
+	BeehiveCombState.CappingMaskHeight = FMath::Max(0, CappingMaskHeight);
+	BeehiveCombState.FrontWaxCappingMask = FrontWaxCappingMask;
+	BeehiveCombState.BackWaxCappingMask = BackWaxCappingMask;
 }
 
 void UItemInstance::ClearBeehiveCombState()

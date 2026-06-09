@@ -29,6 +29,18 @@ struct FBeehiveCombItemState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
 	bool bIsFrontFaceVisible = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb", meta = (ClampMin = "0"))
+	int32 CappingMaskWidth = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb", meta = (ClampMin = "0"))
+	int32 CappingMaskHeight = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
+	TArray<uint8> FrontWaxCappingMask;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Beehive Comb")
+	TArray<uint8> BackWaxCappingMask;
 };
 
 UCLASS(BlueprintType)
@@ -87,6 +99,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
 	void SetBeehiveCombStateWithRipeness(float HoneyAmount, float HoneyRipeness, bool bIsFrontFaceVisible);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
+	void SetBeehiveCombStateWithCapping(
+		float HoneyAmount,
+		float HoneyRipeness,
+		bool bIsFrontFaceVisible,
+		int32 CappingMaskWidth,
+		int32 CappingMaskHeight,
+		const TArray<uint8>& FrontWaxCappingMask,
+		const TArray<uint8>& BackWaxCappingMask);
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Beehive Comb")
 	void ClearBeehiveCombState();

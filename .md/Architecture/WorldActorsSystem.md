@@ -19,6 +19,12 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/UncappingTable.h`
+- `Source/BeekeepingSim/Private/WorldActors/UncappingTable.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/UncappingTableCombSlot.h`
+- `Source/BeekeepingSim/Private/WorldActors/UncappingTableCombSlot.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/CombUncappingPartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/CombUncappingPartFocusActionComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
@@ -61,7 +67,10 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner
-- `ABeehiveCombActor`: 벌통 내부 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + full honey 밀랍/capping plane 표시를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
+- `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
+- `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
+- `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다.
+- `UCombUncappingPartFocusActionComponent`: 작업대 소비장 horizontal drag flip과 PartFocus secondary retrieve bridge를 담당하는 action component. 벌통 lift/shake/lid tag 정책은 포함하지 않는다.
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
@@ -175,6 +184,39 @@
   - occupied slot: descriptor inactive(`AreaTags` 비움)
   - host provider는 child actor 내부 `UItemUseAreaMeshComponent`를 수집한다.
 
+### `AUncappingTable`
+
+- `USceneComponent` root
+- `UStaticMeshComponent` `TableMesh`
+- `USceneComponent` 2개 (`FocusAnchor`, `CharacterAnchor`)
+- `UFocusTargetComponent`
+- `UAnchoredFocusCursorActionComponent`
+- `UCursorPartFocusScopeComponent`
+- `UCursorPartFocusRegistrationComponent`
+- `UChildCursorPartFocusProviderComponent`
+- `UCursorItemUseAreaScopeComponent`
+- `UItemUseAreaMeshProviderComponent`
+- `USceneComponent` `CombSlotRoot`
+- `UChildActorComponent` `CombSlotChildActor`
+- `CombSlotActorClass` 기본값은 `AUncappingTableCombSlot::StaticClass()`
+- `CombSlotChildActor`는 `PartFocusChild` component tag를 가져 child provider가 slot descriptor를 수집한다.
+- `RebuildCursorPartFocusDescriptors()`는 scope clear 후 registration append를 수행한다.
+- `RebuildItemUseAreaDescriptors()`는 item-use-area scope rebuild를 수행한다.
+- FocusEngaged 진입/취소, hotbar 선택 clear, cursor/input mode는 `UAnchoredFocusCursorActionComponent` 기존 정책을 따른다.
+
+### `AUncappingTableCombSlot`
+
+- `AItemPlacementSlotActor` subclass이며 `ABeehiveCombActor`만 accept한다.
+- empty slot item-use-area tag는 `Item.UseArea.UncappingTable`이다.
+- place 성공 후 `ABeehiveCombActor::ApplyStateFromItemInstance(SourceItemInstance)`를 호출한다.
+- occupied comb descriptor:
+  - `PartId = "UncappingTable.Comb"`
+  - `OwnerActor = CombActor`
+  - `HitComponent = CombActor->GetCombMeshComponent()`
+  - `OutlineComponents = { CombMesh }`
+  - `ActionHandler = CombPartFocusAction`
+- place/clear/BeginPlay 후 owning `AUncappingTable`의 PartFocus와 item-use-area descriptors를 rebuild한다.
+
 ### `ABeehiveDualSwarmActor`
 
 - `USceneComponent` root
@@ -208,6 +250,7 @@
 - `USceneComponent` 2개 (`QueenFrontAttachPoint`, `QueenBackAttachPoint`)
 - `UStaticMeshComponent` 2개 (`FrontHoneyPlane`, `BackHoneyPlane`)
 - `UStaticMeshComponent` 2개 (`FrontWaxCappingPlane`, `BackWaxCappingPlane`)
+- `UItemUseAreaMeshComponent` 3개 (`BeeBrushUseAreaMesh`, `FrontWaxCappingUseAreaMesh`, `BackWaxCappingUseAreaMesh`)
 - visible face 상태: `EBeehiveCombVisibleFace` (`Front`/`Back`)
 - flip API: `FlipCombFace`, `SetVisibleCombFace`, `GetVisibleCombFace`
 - 방향 포함 flip API: `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
@@ -222,7 +265,10 @@
   - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
   - `CurrentHoneyRipeness`는 `0..MaxHoneyRipeness` clamp
-  - full honey 밀랍/capping 표시 여부는 별도 저장 상태가 아니라 `IsHoneyFull()` 파생값이다.
+  - face별 capping mask는 `FrontWaxCappingMask`/`BackWaxCappingMask` byte buffer가 source of truth다.
+  - capping mask `255`는 밀랍 남음, `0`은 제거됨이다.
+  - face 완료 기준은 `GetWaxCappingRemainingRatio(Face) <= UncappedThreshold`다.
+  - capping plane 표시 조건은 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다.
   - `BeeDiseaseValue`는 `0..1` clamp된 legacy 런타임 시각값이며, front/back Niagara 직접 주입 경로는 주석처리되어 있다.
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
@@ -244,6 +290,8 @@
   - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
   - ripeness ratio: `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)`
   - front/back plane relative location을 empty/full 위치 사이에서 보간
+  - wax/capping material에는 `HoneyRipeness` scalar와 transient texture parameter `WaxCappingMask`를 주입한다.
+  - transient texture는 face별 byte mask에서 생성/갱신하며 `UPROPERTY(Transient)`로 GC 보호한다.
   - material index 0 scalar parameter(`HoneyAmount`)에 fill ratio 적용
   - `FrontHoneyPlane`/`BackHoneyPlane` material index 0 scalar parameter(`HoneyRipeness`)에 ripeness ratio 적용
   - `FrontWaxCappingPlane`/`BackWaxCappingPlane` material index 0 scalar parameter(`HoneyRipeness`)에도 같은 ripeness ratio 적용
@@ -557,17 +605,33 @@
 - attraction swarm, dual swarm outgoing/ingoing, active comb front/back Niagara, queen material의 직접 `Disease` 적용 코드는 legacy path로 남아 있으나 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.
 
-## Update 2026-06-08 (Comb Wax Capping Visual)
+## Update 2026-06-08 (Uncapping Table + Comb Wax Capping Mask)
 
-- 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor` 내부 native visual state로 확정했다.
-- 새 native component:
-  - `FrontWaxCappingPlane`
-  - `BackWaxCappingPlane`
-- 표시 조건은 `CurrentHoney`를 저장 상태로 둔 기존 honey model에서 파생한다.
-  - Editor/Blueprint authoring viewport: 앞/뒤 capping plane visible 유지
-  - Runtime `IsHoneyFull()` true: 앞/뒤 capping plane hidden-in-game 해제
-  - Runtime `IsHoneyFull()` false: 앞/뒤 capping plane hidden-in-game
-- capping 표시 여부는 `FBeehiveCombItemState`에 저장하지 않는다. 회수/재배치 후 `HoneyAmount` 복원에 따른 `IsHoneyFull()` 결과로 재계산한다.
-- capping plane material도 기존 `HoneyRipenessMaterialParameterName`을 사용하며, `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값을 `HoneyRipeness` scalar parameter에 주입한다.
-- 꿀 생산 bucket, 숙성도 bucket, inventory state 계약은 변경하지 않는다.
-- `BP_BeehiveComb`/소비장 BP에서는 새 native plane component의 mesh/material/relative transform을 수동 authoring한다.
+- `AUncappingTable`을 추가했다.
+  - C++ native WorldActor
+  - `UFocusTargetComponent` + `UAnchoredFocusCursorActionComponent`로 FocusConfirm 진입
+  - `UCursorPartFocusScopeComponent`/registration/child provider로 placed comb PartFocus descriptor 수집
+  - `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`로 empty slot placement area와 occupied comb capping use-area 수집
+- `AUncappingTableCombSlot`을 추가했다.
+  - `AItemPlacementSlotActor` subclass
+  - `ABeehiveCombActor`만 accept
+  - place 후 `ApplyStateFromItemInstance`, retrieve 전 `WriteStateToItemInstance`
+  - occupied descriptor는 generic occupied descriptor 대신 `UCombUncappingPartFocusActionComponent`를 직접 노출
+- `UCombUncappingPartFocusActionComponent`를 추가했다.
+  - 작업대 소비장의 horizontal drag flip만 담당
+  - PartFocus secondary retrieve는 comb의 `PlacementRetrieveAction`을 bridge한다.
+  - 기존 `UBeehiveCombPartFocusActionComponent`를 상속/직접 재사용하지 않는다.
+- `ABeehiveCombActor` capping mask/use-area/visual state를 확장했다.
+  - `FrontWaxCappingUseAreaMesh`, `BackWaxCappingUseAreaMesh`
+  - `CappingMaskLongSideResolution`, `UncappedThreshold`
+  - `FrontWaxCappingMask`, `BackWaxCappingMask`
+  - transient `FrontWaxCappingMaskTexture`, `BackWaxCappingMaskTexture`
+  - `ApplyWaxCappingBrush(...)`, `GetWaxCappingRemainingRatio(...)`, `IsWaxCappingFaceComplete(...)`, `IsWaxCappingComplete()`
+- capping mask dimension은 `PlaneSize` 비율과 long-side resolution에서 계산하며, invalid 저장 mask는 full mask fallback이다.
+- capping visual은 byte buffer에서 transient `UTexture2D`를 갱신해 material parameter `WaxCappingMask`로 주입한다.
+- 작업대 capping use-area active 조건:
+  - host가 `AUncappingTable`
+  - `IsHoneyFull()`
+  - component face가 현재 visible face
+  - face remaining ratio가 `UncappedThreshold`보다 큼
+- 이번 범위에서 벌통 소비장 lift/shake 정책, honey production/ripeness bucket, 채밀/수확/꿀 아이템 생산은 변경하지 않는다.

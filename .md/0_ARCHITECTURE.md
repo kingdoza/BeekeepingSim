@@ -2,8 +2,8 @@
 
 ## 문서 기준
 
-- 기준일: 2026-06-02(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness 반영 후 현재 Source 구조 기준
+- 기준일: 2026-06-08(KST) Source 재대조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 159개
-  - Public header: 88개
-  - Private cpp/header: 71개
+- 현재 대상 C++ 파일 수: 168개
+  - Public header: 93개
+  - Private cpp/header: 75개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -62,9 +62,9 @@ Source/BeekeepingSim/
   - Environment: Public 9 / Private 4
   - Focus: Public 22 / Private 14
   - Interaction: Public 2 / Private 2
-  - Inventory: Public 18 / Private 15
+  - Inventory: Public 20 / Private 16
   - UI: Public 8 / Private 7
-  - WorldActors: Public 23 / Private 23
+  - WorldActors: Public 26 / Private 26
 
 ## 시스템 간 책임 흐름
 
@@ -112,7 +112,7 @@ Source/BeekeepingSim/
   - 같은 60분 bucket 경계에서는 `HoneyProduction`을 `ColonyPopulation`보다 먼저 처리한다.
   - `ABeehiveCombActor`는 절대 꿀 양(`CurrentHoney`)을 저장하고, 시각값은 `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)` fill ratio를 사용한다.
   - `ABeehiveCombActor`는 절대 숙성도(`CurrentHoneyRipeness`)를 저장하고, honey plane과 wax/capping plane material에는 `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)` ratio를 `HoneyRipeness`로 주입한다.
-  - `ABeehiveCombActor`의 full honey 밀랍/capping 표시는 별도 저장 상태 없이 `IsHoneyFull()` 파생값으로 `FrontWaxCappingPlane`/`BackWaxCappingPlane` runtime hidden-in-game 상태를 제어한다.
+  - `ABeehiveCombActor`의 full honey 밀랍/capping 표시는 `IsHoneyFull()`과 face별 capping mask 완료 여부에서 파생되며, `FrontWaxCappingPlane`/`BackWaxCappingPlane` material에는 transient `WaxCappingMask` texture가 주입된다.
 - FocusEngaged host 내부 파츠 상호작용은 `UCursorPartFocusScopeComponent`가 담당하고, 전역 focus 단일 오너(`UBeekeeperFocusComponent`)와 분리된다.
 - 파츠별 동작은 전용 C++ subclass 대신 공통 `UCursorPartFocusActionComponent` + BP Begin/Cancel/Abort 이벤트 구현을 기본 경로로 사용한다.
 - Host FocusEngaged 이후 파츠 입력은 `LMB`(begin/cancel)와 `R/F/C`(hover preview key action)로 분리한다.
@@ -121,7 +121,11 @@ Source/BeekeepingSim/
 - Host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리하고, host가 지원하지 않거나 선택 아이템이 없으면 기존 FocusAction/PartFocus 입력 정책을 따른다.
 - Anchored cursor FocusEngaged 진입 시 hotbar 선택은 빈손으로 전환하며, item-use area는 engaged 이후 대상 아이템을 다시 선택했을 때 활성화된다.
 - 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
-- `ABeehive`는 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area first host를 구현한다.
+- `ABeehive`와 `AUncappingTable`은 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area host를 구현한다.
+- `AUncappingTable`은 native WorldActor이며 anchored cursor FocusEngaged 상태에서 단일 `AUncappingTableCombSlot` child actor를 통해 소비장 배치/회수/뒤집기/밀도질 use-area를 제공한다.
+- 작업대 empty slot 배치는 `UItemPlacementUseAction` + item-use-area LMB 경로를 사용하고, occupied comb 회수는 `UCombUncappingPartFocusActionComponent`의 PartFocus secondary retrieve bridge가 hotbar state-aware acquire를 사용한다.
+- `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.Comb` use-area에서 LMB hold-use 중 현재 visible face의 capping mask를 원형 brush로 제거한다. 실제 mask pixel이 제거된 tick에만 `bSucceeded=true`를 반환하며 내구도 감소와 채밀/수확은 구현하지 않는다.
+- `FItemActionContext`는 item-use-area cursor hit fields(`bHasItemUseAreaHit`, `ItemUseAreaImpactPoint`, `ItemUseAreaImpactNormal`)를 포함하며, `UCursorItemUseAreaScopeComponent`가 hovered descriptor의 trace hit를 context로 전달한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 `AGameTimeOfDayActor`의 24시간 가속 시간과 `ADynamicSky`의 하늘/조명/태양/달 연출을 `ITimeOfDayProvider` 계약으로 분리한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
@@ -308,7 +312,7 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `ApplyHoneyProductionUpdate()` 직접 호출은 숙성 없이 꿀 생산만 수행한다.
 - 숙성 대상은 벌통이 관리하는 active comb 전체이며 lifted comb도 포함한다. empty slot은 제외한다.
 - 이번 bucket에서 처음 full이 된 comb는 같은 bucket에서 숙성되지 않고 다음 `HoneyProduction` bucket부터 숙성 대상이 된다.
-- 소비장 회수/재배치 state(`FBeehiveCombItemState`)는 `HoneyAmount`, `HoneyRipeness`, visible face를 보존한다.
+- 소비장 회수/재배치 state(`FBeehiveCombItemState`)는 `HoneyAmount`, `HoneyRipeness`, visible face와 face별 capping mask byte buffer를 보존한다.
 
 ## Update 2026-06-03 (Sanitation Disease)
 
@@ -319,9 +323,14 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - attraction/outgoing/ingoing swarm, active comb front/back Niagara, queen material의 직접 `Disease` 적용 경로는 legacy path로 남기되 C++ 적용 코드는 주석처리되어 있다.
 - disease 전용 Tick/subsystem/bucket subscription은 추가하지 않는다.
 
-## Update 2026-06-08 (Comb Wax Capping Visual)
+## Update 2026-06-08 (Uncapping Table + Comb Wax Capping Mask)
 
-- 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor`의 native 앞/뒤 plane component로 처리한다.
-- 표시 여부는 `CurrentHoney`/`MaxHoneyPerComb` 기반 `IsHoneyFull()`에서 파생하며, runtime에서는 hidden-in-game으로 숨기고 Editor/Blueprint authoring viewport에서는 배치 조정을 위해 보이게 둔다. `FBeehiveCombItemState`에는 새 필드를 추가하지 않는다.
-- `FrontWaxCappingPlane`/`BackWaxCappingPlane` material에도 기존 `HoneyRipeness` scalar parameter를 `CurrentHoneyRipeness / MaxHoneyRipeness` 정규화값으로 주입한다.
-- 꿀 생산/숙성 bucket과 inventory state 계약은 그대로 유지한다.
+- 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor`의 native 앞/뒤 plane component와 face별 byte mask로 처리한다.
+- capping mask source of truth는 `FBeehiveCombItemState`와 `ABeehiveCombActor`의 `FrontWaxCappingMask`/`BackWaxCappingMask` `TArray<uint8>`다. `255`는 밀랍 남음, `0`은 제거됨이다.
+- mask dimension은 `PlaneSize` X/Y 비율과 `CappingMaskLongSideResolution`에서 산출하며, 저장 mask dimension이 현재 actor dimension과 맞지 않으면 full mask로 fallback한다.
+- runtime visual은 transient `UTexture2D`를 생성/갱신해 capping material parameter `WaxCappingMask`에 주입한다. `HoneyRipeness` scalar 주입은 유지한다.
+- capping plane 표시 조건은 face별 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다. full honey가 아니어도 mask는 reset하지 않는다.
+- `AUncappingTable`/`AUncappingTableCombSlot`/`UCombUncappingPartFocusActionComponent`가 작업대 FocusEngaged, 단일 소비장 slot, horizontal drag flip, secondary retrieve를 제공한다.
+- `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.Comb` tag를 all-tags-match query로 사용하고, context hit point 기반 brush stamp를 rate limit(`MinStampInterval`, `MinStampDistanceCm`)한다.
+- 새 GameplayTag: `Item.UseArea.UncappingTable`, `Item.UseArea.UncappingTable.Comb`.
+- 이번 범위에서 채밀/수확, 꿀 아이템 생산, 밀도 도구 active-use durability drain은 구현하지 않는다.

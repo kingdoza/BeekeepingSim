@@ -71,6 +71,13 @@ private:
 		ECollisionResponse CursorTraceResponse = ECR_Ignore;
 	};
 
+	struct FResolvedItemUseAreaHit
+	{
+		int32 DescriptorIndex = INDEX_NONE;
+		FHitResult HitResult;
+		bool bHasHit = false;
+	};
+
 	UFUNCTION()
 	void HandleHotbarChanged();
 
@@ -79,8 +86,9 @@ private:
 	void RefreshSelectedItemAndAction();
 	void RefreshActiveUseAreas();
 	void UpdateHoveredDescriptorFromCursor();
-	int32 ResolveHoveredActiveDescriptor() const;
+	FResolvedItemUseAreaHit ResolveHoveredActiveDescriptor() const;
 	void SetHoveredDescriptorIndex(int32 NewIndex);
+	void ClearHoveredItemUseAreaHit();
 	void ApplyVisualStateForDescriptor(int32 DescriptorIndex, bool bDescriptorActive, bool bIsHovered);
 	void ApplyVisualStateForAllDescriptors();
 	void ClearAllVisualState();
@@ -127,6 +135,8 @@ private:
 	TObjectPtr<UHoldItemUseAction> CachedHoldAction;
 
 	int32 HoveredDescriptorIndex = INDEX_NONE;
+	bool bHasHoveredItemUseAreaHit = false;
+	FHitResult HoveredItemUseAreaHit;
 	bool bIsScopeActive = false;
 	bool bIsUseInProgress = false;
 };

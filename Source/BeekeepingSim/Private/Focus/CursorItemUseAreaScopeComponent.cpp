@@ -119,6 +119,7 @@ void UCursorItemUseAreaScopeComponent::DeactivateItemUseAreaScope(bool bCancelAc
 	ActiveDescriptorIndices.Reset();
 	DynamicMaterials.Reset();
 	HoveredDescriptorIndex = INDEX_NONE;
+	ClearHoveredItemUseAreaHit();
 	CachedSelectedItemInstance = nullptr;
 	CachedHoldAction = nullptr;
 	ActiveHostActor = nullptr;
@@ -136,6 +137,7 @@ void UCursorItemUseAreaScopeComponent::RebuildItemUseAreaDescriptors()
 	RegisteredDescriptors.Reset();
 	ActiveDescriptorIndices.Reset();
 	HoveredDescriptorIndex = INDEX_NONE;
+	ClearHoveredItemUseAreaHit();
 
 	AActor* HostActor = ResolveActiveHostActor();
 	ActiveHostActor = HostActor;
@@ -176,6 +178,7 @@ bool UCursorItemUseAreaScopeComponent::HandleItemUsePressed()
 	}
 
 	RefreshSelectedItemAndAction();
+	UpdateHoveredDescriptorFromCursor();
 	if (!CachedSelectedItemInstance || !CachedHoldAction)
 	{
 		return false;
@@ -277,6 +280,7 @@ void UCursorItemUseAreaScopeComponent::RefreshActiveUseAreas()
 {
 	ActiveDescriptorIndices.Reset();
 	SetHoveredDescriptorIndex(INDEX_NONE);
+	ClearHoveredItemUseAreaHit();
 
 	if (!CachedSelectedItemInstance || !CachedHoldAction)
 	{
@@ -298,34 +302,46 @@ void UCursorItemUseAreaScopeComponent::RefreshActiveUseAreas()
 
 void UCursorItemUseAreaScopeComponent::UpdateHoveredDescriptorFromCursor()
 {
-	SetHoveredDescriptorIndex(ResolveHoveredActiveDescriptor());
+	const FResolvedItemUseAreaHit ResolvedHit = ResolveHoveredActiveDescriptor();
+	if (ResolvedHit.bHasHit && RegisteredDescriptors.IsValidIndex(ResolvedHit.DescriptorIndex))
+	{
+		HoveredItemUseAreaHit = ResolvedHit.HitResult;
+		bHasHoveredItemUseAreaHit = true;
+	}
+	else
+	{
+		ClearHoveredItemUseAreaHit();
+	}
+
+	SetHoveredDescriptorIndex(ResolvedHit.DescriptorIndex);
 }
 
-int32 UCursorItemUseAreaScopeComponent::ResolveHoveredActiveDescriptor() const
+UCursorItemUseAreaScopeComponent::FResolvedItemUseAreaHit UCursorItemUseAreaScopeComponent::ResolveHoveredActiveDescriptor() const
 {
+	FResolvedItemUseAreaHit Result;
 	if (!OwnerCharacter || ActiveDescriptorIndices.Num() <= 0)
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	APlayerController* PlayerController = Cast<APlayerController>(OwnerCharacter->GetController());
 	if (!PlayerController || !PlayerController->IsLocalController())
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	float ScreenX = 0.0f;
 	float ScreenY = 0.0f;
 	if (!PlayerController->GetMousePosition(ScreenX, ScreenY))
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	FVector WorldOrigin = FVector::ZeroVector;
 	FVector WorldDirection = FVector::ForwardVector;
 	if (!PlayerController->DeprojectScreenPositionToWorld(ScreenX, ScreenY, WorldOrigin, WorldDirection))
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	const FVector TraceStart = WorldOrigin;
@@ -334,13 +350,13 @@ int32 UCursorItemUseAreaScopeComponent::ResolveHoveredActiveDescriptor() const
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(CursorItemUseAreaTrace), true, OwnerCharacter);
 	if (!GetWorld() || !GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, CursorTraceChannel, QueryParams))
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	UPrimitiveComponent* HitComponent = HitResult.GetComponent();
 	if (!HitComponent)
 	{
-		return INDEX_NONE;
+		return Result;
 	}
 
 	for (int32 DescriptorIndex : ActiveDescriptorIndices)
@@ -352,11 +368,14 @@ int32 UCursorItemUseAreaScopeComponent::ResolveHoveredActiveDescriptor() const
 
 		if (RegisteredDescriptors[DescriptorIndex].HitComponent == HitComponent)
 		{
-			return DescriptorIndex;
+			Result.DescriptorIndex = DescriptorIndex;
+			Result.HitResult = HitResult;
+			Result.bHasHit = true;
+			return Result;
 		}
 	}
 
-	return INDEX_NONE;
+	return Result;
 }
 
 void UCursorItemUseAreaScopeComponent::SetHoveredDescriptorIndex(int32 NewIndex)
@@ -368,6 +387,12 @@ void UCursorItemUseAreaScopeComponent::SetHoveredDescriptorIndex(int32 NewIndex)
 
 	HoveredDescriptorIndex = NewIndex;
 	ApplyVisualStateForAllDescriptors();
+}
+
+void UCursorItemUseAreaScopeComponent::ClearHoveredItemUseAreaHit()
+{
+	bHasHoveredItemUseAreaHit = false;
+	HoveredItemUseAreaHit = FHitResult();
 }
 
 void UCursorItemUseAreaScopeComponent::ApplyVisualStateForDescriptor(int32 DescriptorIndex, bool bDescriptorActive, bool bIsHovered)
@@ -573,6 +598,15 @@ FItemActionContext UCursorItemUseAreaScopeComponent::BuildItemActionContext(int3
 		Context.ItemUseAreaTags = Descriptor.AreaTags;
 		Context.ItemUseAreaHitComponent = Descriptor.HitComponent;
 		Context.ItemUseEffectTargetObject = Descriptor.EffectTargetObject;
+
+		if (DescriptorIndex == HoveredDescriptorIndex && bHasHoveredItemUseAreaHit)
+		{
+			Context.bHasItemUseAreaHit = true;
+			Context.ItemUseAreaImpactPoint = HoveredItemUseAreaHit.ImpactPoint;
+			Context.ItemUseAreaImpactNormal = HoveredItemUseAreaHit.ImpactNormal.IsNearlyZero()
+				? HoveredItemUseAreaHit.Normal
+				: HoveredItemUseAreaHit.ImpactNormal;
+		}
 	}
 
 	return Context;

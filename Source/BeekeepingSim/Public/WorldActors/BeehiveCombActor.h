@@ -14,6 +14,8 @@ class UCursorPartFocusActionComponent;
 class UPlacementOccupantComponent;
 class UPlacementSlotRetrievePartFocusActionComponent;
 class UItemInstance;
+class UTexture2D;
+struct FBeehiveCombItemState;
 
 UENUM(BlueprintType)
 enum class EBeehiveCombVisibleFace : uint8
@@ -92,6 +94,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beehive|Bee Brush")
 	UItemUseAreaMeshComponent* GetBeeBrushUseAreaMesh() const { return BeeBrushUseAreaMesh; }
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
+	UItemUseAreaMeshComponent* GetFrontWaxCappingUseAreaMesh() const { return FrontWaxCappingUseAreaMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
+	UItemUseAreaMeshComponent* GetBackWaxCappingUseAreaMesh() const { return BackWaxCappingUseAreaMesh; }
+
 	UFUNCTION(BlueprintPure, Category = "Beehive|Comb")
 	UCursorPartFocusActionComponent* GetPartFocusActionComponent() const { return PartFocusAction; }
 
@@ -124,6 +132,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Honey")
 	bool IsHoneyFull() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Wax Capping")
+	bool ApplyWaxCappingBrush(UPrimitiveComponent* HitComponent, const FVector& WorldImpactPoint, float BrushRadiusCm);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
+	float GetWaxCappingRemainingRatio(EBeehiveCombVisibleFace Face) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
+	bool IsWaxCappingFaceComplete(EBeehiveCombVisibleFace Face) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Wax Capping")
+	bool IsWaxCappingComplete() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Honey Ripeness")
 	void AddHoneyRipeness(float DeltaRipeness);
@@ -215,6 +235,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UItemUseAreaMeshComponent> BeeBrushUseAreaMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UItemUseAreaMeshComponent> FrontWaxCappingUseAreaMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UItemUseAreaMeshComponent> BackWaxCappingUseAreaMesh;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped"))
 	void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);
 
@@ -234,6 +260,18 @@ private:
 	void SanitizeState();
 	void SanitizeHoneyState();
 	void SanitizeHoneyRipenessState();
+	void EnsureCappingMaskState();
+	void InitializeFullCappingMasks(int32 NewWidth, int32 NewHeight);
+	void ResolveCappingMaskDimensions(int32& OutWidth, int32& OutHeight) const;
+	FVector2D ResolveCappingPlaneSizeForMask() const;
+	bool IsStoredCappingMaskValid(const FBeehiveCombItemState& CombState) const;
+	TArray<uint8>& GetMutableWaxCappingMask(EBeehiveCombVisibleFace Face);
+	const TArray<uint8>& GetWaxCappingMask(EBeehiveCombVisibleFace Face) const;
+	TObjectPtr<UTexture2D>& GetWaxCappingMaskTextureRef(EBeehiveCombVisibleFace Face);
+	void EnsureCappingMaskTextures();
+	void UpdateCappingMaskTexture(EBeehiveCombVisibleFace Face);
+	void ApplyWaxCappingMaskMaterialParameters();
+	void SyncVisibleCombFacePresentation();
 	void ApplyHoneyVisualState();
 	void ApplyHoneyCappingVisualState();
 	void EnsureHoneyMaterialInstances();
@@ -282,6 +320,33 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Beehive|Honey Ripeness")
 	FName HoneyRipenessMaterialParameterName = TEXT("HoneyRipeness");
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping", meta = (ClampMin = "1"))
+	int32 CappingMaskLongSideResolution = 512;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float UncappedThreshold = 0.01f;
+
+	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping")
+	FName WaxCappingMaskMaterialParameterName = TEXT("WaxCappingMask");
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
+	int32 CappingMaskWidth = 0;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
+	int32 CappingMaskHeight = 0;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
+	TArray<uint8> FrontWaxCappingMask;
+
+	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
+	TArray<uint8> BackWaxCappingMask;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> FrontWaxCappingMaskTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> BackWaxCappingMaskTexture;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FrontHoneyMaterialInstance;

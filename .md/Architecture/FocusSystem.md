@@ -128,6 +128,9 @@
   - `Hold Tick`: `TickUse(Context, DeltaTime)`
   - `active + valid hovered area`: `CanApplyUseEffect` 확인 후 `ApplyUseEffect(Context, DeltaTime)`
   - `Release/Cancel/Deactivate`: `EndUse(Context, bWasCanceled)`
+- `FItemActionContext`는 hovered item-use-area trace hit를 전달하기 위해 `bHasItemUseAreaHit`, `ItemUseAreaImpactPoint`, `ItemUseAreaImpactNormal`을 포함한다.
+- `UCursorItemUseAreaScopeComponent`는 cursor trace에서 resolved active descriptor index와 `FHitResult`를 함께 cache하고, `BuildItemActionContext(DescriptorIndex)`에서 `DescriptorIndex == HoveredDescriptorIndex`일 때 hit fields를 채운다.
+- hold-use action은 cursor 위치가 필요해도 mouse deproject/line trace를 반복하지 않고 context hit fields를 사용한다.
 - `ApplyUseEffect` 결과의 stack 변화(`bConsumedItem`, `StackDelta`)와 durability 변화(`DurabilityDelta`)는 scope가 독립 해석해 hotbar authority API로 반영한다.
 - durability가 0에 도달한 경우 scope는 현재 hold-use session을 `EndUseSession(false)`로 종료한다.
 - FocusEngaged host가 item-use-area scope/provider를 지원하고 선택 아이템이 있으면 LMB는 item-use action으로 처리한다.
@@ -362,3 +365,13 @@
 - durability mutation은 `UBeekeeperHotbarComponent::ApplySelectedItemDurabilityDelta` authority API를 사용한다.
 - `DrainPolicy == WhileUseSessionActive`인 active-use item은 hovered use-area가 없어도 active use session 중 durability-only result를 처리한다.
 - durability 0 도달 시 현재 use session은 취소가 아니라 자연 종료(`EndUseSession(false)`)로 끝난다.
+
+## Update 2026-06-08 (ItemUseArea Hit Context)
+
+- `FItemActionContext`에 item-use-area hit fields를 추가했다.
+  - `bHasItemUseAreaHit`
+  - `ItemUseAreaImpactPoint`
+  - `ItemUseAreaImpactNormal`
+- `UCursorItemUseAreaScopeComponent`는 hovered active descriptor resolve 시 trace `FHitResult`를 버리지 않고 `HoveredItemUseAreaHit`로 cache한다.
+- `BuildItemActionContext(DescriptorIndex)`는 현재 hovered descriptor context에 impact point/normal을 채운다. durability-only context(`INDEX_NONE`)에는 hit fields를 채우지 않는다.
+- 이 계약은 `UCombUncappingUseAction`처럼 brush 중심점이 필요한 hold-use action이 직접 cursor trace를 수행하지 않게 하는 경계다.

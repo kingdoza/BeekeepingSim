@@ -42,6 +42,15 @@ struct FItemActionContext
 	TObjectPtr<UPrimitiveComponent> ItemUseAreaHitComponent = nullptr;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+	bool bHasItemUseAreaHit = false;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+	FVector ItemUseAreaImpactPoint = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
+	FVector ItemUseAreaImpactNormal = FVector::UpVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Item Action")
 	TObjectPtr<UObject> ItemUseEffectTargetObject = nullptr;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Item Action")

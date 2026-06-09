@@ -21,6 +21,8 @@
 - `Source/BeekeepingSim/Private/Inventory/SmokerUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/BeeBrushUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/BeeBrushUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/CombUncappingUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/CombUncappingUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/PollenPattyUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyItemDefinition.h`
@@ -58,11 +60,12 @@
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
+- `UCombUncappingUseAction`: 작업대 소비장 capping use-area에서 context hit point 기반 원형 brush로 현재 visible face의 wax capping mask를 제거하는 hold-use action
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
 - `UPollenPattyItemDefinition`: 화분떡 tier별 인구 가속효과(`EggLayingMultiplier`)를 소유하는 `UItemDefinition` subclass
 - `FItemActionSpec`: item definition에 저장되는 action class/tag 데이터
-- `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target context를 전달하는 DTO
+- `FItemActionContext`: action 실행 시 Character, FocusEngaged host, item-use-area target/hit context를 전달하는 DTO
 - `FItemActionExecutionResult`: action 실행 성공, 소비 여부, stack delta, durability delta, 메시지를 담는 결과 DTO
 - `FItemAcquireSpec`: definition, quantity, durability override를 포함하는 state-aware acquire 요청 DTO
 - `FHotbarItemAcquireResult`: acquire 성공 여부, 추가 수량, 마지막 변경 slot/item instance를 전달하는 결과 DTO
@@ -180,7 +183,7 @@
 - Hold-use item action은 use session 중 `TickUse(Context, DeltaTime)`와, 유효 area target 위에서 `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원한다.
 - `USmokerUseAction`은 `Item.UseArea.Beehive.Smoker` tag query와 함께 hold-use 시 `ABeehive::DecreaseAggression`을 호출한다. durability drain 적용 여부는 source item definition이 `UActiveUseDurabilityItemDefinition`인지에 따라 결정된다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
-- `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`를 포함해 효과 target context를 전달한다.
+- `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`, item-use-area impact point/normal을 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
 - Instant click action, item stack 소비 정책, Blueprint override event hook은 아직 Inventory 정본에서 확정된 현재 계약이 아니다. 설계 확정 없이 Public API를 rename/delete하지 않는다.
 - Focus prompt entry의 획득/회수 availability는 hotbar mutation API를 호출하지 않고 `PreviewAcquireItemBySpec` dry-run 결과를 사용한다.
@@ -322,3 +325,23 @@
 - 신규 `SetBeehiveCombStateWithRipeness(float HoneyAmount, float HoneyRipeness, bool bIsFrontFaceVisible)`를 추가했다.
 - 소비장 회수/재배치 state 보존 범위는 `HoneyAmount`, `HoneyRipeness`, visible face다.
 - 저장되는 `HoneyRipeness`는 material ratio가 아니라 `ABeehiveCombActor::CurrentHoneyRipeness` 절대값이다.
+
+## Update 2026-06-08 (Comb Uncapping Use Action + Capping State)
+
+- `UCombUncappingUseAction`을 추가했다. (`UHoldItemUseAction` 기반)
+- use-area query tag: `Item.UseArea.UncappingTable.Comb`
+- 효과 적용 정책:
+  - target: `Context.ItemUseEffectTargetObject`의 `ABeehiveCombActor`
+  - hit: `Context.bHasItemUseAreaHit`와 `Context.ItemUseAreaImpactPoint`
+  - 현재 visible face의 front/back capping use-area mesh만 유효하다.
+  - `MinStampInterval`과 `MinStampDistanceCm`를 모두 만족할 때 brush stamp를 허용한다.
+  - 실제 mask pixel이 하나 이상 `>0`에서 `0`으로 바뀐 tick에만 `FItemActionExecutionResult::bSucceeded=true`다.
+  - 이미 제거된 영역을 문지른 no-op stamp는 `bSucceeded=false`다.
+- 이번 범위에서 `UCombUncappingUseAction`은 `DurabilityDelta`를 설정하지 않는다. active-use durability drain은 밀도 도구 DataAsset에서 별도로 사용하지 않는 정책이다.
+- `FBeehiveCombItemState`에 face별 capping mask 저장 필드를 추가했다.
+  - `CappingMaskWidth`
+  - `CappingMaskHeight`
+  - `FrontWaxCappingMask`
+  - `BackWaxCappingMask`
+- 기존 `SetBeehiveCombState(...)`와 `SetBeehiveCombStateWithRipeness(...)`는 유지하며, mask가 비어 있는 state는 소비장 actor가 full mask fallback으로 처리한다.
+- 새 `SetBeehiveCombStateWithCapping(...)`는 honey amount, ripeness, visible face와 capping mask를 함께 저장한다.
