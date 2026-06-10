@@ -752,6 +752,7 @@
   - active source container `HoneyStreamNiagara`를 제어하고 target length를 `Max(0, SourceStream.Z - TargetPourTarget.Z)`로 계산
   - source volume 감소, target weighted-average 혼합
   - invalid slot/container, source empty, target full에서 auto stop
+  - transfer state 변경 delegate를 제공하며, 소분 작업대는 이를 구독해 hover 유지 중인 노즐 PartFocus prompt를 즉시 재평가한다.
 - `UHoneyNozzlePartFocusActionComponent`와 `UHoneyContainerRetrievePartFocusActionComponent`를 추가했다.
 - `AHoneyDecantingTable`을 추가했다.
   - native anchored cursor FocusEngaged 작업대

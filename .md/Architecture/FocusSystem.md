@@ -99,6 +99,7 @@
   - hover outline 적용(기존 `UFocusTargetComponent`와 동일한 CustomDepth 정책)
   - confirm/cancel 시 part action stack 처리
   - 화면 외곽 취소 영역 처리
+  - hovered part가 유지된 상태에서 외부 도메인 상태만 바뀐 경우 `RefreshHoveredPartPrompt()`로 prompt entry를 재평가/재브로드캐스트
 - 화면 외곽 취소 영역 두께는 `UBeekeepingSimFocusSettings::ScreenEdgeCancelRegionThickness`가 source of truth다. 기본값은 64px이며 `DefaultGame.ini` config로 조정된다.
 - 취소 우선순위:
   - active part action stack 역순 cancel cascade

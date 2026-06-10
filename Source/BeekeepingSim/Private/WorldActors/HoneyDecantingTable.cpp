@@ -86,6 +86,7 @@ void AHoneyDecantingTable::BeginPlay()
 	Super::BeginPlay();
 	EnsureSlotChildActorClasses();
 	ConfigureTransferComponent();
+	BindTransferComponentEvents();
 	RebuildCursorPartFocusDescriptors();
 	RebuildItemUseAreaDescriptors();
 }
@@ -94,6 +95,7 @@ void AHoneyDecantingTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (HoneyTransferComponent)
 	{
+		HoneyTransferComponent->OnTransferStateChanged.RemoveAll(this);
 		HoneyTransferComponent->StopTransfer(true);
 	}
 	Super::EndPlay(EndPlayReason);
@@ -185,4 +187,26 @@ void AHoneyDecantingTable::ConfigureTransferComponent()
 
 	HoneyTransferComponent->ConfigureSlots(GetSourceSlotActor(), GetTargetSlotActor());
 	HoneyTransferComponent->SetHoneyStreamNiagara(HoneyStreamNiagara);
+}
+
+void AHoneyDecantingTable::BindTransferComponentEvents()
+{
+	if (!HoneyTransferComponent)
+	{
+		return;
+	}
+
+	HoneyTransferComponent->OnTransferStateChanged.RemoveAll(this);
+	HoneyTransferComponent->OnTransferStateChanged.AddUObject(this, &AHoneyDecantingTable::HandleHoneyTransferStateChanged);
+}
+
+void AHoneyDecantingTable::HandleHoneyTransferStateChanged(EHoneyTransferState OldState, EHoneyTransferState NewState)
+{
+	(void)OldState;
+	(void)NewState;
+
+	if (CursorPartFocusScope)
+	{
+		CursorPartFocusScope->RefreshHoveredPartPrompt();
+	}
 }

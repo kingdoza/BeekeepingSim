@@ -16,6 +16,8 @@ enum class EHoneyTransferState : uint8
 	Transferring
 };
 
+DECLARE_MULTICAST_DELEGATE_TwoParams(FHoneyTransferStateChangedSignature, EHoneyTransferState, EHoneyTransferState);
+
 UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class BEEKEEPINGSIM_API UHoneyTransferComponent : public UActorComponent
 {
@@ -54,6 +56,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Honey Transfer")
 	AHoneyContainerActor* GetActiveSourceContainer() const { return ActiveSourceContainer; }
 
+	FHoneyTransferStateChangedSignature OnTransferStateChanged;
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Honey Transfer", meta = (ClampMin = "0.0"))
 	float TransferRateMlPerSecond = 100.0f;
@@ -85,6 +89,7 @@ private:
 	void DeactivateHoneyStream(bool bImmediateVfx) const;
 	void TickGrowingDrop(float DeltaTime);
 	void TickTransfer(float DeltaTime);
+	void SetTransferState(EHoneyTransferState NewState);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AHoneyContainerSlotActor> ConfiguredSourceSlot;

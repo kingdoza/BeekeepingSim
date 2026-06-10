@@ -349,6 +349,21 @@ void UCursorPartFocusScopeComponent::RegisterPartDescriptor(const FCursorPartFoc
 	RegisteredParts.Add(NewDescriptor);
 }
 
+void UCursorPartFocusScopeComponent::RefreshHoveredPartPrompt()
+{
+	if (!bIsScopeActive)
+	{
+		return;
+	}
+
+	const int32 PreviousHoveredPartIndex = HoveredPartIndex;
+	UpdateHoveredPartFromCursor();
+	if (HoveredPartIndex == PreviousHoveredPartIndex)
+	{
+		BroadcastPartPrompt();
+	}
+}
+
 FGameplayTagContainer UCursorPartFocusScopeComponent::GetActiveProvidedStateTags() const
 {
 	FGameplayTagContainer StateTags;

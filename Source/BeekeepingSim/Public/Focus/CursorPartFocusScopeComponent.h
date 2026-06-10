@@ -119,6 +119,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
 	void RegisterPartDescriptor(const FCursorPartFocusPartDescriptor& Descriptor);
 
+	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
+	void RefreshHoveredPartPrompt();
+
 	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus")
 	FGameplayTagContainer GetActiveProvidedStateTags() const;
 

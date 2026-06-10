@@ -86,7 +86,7 @@ bool UHoneyTransferComponent::StartTransfer()
 
 	ApplyNiagaraTransferParameters(CurrentDropLengthCm);
 	ActivateHoneyStream();
-	TransferState = EHoneyTransferState::GrowingDrop;
+	SetTransferState(EHoneyTransferState::GrowingDrop);
 	return true;
 }
 
@@ -99,7 +99,7 @@ void UHoneyTransferComponent::StopTransfer(bool bImmediateVfx)
 		return;
 	}
 
-	TransferState = EHoneyTransferState::Idle;
+	SetTransferState(EHoneyTransferState::Idle);
 	CurrentDropLengthCm = 0.0f;
 	TargetDropLengthCm = 0.0f;
 	ApplyDropLengthParameter(0.0f);
@@ -305,7 +305,7 @@ void UHoneyTransferComponent::TickGrowingDrop(float DeltaTime)
 			return;
 		}
 
-		TransferState = EHoneyTransferState::Transferring;
+		SetTransferState(EHoneyTransferState::Transferring);
 	}
 }
 
@@ -337,4 +337,16 @@ void UHoneyTransferComponent::TickTransfer(float DeltaTime)
 	{
 		StopTransfer(true);
 	}
+}
+
+void UHoneyTransferComponent::SetTransferState(EHoneyTransferState NewState)
+{
+	if (TransferState == NewState)
+	{
+		return;
+	}
+
+	const EHoneyTransferState OldState = TransferState;
+	TransferState = NewState;
+	OnTransferStateChanged.Broadcast(OldState, NewState);
 }

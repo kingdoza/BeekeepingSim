@@ -18,6 +18,8 @@ class UNiagaraComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 
+enum class EHoneyTransferState : uint8;
+
 UCLASS(Blueprintable)
 class BEEKEEPINGSIM_API AHoneyDecantingTable : public AActor
 {
@@ -103,4 +105,6 @@ protected:
 private:
 	void EnsureSlotChildActorClasses();
 	void ConfigureTransferComponent();
+	void BindTransferComponentEvents();
+	void HandleHoneyTransferStateChanged(EHoneyTransferState OldState, EHoneyTransferState NewState);
 };
