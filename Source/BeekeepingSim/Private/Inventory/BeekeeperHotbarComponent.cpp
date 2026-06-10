@@ -491,6 +491,7 @@ FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 Fro
 		{
 			return Result;
 		}
+		NewItem->CopyRuntimeStateFrom(SourceItem);
 
 		Slots[ToIndex].ItemInstance = NewItem;
 		Result.MovedQuantity += StackToCreate;
@@ -525,6 +526,7 @@ FItemSlotMoveResult UBeekeeperHotbarComponent::MovePartialToSlot(const int32 Fro
 			{
 				break;
 			}
+			NewItem->CopyRuntimeStateFrom(SourceItem);
 
 			Slots[EmptyIndex].ItemInstance = NewItem;
 			Result.MovedQuantity += StackToCreate;

@@ -45,16 +45,16 @@ public:
 	UCursorPartFocusActionComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
-	bool CanBeginPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
+	virtual bool CanBeginPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
-	bool BeginPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+	virtual bool BeginPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
-	bool CancelPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+	virtual bool CancelPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintCallable, Category = "Cursor Part Focus")
-	void AbortPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
+	virtual void AbortPartFocusAction(UCursorPartFocusScopeComponent* ScopeComponent, ABeekeeperCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintPure, Category = "Cursor Part Focus")
 	bool IsPartActionEngaged() const { return bIsPartActionEngaged; }

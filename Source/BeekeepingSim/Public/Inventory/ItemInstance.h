@@ -43,6 +43,24 @@ struct FBeehiveCombItemState
 	TArray<uint8> BackWaxCappingMask;
 };
 
+USTRUCT(BlueprintType)
+struct FHoneyContainerItemState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container")
+	bool bHasState = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0"))
+	float CurrentVolumeMl = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HoneyDensity = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HoneyRipeness = 0.0f;
+};
+
 UCLASS(BlueprintType)
 class BEEKEEPINGSIM_API UItemInstance : public UObject, public IHotbarItemInterface
 {
@@ -119,6 +137,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item|Beehive Comb")
 	FBeehiveCombItemState GetBeehiveCombState() const { return BeehiveCombState; }
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Honey Container")
+	void SetHoneyContainerState(float CurrentVolumeMl, float HoneyDensity, float HoneyRipeness);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Honey Container")
+	void ClearHoneyContainerState();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Honey Container")
+	bool HasHoneyContainerState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Honey Container")
+	FHoneyContainerItemState GetHoneyContainerState() const { return HoneyContainerState; }
+
+	UFUNCTION(BlueprintCallable, Category = "Item")
+	void CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance);
+
 	UFUNCTION(BlueprintPure, Category = "Item")
 	FGuid GetInstanceId() const { return InstanceId; }
 
@@ -153,6 +186,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Beehive Comb")
 	FBeehiveCombItemState BeehiveCombState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Honey Container")
+	FHoneyContainerItemState HoneyContainerState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	FGuid InstanceId;

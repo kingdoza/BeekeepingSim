@@ -25,6 +25,18 @@
 - `Source/BeekeepingSim/Private/WorldActors/UncappingTableCombSlot.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/CombUncappingPartFocusActionComponent.h`
 - `Source/BeekeepingSim/Private/WorldActors/CombUncappingPartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerSlotActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerSlotActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyTransferComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyTransferComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyNozzlePartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyNozzlePartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerRetrievePartFocusActionComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerRetrievePartFocusActionComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/HoneyDecantingTable.h`
+- `Source/BeekeepingSim/Private/WorldActors/HoneyDecantingTable.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/WorldItemPickup.h`
@@ -71,6 +83,12 @@
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
 - `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다. 작업대 comb PartFocus 잡기 상태 source of truth(`bCombPartFocusEngaged`)를 소유하고, 잡기/놓기/강제 종료 Blueprint hook을 제공한다.
 - `UCombUncappingPartFocusActionComponent`: 작업대 소비장 horizontal drag flip과 PartFocus secondary retrieve bridge를 담당하는 action component. 벌통 lift/shake/lid tag 정책은 포함하지 않는다.
+- `AHoneyContainerActor`: 배치된 꿀 용기 1개를 대표한다. volume/density/ripeness runtime state, honey visual mesh/material 갱신, source 배출용 `HoneyStreamNiagara`, nozzle PartFocus action, retrieve PartFocus action을 소유한다.
+- `AHoneyContainerSlotActor`: reusable 꿀 용기 placement slot. `EHoneyContainerSlotRole::Source/Target`과 accepted gameplay tag query로 수용 item을 판정한다.
+- `UHoneyTransferComponent`: source/target slot 검증, source container `HoneyStreamNiagara` 제어, DropLength grow phase, 실제 꿀 이송/혼합, auto stop, Niagara parameter 주입을 소유하는 reusable component다.
+- `UHoneyNozzlePartFocusActionComponent`: source container nozzle primary click을 owning slot host의 `UHoneyTransferComponent` toggle로 라우팅한다. concrete 작업대 class에 의존하지 않는다.
+- `UHoneyContainerRetrievePartFocusActionComponent`: generic placement retrieve acquire 성공 후 꿀 용기 state를 acquired item instance에 write-back하고 slot clear를 수행한다.
+- `AHoneyDecantingTable`: source/target 꿀 용기 slot child actor, FocusEngaged cursor scopes, `UHoneyTransferComponent`를 조립하는 소분 작업대 native WorldActor다.
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
@@ -224,6 +242,70 @@
   - `ActionHandler = CombPartFocusAction`
 - place/clear/BeginPlay 후 owning `AUncappingTable`의 PartFocus와 item-use-area descriptors를 rebuild한다.
 
+### `AHoneyContainerActor`
+
+- `USceneComponent` root
+- `UStaticMeshComponent` `ContainerMesh`
+- `UStaticMeshComponent` `HoneyVisualMesh`
+- `UStaticMeshComponent` `NozzleHitComponent`
+- `USceneComponent` `NozzleOrigin`
+- `USceneComponent` `PourTarget`
+- `UNiagaraComponent` `HoneyStreamNiagara`
+- `UPlacementOccupantComponent`
+- `UHoneyContainerRetrievePartFocusActionComponent`
+- `UHoneyNozzlePartFocusActionComponent`
+- `ApplyStateFromItemInstance`는 `UHoneyContainerItemDefinition` default 또는 item instance `FHoneyContainerItemState`를 적용한다.
+- `WriteHoneyContainerStateToItemInstance`는 회수 성공 후 acquired item instance에 volume/density/ripeness를 저장한다.
+- honey visual fill ratio는 `CurrentVolumeMl / MaxVolumeMl`이며 `HoneyVisualMesh` Z scale에 반영된다.
+- honey material scalar parameter:
+  - `HoneyDensity`
+  - `HoneyRipeness`
+
+### `AHoneyContainerSlotActor`
+
+- `AItemPlacementSlotActor` subclass이며 `AHoneyContainerActor`만 accept한다.
+- role enum은 reusable `Source`, `Target`이다.
+- 수용 가능한 용기 조합은 `AcceptedItemTagQuery`와 source item definition gameplay tags로 판정한다.
+- place 성공 후 `AHoneyContainerActor::ApplyStateFromItemInstance(SourceItemInstance)`를 호출한다.
+- occupied 상태에서 retrieve descriptor를 제공하고, role이 `Source`이면 container nozzle descriptor도 제공한다.
+- place/clear/BeginPlay 후 owning host의 PartFocus/item-use-area descriptors를 rebuild한다.
+
+### `UHoneyTransferComponent`
+
+- 설정:
+  - `TransferRateMlPerSecond`
+  - `DropLengthGrowSpeedCmPerSecond`
+  - `DefaultDropLengthCm`
+  - Niagara parameter names: `User.HoneyDensity`, `User.HoneyRipeness`, `User.DropLength`
+- state:
+  - `Idle`
+  - `GrowingDrop`
+  - `Transferring`
+- `StartTransfer`는 source/target slot role, placed container, source volume, target free volume을 검증한다.
+- `GrowingDrop`에서는 source container `HoneyStreamNiagara` world Z와 target container/slot `PourTarget` world Z 차이만큼 `DropLength`를 증가시키며 volume을 이동하지 않는다.
+- `Transferring`에서는 `min(rate * DeltaTime, source volume, target free volume)`만큼 이동한다.
+- target density/ripeness는 기존 내용물과 유입량을 volume-weighted average로 혼합한다. 혼합 결과 density가 1.0 미만이면 ripeness는 0.0으로 정규화한다.
+- source/target missing, slot occupant 변경, source empty, target full, owner EndPlay, explicit stop에서 Niagara를 즉시 정지한다.
+
+### `AHoneyDecantingTable`
+
+- `USceneComponent` root
+- `UStaticMeshComponent` `TableMesh`
+- `USceneComponent` 2개 (`FocusAnchor`, `CharacterAnchor`)
+- `UFocusTargetComponent`
+- `UAnchoredFocusCursorActionComponent`
+- `UCursorPartFocusScopeComponent`
+- `UCursorPartFocusRegistrationComponent`
+- `UChildCursorPartFocusProviderComponent`
+- `UCursorItemUseAreaScopeComponent`
+- `UItemUseAreaMeshProviderComponent`
+- source/target `UChildActorComponent` 2개
+- `UHoneyTransferComponent`
+- `UNiagaraComponent` `HoneyStreamNiagara`는 legacy 호환용 component이며, 신규 이송 VFX의 기본 source는 source container의 `HoneyStreamNiagara`다.
+- source slot role은 `Source`, target slot role은 `Target`으로 runtime 설정된다.
+- `RebuildCursorPartFocusDescriptors()`와 `RebuildItemUseAreaDescriptors()`는 `AUncappingTable`과 같은 host rebuild 패턴을 따른다.
+- `BeginPlay`/`OnConstruction`에서 transfer component에 source/target slot을 연결한다. table `HoneyStreamNiagara`는 기존 serialized Blueprint 호환을 위한 fallback으로만 전달된다.
+
 ### `ABeehiveDualSwarmActor`
 
 - `USceneComponent` root
@@ -342,6 +424,9 @@
 ## Design Notes
 
 - WorldActors는 상태 로직보다 component composition에 집중한다.
+- 꿀 용기 간 이송 규칙은 concrete 작업대가 아니라 `UHoneyTransferComponent`에 둔다. 작업대 actor는 slot 조립 host이고, 꿀 줄기 VFX component는 source container가 소유한다.
+- 꿀 용기 material parameter 정본은 `HoneyDensity`, `HoneyRipeness`다.
+- 꿀 줄기 Niagara parameter 정본은 `User.HoneyDensity`, `User.HoneyRipeness`, `User.DropLength`다.
 - Actor 이름과 native parent 이름은 Blueprint 참조가 있으므로 rename 시 Core Redirect와 Blueprint migration이 필요하다.
 - Editor details customization은 editor-only 보조 기능이다. Runtime gameplay source of truth는 각 actor/component의 C++ parameter application 경로다.
 - FocusEngaged item-use area는 벌통 전용 기능이 아니라 generic host-provider 구조로 다룬다.
@@ -650,3 +735,25 @@
 - `ABeehiveCombActor`에 `TryRegenerateWaxCapping()`과 `WaxCappingRegenerationRipenessThreshold`를 추가했다.
 - 재생성 조건은 `IsHoneyFull()`이고 `GetHoneyRipenessRatio() >= WaxCappingRegenerationRipenessThreshold`인 경우다.
 - `ABeehive::ApplyHoneyRipenessUpdate()`와 `ABeehive::DistributeHoneyIncreaseToCombs()`만 자동 재생성을 호출한다. 작업대 배치, `SetCurrentHoney*`, `ApplyStateFromItemInstance()` 경로는 capping mask를 자동 복원하지 않는다.
+
+## Update 2026-06-10 (Honey Container + Decanting Table)
+
+- `AHoneyContainerActor`를 추가했다.
+  - 꿀 용기 runtime state와 visual update owner
+  - source 배출용 `HoneyStreamNiagara` owner
+  - nozzle/retrieve PartFocus action owner
+  - 회수 state write-back API 제공
+- `AHoneyContainerSlotActor`를 추가했다.
+  - `Source`/`Target` role
+  - accepted gameplay tag query 기반 배치 판정
+  - occupied retrieve/nozzle descriptor 제공
+- `UHoneyTransferComponent`를 추가했다.
+  - DropLength grow 후 transfer phase 진입
+  - active source container `HoneyStreamNiagara`를 제어하고 target length를 `Max(0, SourceStream.Z - TargetPourTarget.Z)`로 계산
+  - source volume 감소, target weighted-average 혼합
+  - invalid slot/container, source empty, target full에서 auto stop
+- `UHoneyNozzlePartFocusActionComponent`와 `UHoneyContainerRetrievePartFocusActionComponent`를 추가했다.
+- `AHoneyDecantingTable`을 추가했다.
+  - native anchored cursor FocusEngaged 작업대
+  - source/target slot child actor를 transfer component에 연결
+- 이번 범위에서 Content/Niagara asset은 수정하지 않는다. BP child에서 mesh/material/Niagara system/tag query를 authoring한다.

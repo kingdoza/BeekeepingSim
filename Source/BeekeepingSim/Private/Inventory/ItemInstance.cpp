@@ -2,6 +2,7 @@
 
 #include "Engine/Texture2D.h"
 #include "Engine/StaticMesh.h"
+#include "Inventory/HoneyContainerItemDefinition.h"
 #include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemAction.h"
 #include "Inventory/ItemDefinition.h"
@@ -28,6 +29,17 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 		Durability = (InDurability < 0.0f) ? 1.0f : InDurability;
 	}
 	SetStackCount(InStackCount);
+	ClearBeehiveCombState();
+	ClearHoneyContainerState();
+	if (const UHoneyContainerItemDefinition* HoneyContainerDefinition = Cast<UHoneyContainerItemDefinition>(Definition))
+	{
+		const float SanitizedMaxVolume = FMath::Max(0.0f, HoneyContainerDefinition->MaxVolumeMl);
+		const float SanitizedCurrentVolume = FMath::Clamp(HoneyContainerDefinition->DefaultCurrentVolumeMl, 0.0f, SanitizedMaxVolume);
+		SetHoneyContainerState(
+			SanitizedCurrentVolume,
+			HoneyContainerDefinition->DefaultHoneyDensity,
+			HoneyContainerDefinition->DefaultHoneyRipeness);
+	}
 	RebuildActions();
 }
 
@@ -58,7 +70,7 @@ TSubclassOf<AItemPresentationActor> UItemInstance::GetHeldPresentationActorClass
 
 void UItemInstance::SetStackCount(int32 NewStackCount)
 {
-	const int32 MaxStack = Definition ? FMath::Max(1, Definition->MaxStack) : 1;
+	const int32 MaxStack = Cast<UHoneyContainerItemDefinition>(Definition) ? 1 : (Definition ? FMath::Max(1, Definition->MaxStack) : 1);
 	StackCount = FMath::Clamp(NewStackCount, 0, MaxStack);
 }
 
@@ -117,6 +129,59 @@ void UItemInstance::ClearBeehiveCombState()
 bool UItemInstance::HasBeehiveCombState() const
 {
 	return BeehiveCombState.bHasState;
+}
+
+void UItemInstance::SetHoneyContainerState(float CurrentVolumeMl, float HoneyDensity, float HoneyRipeness)
+{
+	const UHoneyContainerItemDefinition* HoneyContainerDefinition = Cast<UHoneyContainerItemDefinition>(Definition);
+	if (!HoneyContainerDefinition)
+	{
+		ClearHoneyContainerState();
+		return;
+	}
+
+	const float SanitizedMaxVolume = FMath::Max(0.0f, HoneyContainerDefinition->MaxVolumeMl);
+	const float SanitizedDensity = FMath::Clamp(HoneyDensity, 0.0f, 1.0f);
+	const float SanitizedRipeness = (SanitizedDensity < 1.0f)
+		? 0.0f
+		: FMath::Clamp(HoneyRipeness, 0.0f, 1.0f);
+
+	HoneyContainerState.bHasState = true;
+	HoneyContainerState.CurrentVolumeMl = FMath::Clamp(CurrentVolumeMl, 0.0f, SanitizedMaxVolume);
+	HoneyContainerState.HoneyDensity = SanitizedDensity;
+	HoneyContainerState.HoneyRipeness = SanitizedRipeness;
+}
+
+void UItemInstance::ClearHoneyContainerState()
+{
+	HoneyContainerState = FHoneyContainerItemState();
+}
+
+bool UItemInstance::HasHoneyContainerState() const
+{
+	return HoneyContainerState.bHasState;
+}
+
+void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance)
+{
+	if (!SourceItemInstance)
+	{
+		ClearBeehiveCombState();
+		ClearHoneyContainerState();
+		return;
+	}
+
+	BeehiveCombState = SourceItemInstance->BeehiveCombState;
+
+	if (SourceItemInstance->HasHoneyContainerState())
+	{
+		const FHoneyContainerItemState SourceState = SourceItemInstance->GetHoneyContainerState();
+		SetHoneyContainerState(SourceState.CurrentVolumeMl, SourceState.HoneyDensity, SourceState.HoneyRipeness);
+	}
+	else
+	{
+		ClearHoneyContainerState();
+	}
 }
 
 bool UItemInstance::HasDurability() const

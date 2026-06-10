@@ -72,11 +72,11 @@
 - 질문 내용: Niagara `DropLength`의 목적값(cm)은 어떤 기준으로 계산할 것인가?
 - 필요한 이유: 말통/꿀통 mesh와 슬롯 위치는 BP/레벨 authoring에 따라 달라질 수 있다. 고정값이면 배치 variant에서 줄기 길이가 어긋날 수 있다.
 - 선택지
-  - 옵션 A: source container의 `NozzleOrigin` scene component와 target slot/container의 `PourTarget` scene component world distance를 cm 단위로 계산한다. component가 없으면 작업대 authored `DefaultDropLengthCm`로 fallback한다.
+  - 옵션 A: source container의 stream 기준 component와 target slot/container의 `PourTarget` scene component 기준으로 계산한다. component가 없으면 작업대 authored `DefaultDropLengthCm`로 fallback한다.
   - 옵션 B: 작업대에 `TargetDropLengthCm` float를 두고 항상 authored 값만 사용한다.
   - 옵션 C: C++은 DropLength를 계산하지 않고 BP가 전부 세팅한다.
 - 권장 옵션: 옵션 A. BP authoring 유연성을 유지하면서 C++ transfer state와 Niagara parameter를 동기화할 수 있다.
-- 답변 : 옵션A
+- 답변 : 옵션A. 후속 확정으로 source 기준 component는 `AHoneyContainerActor::HoneyStreamNiagara`이며, 목표 길이는 source stream world Z와 target container/slot `PourTarget` world Z 차이(`Max(0, SourceStream.Z - TargetPourTarget.Z)`)로 계산한다. 기존 `NozzleOrigin` world distance 기준은 사용하지 않는다.
 
 8. HoneyRipeness/HoneyRipness 파라미터 철자
 - 질문 내용: 꿀 용기 material과 꿀 줄기 Niagara에 적용할 숙성도 scalar parameter 이름은 `HoneyRipeness`와 `HoneyRipness` 중 무엇으로 확정할 것인가?

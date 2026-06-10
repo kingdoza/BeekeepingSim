@@ -8,6 +8,7 @@
 - `Source/BeekeepingSim/Private/Inventory/StorageBoxComponent.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemDefinition.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemDefinition.cpp`
+- `Source/BeekeepingSim/Public/Inventory/HoneyContainerItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemAction.h`
@@ -53,7 +54,8 @@
 - `UBeekeeperHotbarComponent`: 8슬롯 player hotbar 상태 오너
 - `UStorageBoxComponent`: storage 슬롯 상태 오너
 - `UItemDefinition`: 정적 아이템 데이터 asset
-- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체
+- `UHoneyContainerItemDefinition`: 꿀 용기의 정적 용량/default volume/density/ripeness를 소유하는 `UItemDefinition` subclass. 꿀 용기 item은 `MaxStack=1` invariant를 가진다.
+- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체. 소비장 state와 꿀 용기 state 같은 optional runtime state를 보존한다.
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
 - `UActiveUseDurabilityItemDefinition`: active-use durability drain spec(`DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`)를 소유하는 `UItemDefinition` subclass
@@ -93,6 +95,11 @@
 
 - `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag container, max stack, durability 설정, action spec 배열을 가진다.
 - `UItemInstance`는 definition, stack count, durability, instance id, action instance 배열을 가진다.
+- `FBeehiveCombItemState`와 `FHoneyContainerItemState`는 `UItemInstance`에 저장되는 optional runtime state다.
+- `FHoneyContainerItemState`는 `bHasState`, `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`만 저장한다. 최대 용량은 `UHoneyContainerItemDefinition::MaxVolumeMl`이 source of truth다.
+- 꿀 용기 state invariant: `HoneyDensity < 1.0 && HoneyRipeness == 0.0` 또는 `HoneyDensity == 1.0 && HoneyRipeness >= 0.0`. `SetHoneyContainerState`와 꿀 용기 actor write-back 경로가 이 값을 sanitize한다.
+- `UHoneyContainerItemDefinition` item instance는 `InitializeFromDefinition()`에서 default current volume/density/ripeness를 sanitize해 꿀 용기 state로 초기화한다.
+- `UItemInstance::CopyRuntimeStateFrom`은 partial move 등 새 item instance 생성 경로에서 optional runtime state를 복사하는 helper다.
 - `UItemInstance`는 `IHotbarItemInterface`를 구현해 focus item rule 평가에 필요한 tag를 제공한다.
 - `InitializeFromDefinition()`은 definition을 저장하고 stack/durability를 clamp한 뒤 `RebuildActions()`로 action instance를 재생성한다.
 - Action 객체의 outer는 `UItemInstance`다. Definition의 `FItemActionSpec::ActionClass`가 abstract이면 생성하지 않는다.
@@ -127,9 +134,12 @@
   - max stack 계산
   - 동일 definition 판정
   - available stack space 계산
+  - runtime state compatibility 판정
   - merge 수량 계산/적용
   - 새 `UItemInstance` 생성
   - `FItemSlotMoveResult::RemainingQuantity` 계산
+- hotbar/storage partial move가 새 `UItemInstance`를 만들면 source item의 runtime state를 `CopyRuntimeStateFrom`으로 복사한다.
+- runtime state가 있는 item은 state 값이 같은 경우에만 stack merge 호환으로 본다. 꿀 용기는 definition/instance 양쪽에서 `MaxStack=1`로 다룬다.
 - delegate broadcast, focus rule 재평가, slot enabled 갱신은 각 컴포넌트가 담당한다.
 
 ## Public Mutation API
@@ -197,6 +207,8 @@
 - hotbar focus rule 적용 중 선택 슬롯 clear 정책
 - `UItemInstance::RebuildActions()` 후 action outer와 transient lifetime이 item instance 기준으로 유지되는지 확인
 - action result의 item 소비/stack delta를 실제 호출 경로가 해석하는지 확인
+- 꿀 용기 회수 후 hotbar item instance에 `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`가 write-back되는지 확인
+- 꿀 용기 item definition이 `UHoneyContainerItemDefinition`이고 `MaxStack=1`로 유지되는지 확인
 - hold-use action을 Blueprint에서 구현해야 하는 요구가 생기면 현재 BlueprintCallable virtual 계약으로 충분한지 먼저 확인
 
 ## Update 2026-05-27
@@ -346,3 +358,15 @@
   - `BackWaxCappingMask`
 - 기존 `SetBeehiveCombState(...)`와 `SetBeehiveCombStateWithRipeness(...)`는 유지하며, mask가 비어 있는 state는 소비장 actor가 full mask fallback으로 처리한다.
 - 새 `SetBeehiveCombStateWithCapping(...)`는 honey amount, ripeness, visible face와 capping mask를 함께 저장한다.
+
+## Update 2026-06-10 (Honey Container Item State)
+
+- `FHoneyContainerItemState`를 `UItemInstance` optional state로 추가했다.
+- `UHoneyContainerItemDefinition`을 추가했다.
+  - `MaxVolumeMl`
+  - `DefaultCurrentVolumeMl`
+  - `DefaultHoneyDensity`
+  - `DefaultHoneyRipeness`
+- 꿀 용기 item은 `MaxStack=1` invariant를 갖고, `UItemInstance::SetStackCount`와 `ItemStackMoveUtils::ResolveMaxStack`가 이를 강제한다.
+- hotbar/storage partial move로 새 item instance를 만들 때 `CopyRuntimeStateFrom`으로 소비장/꿀 용기 runtime state를 복사한다.
+- 배치된 꿀 용기 회수 state write-back은 WorldActors의 `UHoneyContainerRetrievePartFocusActionComponent`가 acquire 성공 후 수행한다.

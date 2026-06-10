@@ -149,6 +149,7 @@
   - `CancelPartFocusAction`
   - `AbortPartFocusAction`
   - `IsPartActionEngaged`
+- primary lifecycle 함수는 C++ subclass override가 가능하다. instant primary action이 persistent active state를 만들지 않고 domain component로 라우팅해야 하는 경우 subclass가 `CanBeginPartFocusAction`/`BeginPartFocusAction`을 override한다.
 - 상태 전환은 C++ wrapper가 관리하고, 실제 파츠 동작은 BP 이벤트로 구현한다:
   - `Receive Part Focus Begin`
   - `Receive Part Focus Cancel`
@@ -235,6 +236,7 @@
 - 전역 Focus action 이름은 `UFocusActionComponent`가 Blueprint authoring 가능한 `PromptActionText`/`EngagedPromptActionText`와 `ResolveFocusPromptActionText()`를 소유한다.
 - PartFocus primary action 이름은 `UCursorPartFocusActionComponent`가 Blueprint authoring 가능한 `PrimaryPromptActionText`/`EngagedPrimaryPromptActionText`와 `ResolvePrimaryPromptActionText()`를 소유한다.
 - 공통 PartFocus primary resolver는 `IsPartActionEngaged()` 상태에 따라 `PrimaryPromptActionText`와 `EngagedPrimaryPromptActionText`를 전환한다. 예: 뚜껑 `열기`/`닫기`, 소비장 `들기`/`넣기`.
+- 꿀 용기 nozzle PartFocus는 `UHoneyNozzlePartFocusActionComponent`가 primary prompt text를 `배출`/`정지`로 resolve하고, owner `AHoneyContainerActor`의 placement occupant -> owning `AHoneyContainerSlotActor` -> host `UHoneyTransferComponent` 경로로 toggle을 라우팅한다.
 
 ## Dependencies
 
@@ -375,3 +377,10 @@
 - `UCursorItemUseAreaScopeComponent`는 hovered active descriptor resolve 시 trace `FHitResult`를 버리지 않고 `HoveredItemUseAreaHit`로 cache한다.
 - `BuildItemActionContext(DescriptorIndex)`는 현재 hovered descriptor context에 impact point/normal을 채운다. durability-only context(`INDEX_NONE`)에는 hit fields를 채우지 않는다.
 - 이 계약은 `UCombUncappingUseAction`처럼 brush 중심점이 필요한 hold-use action이 직접 cursor trace를 수행하지 않게 하는 경계다.
+
+## Update 2026-06-10 (Honey Nozzle PartFocus)
+
+- `UCursorPartFocusActionComponent`의 primary lifecycle 함수(`CanBeginPartFocusAction`, `BeginPartFocusAction`, `CancelPartFocusAction`, `AbortPartFocusAction`)를 C++ override 가능하게 열었다.
+- 꿀 용기 source slot의 nozzle descriptor는 `AHoneyContainerActor`가 소유한 `UHoneyNozzlePartFocusActionComponent`를 action handler로 사용한다.
+- nozzle action은 concrete `AHoneyDecantingTable`을 cast하지 않고, owning placement slot의 attach parent/host에서 `UHoneyTransferComponent`를 찾아 transfer toggle을 요청한다.
+- nozzle prompt availability와 실제 toggle은 같은 transfer-context resolve helper를 공유한다.

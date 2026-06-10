@@ -133,6 +133,7 @@ struct FHoneyContainerItemState
 - `NozzleHitComponent`
 - `NozzleOrigin`
 - `PourTarget`
+- `UNiagaraComponent HoneyStreamNiagara`
 - `UPlacementOccupantComponent`
 - `UHoneyContainerRetrievePartFocusActionComponent`
 - `UHoneyNozzlePartFocusActionComponent`
@@ -150,6 +151,7 @@ struct FHoneyContainerItemState
 - `AddHoneyVolume(float VolumeMl, float IncomingDensity, float IncomingRipeness)`
 - `GetNozzleOriginComponent() const`
 - `GetPourTargetComponent() const`
+- `GetHoneyStreamNiagaraComponent() const`
 - `RefreshHoneyVisualState()`
 
 visual 규칙:
@@ -199,7 +201,7 @@ enum class EHoneyContainerSlotRole : uint8
 
 - 꿀 이송 진행 상태의 source of truth.
 - 다른 작업대에서도 재사용 가능한 domain component.
-- source/target validation, DropLength grow phase, 실제 transfer phase, auto stop을 소유한다.
+- source/target validation, source container HoneyStream Niagara control, DropLength grow phase, 실제 transfer phase, auto stop을 소유한다.
 
 권장 state:
 
@@ -227,7 +229,7 @@ enum class EHoneyTransferState : uint8
 권장 API:
 
 - `ConfigureSlots(AHoneyContainerSlotActor* SourceSlot, AHoneyContainerSlotActor* TargetSlot)`
-- `SetHoneyStreamNiagara(UNiagaraComponent* NiagaraComponent)`
+- `SetHoneyStreamNiagara(UNiagaraComponent* NiagaraComponent)`는 legacy fallback/compatibility API로 유지한다. 기본 stream source는 active source container의 `HoneyStreamNiagara`다.
 - `CanStartTransfer() const`
 - `StartTransfer()`
 - `StopTransfer(bool bImmediateVfx)`
@@ -240,13 +242,13 @@ enum class EHoneyTransferState : uint8
 1. source slot/target slot/containers를 검증한다.
 2. source role은 `Source`, target role은 `Target`이어야 한다.
 3. source volume > 0, target free volume > 0이어야 한다.
-4. Niagara를 활성화하고 source container의 `HoneyDensity`, `HoneyRipeness`를 Niagara parameter에 세팅한다.
+4. source container `HoneyStreamNiagara`를 활성화하고 source container의 `HoneyDensity`, `HoneyRipeness`를 Niagara parameter에 세팅한다.
 5. `DropLength`는 0으로 세팅한다.
 6. state는 `GrowingDrop`으로 전환한다.
 
 DropLength grow:
 
-- target length는 source container `NozzleOrigin`과 target container 또는 target slot `PourTarget` world distance(cm)로 계산한다.
+- target length는 source container `HoneyStreamNiagara` world Z와 target container 또는 target slot `PourTarget` world Z 차이(`Max(0, SourceStream.Z - TargetPourTarget.Z)`)로 계산한다.
 - 계산할 수 없으면 `DefaultDropLengthCm`를 사용한다.
 - `CurrentDropLength += DropLengthGrowSpeedCmPerSecond * DeltaTime`
 - 목적값 도달 전에는 실제 volume 이동을 하지 않는다.
@@ -337,7 +339,7 @@ MoveAmountMl = Min(
 - `TargetSlotRoot`
 - `TargetSlotChildActor`
 - `UHoneyTransferComponent`
-- `UNiagaraComponent HoneyStreamNiagara`
+- `UNiagaraComponent HoneyStreamNiagara` legacy fallback component. 신규 VFX authoring은 source container `HoneyStreamNiagara`에서 한다.
 
 구현 규칙:
 
@@ -439,8 +441,8 @@ rg -n "HoneyRipness|SourceCan|TargetJar" Source/BeekeepingSim/Public Source/Beek
 2. source slot에는 source tag를 가진 꿀 용기 item만 배치되는지 확인한다.
 3. target slot에는 target tag를 가진 꿀 용기 item만 배치되는지 확인한다.
 4. source container nozzle hover/click prompt가 표시되는지 확인한다.
-5. 배출 시작 시 Niagara가 활성화되고 `HoneyDensity`, `HoneyRipeness`, `DropLength=0`이 적용되는지 확인한다.
-6. `DropLength`가 목적값까지 증가하는 동안 실제 volume이 이동하지 않는지 확인한다.
+5. 배출 시작 시 source container `HoneyStreamNiagara`가 활성화되고 `HoneyDensity`, `HoneyRipeness`, `DropLength=0`이 적용되는지 확인한다.
+6. `DropLength`가 source stream Z와 target pour target Z 차이까지 증가하는 동안 실제 volume이 이동하지 않는지 확인한다.
 7. 목적값 도달 후 volume이 `TransferRateMlPerSecond`에 맞춰 이동하는지 확인한다.
 8. source empty 또는 target full에서 자동 정지하고 Niagara가 즉시 사라지는지 확인한다.
 9. target에 기존 꿀이 있을 때 volume-weighted average와 density/ripeness invariant가 유지되는지 확인한다.

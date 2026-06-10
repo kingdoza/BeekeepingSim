@@ -184,6 +184,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int3
 		{
 			return Result;
 		}
+		NewItem->CopyRuntimeStateFrom(SourceItem);
 		Slots[ToIndex].ItemInstance = NewItem;
 		Result.MovedQuantity += CreateCount;
 		QuantityToMove -= CreateCount;
@@ -217,6 +218,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToStorage(const int3
 			{
 				break;
 			}
+			NewItem->CopyRuntimeStateFrom(SourceItem);
 
 			Slots[EmptyIndex].ItemInstance = NewItem;
 			Result.MovedQuantity += CreateCount;
@@ -273,6 +275,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
 		{
 			return Result;
 		}
+		NewItem->CopyRuntimeStateFrom(SourceItem);
 		HotbarComponent->SetSlotItem(HotbarIndex, NewItem);
 		Result.MovedQuantity += CreateCount;
 		QuantityToMove -= CreateCount;
@@ -308,6 +311,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialStorageToHotbar(
 				{
 					break;
 				}
+				NewItem->CopyRuntimeStateFrom(SourceItem);
 				HotbarComponent->SetSlotItem(Index, NewItem);
 				Result.MovedQuantity += CreateCount;
 				QuantityToMove -= CreateCount;
@@ -366,6 +370,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
 		{
 			return Result;
 		}
+		NewItem->CopyRuntimeStateFrom(SourceItem);
 
 		Slots[StorageIndex].ItemInstance = NewItem;
 		Result.MovedQuantity += CreateCount;
@@ -400,6 +405,7 @@ FItemSlotMoveResult UStorageBoxComponent::MovePartialHotbarToStorage(
 			{
 				break;
 			}
+			NewItem->CopyRuntimeStateFrom(SourceItem);
 
 			Slots[EmptyIndex].ItemInstance = NewItem;
 			Result.MovedQuantity += CreateCount;

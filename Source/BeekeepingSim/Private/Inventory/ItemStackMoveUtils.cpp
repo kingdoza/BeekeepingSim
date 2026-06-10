@@ -1,5 +1,6 @@
 #include "Inventory/ItemStackMoveUtils.h"
 
+#include "Inventory/HoneyContainerItemDefinition.h"
 #include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
 
@@ -8,10 +9,51 @@ namespace ItemStackMoveUtils
 namespace
 {
 	constexpr float DurabilityStackTolerance = 0.0001f;
+
+	bool AreBeehiveCombStatesEqual(const FBeehiveCombItemState& A, const FBeehiveCombItemState& B)
+	{
+		return A.bHasState == B.bHasState
+			&& FMath::IsNearlyEqual(A.HoneyAmount, B.HoneyAmount, DurabilityStackTolerance)
+			&& FMath::IsNearlyEqual(A.HoneyRipeness, B.HoneyRipeness, DurabilityStackTolerance)
+			&& A.bIsFrontFaceVisible == B.bIsFrontFaceVisible
+			&& A.CappingMaskWidth == B.CappingMaskWidth
+			&& A.CappingMaskHeight == B.CappingMaskHeight
+			&& A.FrontWaxCappingMask == B.FrontWaxCappingMask
+			&& A.BackWaxCappingMask == B.BackWaxCappingMask;
+	}
+
+	bool AreHoneyContainerStatesEqual(const FHoneyContainerItemState& A, const FHoneyContainerItemState& B)
+	{
+		return A.bHasState == B.bHasState
+			&& FMath::IsNearlyEqual(A.CurrentVolumeMl, B.CurrentVolumeMl, DurabilityStackTolerance)
+			&& FMath::IsNearlyEqual(A.HoneyDensity, B.HoneyDensity, DurabilityStackTolerance)
+			&& FMath::IsNearlyEqual(A.HoneyRipeness, B.HoneyRipeness, DurabilityStackTolerance);
+	}
+
+	bool HasRuntimeState(const UItemInstance* ItemInstance)
+	{
+		return ItemInstance && (ItemInstance->HasBeehiveCombState() || ItemInstance->HasHoneyContainerState());
+	}
+
+	bool HasEquivalentRuntimeState(const UItemInstance* A, const UItemInstance* B)
+	{
+		if (!A || !B)
+		{
+			return false;
+		}
+
+		return AreBeehiveCombStatesEqual(A->GetBeehiveCombState(), B->GetBeehiveCombState())
+			&& AreHoneyContainerStatesEqual(A->GetHoneyContainerState(), B->GetHoneyContainerState());
+	}
 }
 
 int32 ResolveMaxStack(const UItemDefinition* Definition)
 {
+	if (Cast<UHoneyContainerItemDefinition>(Definition))
+	{
+		return 1;
+	}
+
 	return Definition ? FMath::Max(1, Definition->MaxStack) : 1;
 }
 
@@ -34,7 +76,7 @@ bool HasCompatibleStackState(const UItemInstance* ExistingItem, const UItemDefin
 
 	if (!Definition || !Definition->bUsesDurability)
 	{
-		return true;
+		return !HasRuntimeState(ExistingItem);
 	}
 
 	if (!bHasDurabilityOverride)
@@ -60,10 +102,11 @@ bool CanMergeItemStacks(const UItemInstance* TargetItem, const UItemInstance* So
 
 	if (!SourceDefinition || !SourceDefinition->bUsesDurability)
 	{
-		return true;
+		return HasEquivalentRuntimeState(TargetItem, SourceItem);
 	}
 
-	return FMath::IsNearlyEqual(TargetItem->GetCurrentDurability(), SourceItem->GetCurrentDurability(), DurabilityStackTolerance);
+	return FMath::IsNearlyEqual(TargetItem->GetCurrentDurability(), SourceItem->GetCurrentDurability(), DurabilityStackTolerance)
+		&& HasEquivalentRuntimeState(TargetItem, SourceItem);
 }
 
 int32 GetAvailableStackSpace(const UItemInstance* ItemInstance, const int32 MaxStack)

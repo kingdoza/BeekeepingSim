@@ -2,8 +2,8 @@
 
 ## 문서 기준
 
-- 기준일: 2026-06-08(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask 반영 후 현재 Source 구조 기준
+- 기준일: 2026-06-10(KST) Source 재대조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 168개
-  - Public header: 93개
-  - Private cpp/header: 75개
+- 현재 대상 C++ 파일 수: 181개
+  - Public header: 100개
+  - Private cpp/header: 81개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -62,9 +62,9 @@ Source/BeekeepingSim/
   - Environment: Public 9 / Private 4
   - Focus: Public 22 / Private 14
   - Interaction: Public 2 / Private 2
-  - Inventory: Public 20 / Private 16
+  - Inventory: Public 21 / Private 16
   - UI: Public 8 / Private 7
-  - WorldActors: Public 26 / Private 26
+  - WorldActors: Public 32 / Private 32
 
 ## 시스템 간 책임 흐름
 
@@ -73,6 +73,7 @@ Source/BeekeepingSim/
 - Focus는 현재 타겟, engaged action, prompt, item rule, crosshair visibility의 단일 상태 오너다.
 - Interaction은 FocusAction의 구체 구현이며 pickup/storage 같은 도메인별 상호작용을 실행한다.
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
+- Inventory는 꿀 용기 runtime state(`FHoneyContainerItemState`)를 `UItemInstance`의 optional state로 보존하며, 정적 용량/default는 `UHoneyContainerItemDefinition`이 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, runtime clock 표시, Blueprint 표시 API를 제공한다.
 - `WBP_FocusPrompt` 런타임 바인딩/텍스트/visibility/위치 갱신은 `UFocusPromptWidget`(C++ base widget)이 담당하고, 다중 상호작용 row 생성/수직 정렬/disabled 스타일은 Blueprint 작업 영역으로 유지한다.
 - Focus prompt entry 생성은 실제 실행 주체가 append API로 제공한다. 전역 Focus는 `UFocusActionComponent`, PartFocus는 `UCursorPartFocusActionComponent`가 context별 prompt entry와 availability를 제공한다.
@@ -128,6 +129,10 @@ Source/BeekeepingSim/
 - `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.HoneyComb` use-area에서 LMB hold-use 중 현재 visible face의 capping mask를 원형 brush로 제거한다. 실제 mask pixel이 제거된 tick에만 `bSucceeded=true`를 반환하며 내구도 감소와 채밀/수확은 구현하지 않는다.
 - 작업대 소비장 PartFocus `잡기/놓기` active 상태는 `AUncappingTableCombSlot`이 별도 bool로 소유하며, 잡기 상태에서는 occupied comb capping use-area와 `UCombUncappingUseAction` begin/apply가 비활성화된다.
 - `AUncappingTableCombSlot`은 작업대 소비장 잡기/놓기/강제 종료 시점에 `ReceiveCombGrabbed`, `ReceiveCombReleased`, `ReceiveCombGrabAborted` Blueprint 이벤트를 제공하며, 실제 들어올림/원위치 애니메이션은 slot Blueprint가 `AttachComponent` relative transform으로 구현한다.
+- 꿀 용기 배치 actor는 `AHoneyContainerActor`이며, current volume/density/ripeness runtime state, honey visual material/scale 갱신, source 배출용 `HoneyStreamNiagara`, nozzle/retrieve PartFocus action component를 소유한다.
+- 꿀 용기 슬롯은 `AHoneyContainerSlotActor`이며, reusable `Source`/`Target` role과 accepted gameplay tag query로 배치 가능 item을 판정한다.
+- 꿀 이송 진행 상태와 규칙은 `UHoneyTransferComponent`가 소유한다. DropLength grow가 목표 길이에 도달한 뒤 volume transfer가 시작되며, target density/ripeness는 volume-weighted average로 혼합된다. 목표 길이는 source container `HoneyStreamNiagara`와 target container/slot `PourTarget`의 world Z 차이로 계산한다.
+- `AHoneyDecantingTable`은 native FocusEngaged 작업대 host이며 source/target slot child actor와 `UHoneyTransferComponent`를 조립하고 이송 계산은 구현하지 않는다.
 - `FItemActionContext`는 item-use-area cursor hit fields(`bHasItemUseAreaHit`, `ItemUseAreaImpactPoint`, `ItemUseAreaImpactNormal`)를 포함하며, `UCursorItemUseAreaScopeComponent`가 hovered descriptor의 trace hit를 context로 전달한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 `AGameTimeOfDayActor`의 24시간 가속 시간과 `ADynamicSky`의 하늘/조명/태양/달 연출을 `ITimeOfDayProvider` 계약으로 분리한다.
@@ -343,3 +348,13 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `ABeehiveCombActor::TryRegenerateWaxCapping()`은 `EnsureCappingMaskState()` 후 full honey와 숙성 threshold(`WaxCappingRegenerationRipenessThreshold`, 기본 `1.0`)를 만족할 때 face별 mask 중 `255`가 아닌 값이 있는 face 전체를 `255`로 복원한다.
 - 자동 재생성 호출은 `ABeehive::ApplyHoneyRipenessUpdate()`와 `ABeehive::DistributeHoneyIncreaseToCombs()`에만 있다.
 - `SetCurrentHoney()`, `SetCurrentHoneyRipeness()`, `ApplyStateFromItemInstance()`는 capping mask를 자동 재생성하지 않으므로 작업대 배치/저장복원 직후에는 제거 상태가 유지된다.
+
+## Update 2026-06-10 (Honey Container + Decanting Table)
+
+- `FHoneyContainerItemState`를 `UItemInstance` optional state로 추가했다. `bHasState`, `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`를 저장하며, 비-꿀 용기 item은 해당 state를 무시한다.
+- `UHoneyContainerItemDefinition`은 꿀 용기 정적 용량/default source of truth다. 꿀 용기 item은 `MaxStack=1` invariant를 가진다.
+- hotbar/storage partial move로 새 `UItemInstance`를 만들 때 `CopyRuntimeStateFrom`으로 runtime state를 보존한다.
+- `AHoneyContainerActor`, `AHoneyContainerSlotActor`, `UHoneyTransferComponent`, `UHoneyNozzlePartFocusActionComponent`, `UHoneyContainerRetrievePartFocusActionComponent`, `AHoneyDecantingTable`을 추가했다.
+- material parameter 정본은 `HoneyDensity`, `HoneyRipeness`이고 Niagara parameter 정본은 `User.HoneyDensity`, `User.HoneyRipeness`, `User.DropLength`다.
+- 꿀 줄기 Niagara component는 source `AHoneyContainerActor::HoneyStreamNiagara`가 소유한다. `UHoneyTransferComponent`는 active source stream을 제어하고, target length는 `Max(0, SourceStream.Z - TargetPourTarget.Z)`로 계산한다.
+- `UCursorPartFocusActionComponent` primary lifecycle 함수는 C++ subclass가 instant primary action을 구현할 수 있도록 virtual로 열렸다.
