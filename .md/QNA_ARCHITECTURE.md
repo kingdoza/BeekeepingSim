@@ -3,6 +3,10 @@
 ## 확정 전제
 
 - 이전 밀도 관련 QnA 내용은 사용자 요청에 따라 제거했다.
+- 분봉 1차 구현은 외부 Blueprint에서 수동으로 시작해 테스트하는 범위다. 자동 발생 조건, 시간 bucket, AI/시뮬레이션 연동은 이번 범위에서 제외한다.
+- 분봉 시작 시 기존 벌통의 `ColonyBeeCount`, 기존 `QueenBeeChildActor`, 소비장 벌 수/target count는 변경하지 않는다.
+- 분봉 본진의 여왕벌은 기존 벌통 여왕벌을 이동하지 않고, 분봉 본진 actor가 별도 spawn/child actor로 소유한다.
+- `벌 운반통` 포획 결과는 이번 범위에서 item instance runtime state로 저장하지 않는다. 포획 진행 source of truth는 분봉 본진 actor의 `AliveRadius`다.
 
 ## 미해결 질문
 

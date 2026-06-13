@@ -1,10 +1,12 @@
-# 꿀 용기와 재사용 가능한 꿀 이송 작업대 구현 프롬프트
+# 분봉 기능 구현 프롬프트
 
 ## 목표
 
-꿀 용기 런타임 상태, 꿀 용기 배치 actor, 재사용 가능한 꿀 이송 컴포넌트, 소분 작업대 native actor를 C++로 구현한다.
+벌통에서 외부 Blueprint 호출로 분봉을 시작하는 1차 테스트 기능을 C++로 구현한다.
 
-이번 구현은 말통->꿀통 소분 작업대가 1차 사용처지만, 같은 꿀 용기 간 이송 기능을 다른 작업대에서도 재사용할 수 있어야 한다. QnA 답변끼리 충돌하는 경우에는 소분 작업대 전용 구현보다 재사용성이 높은 방향을 우선한다.
+분봉이 시작되면 벌통 입구에서 분봉 본진까지 spline 기반 벌떼 VFX가 생성되고, 월드에 분봉 본진 actor가 생성된다. 분봉 본진은 FocusEngaged 대상이며, `벌 운반통` 아이템을 LMB hold 상태로 본진 사용영역 위에서 빠르게 드래그할수록 본진의 `AliveRadius`가 더 빠르게 감소한다.
+
+이번 범위는 테스트용 수동 시작까지다. 자동 분봉 발생 조건, colony simulation 반영, 포획 결과 inventory 저장은 구현하지 않는다.
 
 ## 반드시 읽을 문서
 
@@ -13,382 +15,306 @@
 - `.md/QNA_ARCHITECTURE.md`
 - `.md/QNA_IMPLEMENTATION.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/InventorySystem.md`
 
-## 핵심 설계 확정 사항
+## 핵심 확정 사항
 
-- 꿀 용기 상태는 `UItemInstance` base에 optional `FHoneyContainerItemState`로 저장한다.
-- `FHoneyContainerItemState`는 최소 `bHasState`, `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`를 가진다.
-- 전체 용량은 `UHoneyContainerItemDefinition::MaxVolumeMl`이 source of truth다.
-- 꿀 용기 item은 `MaxStack=1`을 invariant로 둔다.
-- 비-용기 item은 `bHasState=false`인 honey container state를 무시한다.
-- 꿀 용기 월드 actor는 `AHoneyContainerActor` 전용 class로 구현한다.
-- 꿀 용기 슬롯은 `AHoneyContainerSlotActor` 전용 class로 구현한다.
-- 슬롯 role enum은 말통/꿀통 고정명이 아니라 재사용 가능한 `Source`, `Target`으로 둔다.
-- 어떤 용기 조합을 받을지는 slot의 accepted gameplay tag query/authoring 값으로 결정한다.
-- 실제 꿀 이송 규칙과 진행 상태는 `UHoneyTransferComponent`가 소유한다.
-- 작업대 actor는 source slot, target slot, VFX anchor/Niagara를 조립하는 host 역할을 한다.
-- 노즐 클릭 대상과 action owner는 `AHoneyContainerActor`다.
-- 노즐 action은 concrete 작업대 class가 아니라 owning slot/host의 transfer component/interface를 찾아 toggle 요청한다.
-- 회수 시 꿀 용기 state write-back은 꿀 용기 전용 retrieve action에서 보장한다.
+- 외부 Blueprint가 `ABeehive`의 분봉 시작 API를 호출해 테스트한다.
+- 분봉 시작은 기존 벌통의 `ColonyBeeCount`, 기존 여왕벌, 소비장 벌 수/target count를 변경하지 않는다.
+- 분봉 본진의 여왕벌은 기존 벌통 여왕벌을 옮기지 않고 별도로 spawn한다.
+- 분봉 본진 여왕벌은 본진 중심점에 위치한다.
+- `벌 운반통` 포획 결과는 item instance state로 저장하지 않는다.
+- 포획 진행 source of truth는 분봉 본진 actor의 `AliveRadius`다.
+- `AliveRadius` 감소는 본진 Niagara parameter `User.AliveRadius`에 즉시 반영한다.
+- `Content/` asset은 수정하지 않는다. Niagara system, mesh, material, BP child 설정은 수동 작업으로 남긴다.
 
 ## 구현 대상
 
-### Inventory
+### WorldActors
 
-새 파일:
+새 파일 권장:
 
-- `Source/BeekeepingSim/Public/Inventory/HoneyContainerItemDefinition.h`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
 
 수정:
 
-- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
-- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
-- hotbar/storage/item stack 생성 경로 중 runtime state copy가 필요한 곳
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- 필요 시 `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
 
-권장 추가 타입/API:
+### Inventory
 
-```cpp
-USTRUCT(BlueprintType)
-struct FHoneyContainerItemState
-{
-    GENERATED_BODY()
+새 파일 권장:
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container")
-    bool bHasState = false;
+- `Source/BeekeepingSim/Public/Inventory/BeeCarrierUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0"))
-    float CurrentVolumeMl = 0.0f;
+### Config
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float HoneyDensity = 0.0f;
+신규 gameplay tag 추가:
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Honey Container", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float HoneyRipeness = 0.0f;
-};
-```
+- `Item.UseArea.SwarmCluster.BeeCarrier`
+- 선택: `Item.BeeCarrier`
 
-`UItemInstance`에 권장 API:
+기존 tag rename/redirect는 하지 않는다.
 
-- `SetHoneyContainerState(float CurrentVolumeMl, float HoneyDensity, float HoneyRipeness)`
-- `ClearHoneyContainerState()`
-- `HasHoneyContainerState() const`
-- `GetHoneyContainerState() const`
-- `CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance)` 또는 동등한 helper
-
-`SetHoneyContainerState`는 아래 invariant를 강제한다.
-
-- `HoneyDensity < 1.0f`이면 `HoneyRipeness = 0.0f`
-- 최종 상태는 `HoneyDensity < 1.0 && HoneyRipeness == 0.0` 또는 `HoneyDensity == 1.0 && HoneyRipeness >= 0.0`
-
-`UHoneyContainerItemDefinition : UItemDefinition`:
-
-- `MaxVolumeMl`
-- `DefaultCurrentVolumeMl`
-- `DefaultHoneyDensity`
-- `DefaultHoneyRipeness`
-
-기본값 sanitize:
-
-- `MaxVolumeMl >= 0`
-- `DefaultCurrentVolumeMl`은 `0..MaxVolumeMl`
-- density/ripeness는 `0..1`
-- default density가 `1.0` 미만이면 default ripeness는 runtime 적용 시 `0.0`
-
-### WorldActors
-
-새 파일:
-
-- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerSlotActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerSlotActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/HoneyTransferComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyTransferComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/HoneyNozzlePartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyNozzlePartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/HoneyContainerRetrievePartFocusActionComponent.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyContainerRetrievePartFocusActionComponent.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/HoneyDecantingTable.h`
-- `Source/BeekeepingSim/Private/WorldActors/HoneyDecantingTable.cpp`
-
-구현자가 기존 패턴과 파일 배치를 보고 더 적절한 이름을 선택할 수 있으나, 다음 책임 분리는 유지한다.
-
-## `AHoneyContainerActor`
+## `ABeeSwarmClusterActor`
 
 역할:
 
-- 배치된 꿀 용기 1개를 대표한다.
-- 꿀 용기의 runtime state와 visual update를 소유한다.
-- 노즐 hit/action을 소유한다.
-- 회수 action을 소유한다.
+- 분봉 본진 actor.
+- FocusEngaged host.
+- 본진 구형 벌떼 Niagara와 본진 여왕벌 별도 actor를 소유한다.
+- `벌 운반통` item-use-area target이다.
+- 포획 진행 상태(`AliveRadius`)의 source of truth다.
 
 권장 구성:
 
 - `Root`
-- `ContainerMesh`
-- `HoneyVisualMesh`
-- `NozzleHitComponent`
-- `NozzleOrigin`
-- `PourTarget`
-- `UNiagaraComponent HoneyStreamNiagara`
-- `UPlacementOccupantComponent`
-- `UHoneyContainerRetrievePartFocusActionComponent`
-- `UHoneyNozzlePartFocusActionComponent`
-
-권장 API:
-
-- `ApplyStateFromItemInstance(const UItemInstance* SourceItemInstance)`
-- `WriteHoneyContainerStateToItemInstance(UItemInstance* TargetItemInstance) const`
-- `GetCurrentVolumeMl() const`
-- `GetMaxVolumeMl() const`
-- `GetFreeVolumeMl() const`
-- `GetHoneyDensity() const`
-- `GetHoneyRipeness() const`
-- `RemoveHoneyVolume(float VolumeMl)`
-- `AddHoneyVolume(float VolumeMl, float IncomingDensity, float IncomingRipeness)`
-- `GetNozzleOriginComponent() const`
-- `GetPourTargetComponent() const`
-- `GetHoneyStreamNiagaraComponent() const`
-- `RefreshHoneyVisualState()`
-
-visual 규칙:
-
-- fill ratio = `CurrentVolumeMl / MaxVolumeMl`, `0..1`
-- `HoneyVisualMesh`의 Z scale을 fill ratio로 조정한다.
-- X/Y scale은 유지한다.
-- full scale 기준은 BeginPlay 또는 construction 시점의 authored relative scale을 사용한다.
-- honey material dynamic instance에 scalar parameter를 설정한다.
-  - `HoneyDensity`
-  - `HoneyRipeness`
-- `HoneyDensity < 1.0`이면 visual/material에도 `HoneyRipeness=0.0`을 적용한다.
-
-## `AHoneyContainerSlotActor`
-
-역할:
-
-- reusable honey container placement slot.
-- source/target 역할과 accepted tag query를 소유한다.
-- empty 상태에서는 기존 item-use-area placement 경로를 제공한다.
-- occupied 상태에서는 꿀 용기 회수 descriptor와, source role인 경우 노즐 descriptor를 제공한다.
-
-권장 enum:
-
-```cpp
-UENUM(BlueprintType)
-enum class EHoneyContainerSlotRole : uint8
-{
-    Source,
-    Target
-};
-```
-
-구현 규칙:
-
-- `AItemPlacementSlotActor`를 상속한다.
-- `TryPlaceItem_Implementation`에서 `AHoneyContainerActor` class만 허용한다.
-- source item definition의 gameplay tags가 slot accepted tag query를 만족해야 한다.
-- 배치 성공 후 `AHoneyContainerActor::ApplyStateFromItemInstance(SourceItemInstance)`를 호출한다.
-- clear/place 후 owning host의 PartFocus/item-use-area descriptors를 rebuild한다.
-- `GetPlacedHoneyContainerActor() const`를 제공한다.
-- `GetCursorPartFocusDescriptors_Implementation`에서 occupied container retrieve descriptor를 제공하고, `Role == Source`이면 container의 nozzle descriptor도 append한다.
-
-## `UHoneyTransferComponent`
-
-역할:
-
-- 꿀 이송 진행 상태의 source of truth.
-- 다른 작업대에서도 재사용 가능한 domain component.
-- source/target validation, source container HoneyStream Niagara control, DropLength grow phase, 실제 transfer phase, auto stop을 소유한다.
-
-권장 state:
-
-```cpp
-UENUM(BlueprintType)
-enum class EHoneyTransferState : uint8
-{
-    Idle,
-    GrowingDrop,
-    Transferring
-};
-```
-
-권장 설정:
-
-- `TransferRateMlPerSecond`
-- `DropLengthGrowSpeedCmPerSecond`
-- `DefaultDropLengthCm`
-- Niagara parameter names
-  - default `User.HoneyDensity`
-  - default `User.HoneyRipeness`
-  - default `User.DropLength`
-- optional material/scalar names은 container actor 쪽에서 소유한다.
-
-권장 API:
-
-- `ConfigureSlots(AHoneyContainerSlotActor* SourceSlot, AHoneyContainerSlotActor* TargetSlot)`
-- `SetHoneyStreamNiagara(UNiagaraComponent* NiagaraComponent)`는 legacy fallback/compatibility API로 유지한다. 기본 stream source는 active source container의 `HoneyStreamNiagara`다.
-- `CanStartTransfer() const`
-- `StartTransfer()`
-- `StopTransfer(bool bImmediateVfx)`
-- `ToggleTransferFromNozzle(AHoneyContainerActor* SourceContainer)`
-- `IsTransferActive() const`
-- `GetTransferState() const`
-
-이송 시작:
-
-1. source slot/target slot/containers를 검증한다.
-2. source role은 `Source`, target role은 `Target`이어야 한다.
-3. source volume > 0, target free volume > 0이어야 한다.
-4. source container `HoneyStreamNiagara`를 활성화하고 source container의 `HoneyDensity`, `HoneyRipeness`를 Niagara parameter에 세팅한다.
-5. `DropLength`는 0으로 세팅한다.
-6. state는 `GrowingDrop`으로 전환한다.
-
-DropLength grow:
-
-- target length는 source container `HoneyStreamNiagara` world Z와 target container 또는 target slot `PourTarget` world Z 차이(`Max(0, SourceStream.Z - TargetPourTarget.Z)`)로 계산한다.
-- 계산할 수 없으면 `DefaultDropLengthCm`를 사용한다.
-- `CurrentDropLength += DropLengthGrowSpeedCmPerSecond * DeltaTime`
-- 목적값 도달 전에는 실제 volume 이동을 하지 않는다.
-- 목적값 도달 시 source/target을 재검증하고 state를 `Transferring`으로 전환한다.
-
-실제 이송:
-
-```cpp
-MoveAmountMl = Min(
-    TransferRateMlPerSecond * DeltaTime,
-    SourceVolumeMl,
-    TargetFreeVolumeMl);
-```
-
-- source는 volume만 감소하며 density/ripeness는 유지한다.
-- target의 `HoneyDensity`, `HoneyRipeness`는 기존 target 내용물과 유입량을 volume-weighted average로 계산한다.
-- 유입 꿀 또는 혼합 결과의 `HoneyDensity < 1.0`이면 target `HoneyRipeness = 0.0`으로 정규화한다.
-- 모든 꿀 용기 state는 다음 invariant를 만족해야 한다.
-  - `HoneyDensity < 1.0 && HoneyRipeness == 0.0`
-  - 또는 `HoneyDensity == 1.0 && HoneyRipeness >= 0.0`
-
-자동 정지 조건:
-
-- source slot/container missing
-- target slot/container missing
-- source volume <= 0
-- target free volume <= 0
-- slot occupant changed
-- owning actor EndPlay/destroy
-- Focus cancel/deactivate 등 host가 transfer stop을 요청하는 경우
-
-정지:
-
-- 꿀 줄기 Niagara는 즉시 사라져야 한다.
-- 가능하면 `DeactivateImmediate()`, 불가능하면 `Deactivate()`와 `SetVisibility(false)` 등 기존 Niagara 사용 패턴에 맞춘다.
-- stop 시 `DropLength`는 0으로 되돌린다.
-
-## `UHoneyNozzlePartFocusActionComponent`
-
-역할:
-
-- source container nozzle click을 transfer toggle로 라우팅한다.
-
-구현 규칙:
-
-- concrete `AHoneyDecantingTable` class에 직접 의존하지 않는다.
-- owner `AHoneyContainerActor`의 placement occupant에서 owning slot을 찾고, slot의 attach parent/host에서 `UHoneyTransferComponent`를 찾는다.
-- role이 `Source`인 slot의 container일 때만 start/toggle 가능하다.
-- prompt action text는 상태에 따라 `배출`/`정지` 또는 프로젝트 기존 naming 방식에 맞춰 구현자가 정한다.
-- prompt availability와 실제 실행 가능성은 같은 helper를 공유한다.
-
-## `UHoneyContainerRetrievePartFocusActionComponent`
-
-역할:
-
-- 배치된 꿀 용기 회수 시 item instance에 honey state를 write-back한다.
-
-구현 규칙:
-
-- 기존 `UPlacementSlotRetrievePartFocusActionComponent::TryRetrievePlacementOccupant(...)` 경로를 활용한다.
-- retrieve 성공 후 `AHoneyContainerActor::WriteHoneyContainerStateToItemInstance(AcquiredItemInstance)`를 호출한다.
-- 그 뒤 owning slot `ClearPlacedItem`을 호출한다.
-- hotbar acquire 실패 시 actor/slot 상태를 유지한다.
-- prompt availability와 실제 retrieve는 같은 helper/API를 공유한다.
-
-## `AHoneyDecantingTable`
-
-역할:
-
-- 1차 사용처인 꿀 소분 작업대 native WorldActor.
-- source slot, target slot, reusable transfer component, Niagara를 조립한다.
-
-권장 구성은 `AUncappingTable` 패턴을 따른다.
-
-- `Root`
-- `TableMesh`
+- `ClusterCenter`
+- `ClusterNiagara`
+- `QueenBeeChildActor`
+- `CaptureUseAreaMesh`
 - `FocusAnchor`
 - `CharacterAnchor`
 - `UFocusTargetComponent`
 - `UAnchoredFocusCursorActionComponent`
-- `UCursorPartFocusScopeComponent`
-- `UCursorPartFocusRegistrationComponent`
-- `UChildCursorPartFocusProviderComponent`
 - `UCursorItemUseAreaScopeComponent`
 - `UItemUseAreaMeshProviderComponent`
-- `SourceSlotRoot`
-- `SourceSlotChildActor`
-- `TargetSlotRoot`
-- `TargetSlotChildActor`
-- `UHoneyTransferComponent`
-- `UNiagaraComponent HoneyStreamNiagara` legacy fallback component. 신규 VFX authoring은 source container `HoneyStreamNiagara`에서 한다.
+
+`FocusAnchor`와 `CharacterAnchor`에는 기존 anchored focus 정책과 맞게 각각 `FocusAnchor`, `CharacterAnchor` component tag를 붙인다.
+
+`CaptureUseAreaMesh`:
+
+- 타입: `UItemUseAreaMeshComponent`
+- Area tag: `Item.UseArea.SwarmCluster.BeeCarrier`
+- Effect target policy: `ComponentOwner` 또는 `ExplicitObject`로 최종 target이 `ABeeSwarmClusterActor`가 되게 한다.
+- captured 상태에서는 inactive/disabled가 되도록 처리한다.
+
+Niagara parameter 계약:
+
+- `User.AliveRadius` float
+- `User.SpawnAmount` int32
+- `User.SphereRadius` float
+
+권장 UPROPERTY:
+
+- `AliveRadius`
+- `SpawnAmount`
+- `SphereRadius`
+- `SwarmQueenBeeActorClass`
+- `QueenCenterOffset`
+- Niagara parameter name properties
+  - default `User.AliveRadius`
+  - default `User.SpawnAmount`
+  - default `User.SphereRadius`
+
+권장 API:
+
+- `InitializeSwarmCluster(float InAliveRadius, int32 InSpawnAmount, float InSphereRadius)`
+- `ApplyClusterNiagaraParameters()`
+- `DecreaseAliveRadius(float DeltaRadius)`
+- `SetAliveRadius(float NewAliveRadius)`
+- `GetAliveRadius() const`
+- `GetSphereRadius() const`
+- `GetSpawnAmount() const`
+- `IsCaptured() const`
+- `GetClusterCenterComponent() const`
+- `GetQueenBeeActor() const`
+- `RebuildItemUseAreaDescriptors()`
+
+권장 BP events:
+
+- `ReceiveSwarmClusterInitialized`
+- `ReceiveAliveRadiusChanged(float NewAliveRadius)`
+- `ReceiveSwarmCaptured`
+
+포획 완료:
+
+- `AliveRadius <= 0.0f`이면 captured로 본다.
+- captured 전환은 한 번만 발생한다.
+- captured 시 `ClusterNiagara` parameter에는 `AliveRadius=0`을 적용한다.
+- `CaptureUseAreaMesh`를 비활성화하고 item-use-area descriptor를 rebuild한다.
+- actor destroy 여부, 여왕벌 숨김, 포획 완료 연출은 BP event에서 처리할 수 있게 열어둔다.
+
+여왕벌:
+
+- 기존 `ABeehive`의 `QueenBeeChildActor`를 재사용하거나 이동하지 않는다.
+- `SwarmQueenBeeActorClass`로 별도 child actor/spawn actor를 생성한다.
+- 여왕벌은 `ClusterCenter`에 attach하고 local location은 `QueenCenterOffset`만 허용한다.
+- 포획 중 `AliveRadius`가 줄어도 여왕벌은 center에 유지한다.
+
+## `ABeehiveSwarmRouteActor`
+
+역할:
+
+- 벌통 입구에서 분봉 본진까지 이동하는 spline 기반 벌떼 VFX actor.
+- 기존 출근용 벌떼 Niagara asset을 재사용할 수 있는 parameter 계약을 유지한다.
+
+권장 구현:
+
+- `ABeeSplineSwarmActor`를 상속한다.
+- protected `SwarmSpline`을 사용해 runtime route point를 구성한다.
+- `ConfigureRoute(const FVector& StartWorldLocation, const FVector& EndWorldLocation)`를 제공한다.
+- 필요하면 `RouteMidPointHeightOffset`으로 3-point spline arc를 만든다.
+- 기존 `ApplyExternalSwarmParameters(const FBeeSplineSwarmAppliedParameters&)`를 사용해 spawn/speed/shape 값을 주입한다.
+
+Spline/Niagara parameter 계약:
+
+- `User.SwarmSpline`
+- `User.SplineLength`
+- `User.StartShapeExtent`
+- `User.EndShapeExtent`
+- `User.SpawnAmount`
+- `User.SpeedMin`
+- `User.SpeedMax`
+
+권장 API:
+
+- `ConfigureRoute(FVector StartWorldLocation, FVector EndWorldLocation)`
+- `ConfigureRouteToCluster(FVector StartWorldLocation, ABeeSwarmClusterActor* ClusterActor)`
+- `GetRouteEndWorldLocation() const`
+
+도착지:
+
+- route spline의 end는 분봉 본진 actor origin이 아니라 `ABeeSwarmClusterActor::GetClusterCenterComponent()` world location 기준으로 잡는다.
+
+## `ABeehive` 변경
+
+역할:
+
+- 외부 BP 테스트용 분봉 시작 API 제공.
+- 벌통 입구 start point와 분봉 본진 target point를 연결한다.
+- 분봉 본진 actor와 route actor를 spawn한다.
+
+권장 구성 추가:
+
+- `SwarmExitPoint` scene component
+
+권장 UPROPERTY:
+
+- `TSubclassOf<ABeeSwarmClusterActor> SwarmClusterActorClass`
+- `TSubclassOf<ABeehiveSwarmRouteActor> SwarmRouteActorClass`
+- `float SwarmClusterInitialAliveRadius`
+- `int32 SwarmClusterSpawnAmount`
+- `float SwarmClusterSphereRadius`
+- `FBeeSplineSwarmAppliedParameters SwarmRouteParameters`
+- `bool bDestroyPreviousTestSwarmOnStart`
+- transient `ActiveSwarmClusterActor`
+- transient `ActiveSwarmRouteActor`
+
+권장 API:
+
+- `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
+- `BeginSwarmingAtActor(AActor* TargetActor)`
+- `ClearActiveTestSwarm(bool bDestroyActors)`
+- `GetActiveSwarmClusterActor() const`
+- `GetActiveSwarmRouteActor() const`
+- `GetSwarmExitPointComponent() const`
+
+권장 BP events:
+
+- `ReceiveSwarmingStarted(ABeeSwarmClusterActor* ClusterActor, ABeehiveSwarmRouteActor* RouteActor)`
+- `ReceiveSwarmingStartFailed`
 
 구현 규칙:
 
-- FocusEngaged 진입/취소, hotbar 선택 clear, cursor/input mode는 기존 anchored cursor 정책을 따른다.
-- source/target slot child actor class는 `AHoneyContainerSlotActor` 기반으로 둔다.
-- source slot role은 `Source`, target slot role은 `Target`으로 설정한다.
-- slot accepted tag query/mesh/material/transform은 BP/details authoring 가능하게 둔다.
-- `RebuildCursorPartFocusDescriptors()`
-- `RebuildItemUseAreaDescriptors()`
-- BeginPlay/OnConstruction에서 transfer component에 source/target slot과 Niagara를 연결한다.
-- table은 transfer 계산을 직접 구현하지 않는다.
+- `BeginSwarmingAtTransform`은 `SwarmClusterActorClass`와 `SwarmRouteActorClass`가 없으면 실패한다.
+- `bDestroyPreviousTestSwarmOnStart=true`이면 기존 active test swarm actors를 destroy 후 새로 spawn한다.
+- cluster spawn transform은 TargetTransform을 사용한다.
+- cluster spawn 직후 `InitializeSwarmCluster`를 호출한다.
+- route start는 `SwarmExitPoint` world location을 사용한다. 없으면 벌통 actor location으로 fallback한다.
+- route end는 cluster center world location을 사용한다.
+- route spawn 후 `ConfigureRoute`와 `ApplyExternalSwarmParameters(SwarmRouteParameters)`를 호출한다.
+- 이번 범위에서는 기존 벌통 상태를 변경하지 않는다.
+  - `ColonyBeeCount` 차감 금지
+  - 기존 `QueenBeeChildActor` detach/move 금지
+  - active comb bee count/target count 변경 금지
+  - bucket subscription 추가 금지
+
+## `UBeeCarrierUseAction`
+
+역할:
+
+- `벌 운반통` 아이템의 hold-use action.
+- 분봉 본진 use-area 위에서 LMB hold 중 cursor drag speed에 비례해 `AliveRadius` 감소량을 증가시킨다.
+
+기반:
+
+- `UHoldItemUseAction`
+
+use-area query:
+
+- `Item.UseArea.SwarmCluster.BeeCarrier`
+
+권장 설정:
+
+- `BaseAliveRadiusDecreasePerSecond`
+- `DragSpeedToAliveRadiusDecreaseScale`
+- `MaxAliveRadiusDecreasePerSecond`
+- `MinDragSpeedForBonus`
+- `DragSpeedSmoothingAlpha`
+
+transient state:
+
+- `bHasLastImpactPoint`
+- `LastImpactPoint`
+- `SmoothedDragSpeedCmPerSecond`
+
+구현 규칙:
+
+- `CanBeginUse`는 super 결과, target cluster 유효성, captured 여부, item-use-area hit context를 확인한다.
+- `ApplyUseEffect`는 `Context.ItemUseEffectTargetObject`를 `ABeeSwarmClusterActor`로 cast한다.
+- `Context.bHasItemUseAreaHit`와 `Context.ItemUseAreaImpactPoint`를 사용한다.
+- mouse deproject/trace를 action 내부에서 다시 수행하지 않는다.
+- 첫 tick 또는 hit point 없음이면 base rate만 적용한다.
+- 이후 tick은 `Distance(ImpactPoint, LastImpactPoint) / DeltaTime`으로 drag speed를 계산한다.
+- bonus speed는 `Max(0, DragSpeed - MinDragSpeedForBonus)`에서 계산한다.
+- 최종 rate:
+
+```cpp
+Rate = BaseAliveRadiusDecreasePerSecond + BonusSpeed * DragSpeedToAliveRadiusDecreaseScale;
+Rate = Clamp(Rate, 0.0f, MaxAliveRadiusDecreasePerSecond);
+DeltaAliveRadius = Rate * DeltaTime;
+```
+
+- `Cluster->DecreaseAliveRadius(DeltaAliveRadius)`가 실제로 값을 줄였을 때 `Result.bSucceeded=true`를 반환한다.
+- item stack, durability, runtime state는 변경하지 않는다.
+- `EndUse`에서 transient drag state를 reset한다.
 
 ## Blueprint/Content 경계
 
-- `Content/` asset은 수정하지 않는다.
-- Niagara asset은 BP/details에서 설정한다.
-- C++은 Niagara component와 parameter 주입 경로만 제공한다.
-- 꿀 용기 mesh, honey visual mesh material, nozzle mesh/hit mesh, slot mesh/material은 BP/details authoring 대상으로 둔다.
-- 새 material parameter 계약:
-  - `HoneyDensity`
-  - `HoneyRipeness`
-- 새 Niagara parameter 계약:
-  - `User.HoneyDensity`
-  - `User.HoneyRipeness`
-  - `User.DropLength`
+수동 BP/Content 작업으로 남길 것:
 
-## Gameplay tag 권장
+- `BP_BeeSwarmClusterActor` 생성 및 `ABeeSwarmClusterActor` parent 지정.
+- cluster 구형 벌떼 Niagara system을 `ClusterNiagara`에 지정.
+- `ClusterNiagara`가 `User.AliveRadius`, `User.SpawnAmount`, `User.SphereRadius`를 사용하도록 asset 설정.
+- cluster capture use-area mesh/material 설정.
+- cluster `FocusAnchor`, `CharacterAnchor`, `ClusterCenter`, queen 위치 authoring.
+- `SwarmQueenBeeActorClass`에 사용할 queen BP 지정.
+- route actor BP에 기존 출근용 spline Niagara asset 지정.
+- `BP_Beehive`에서 `SwarmExitPoint`를 벌통 입구에 배치.
+- `BP_Beehive`에서 `SwarmClusterActorClass`, `SwarmRouteActorClass` 지정.
+- `벌 운반통` item definition에 `UBeeCarrierUseAction` action spec 추가.
+- 외부 테스트 BP에서 `ABeehive::BeginSwarmingAtTransform` 또는 `BeginSwarmingAtActor` 호출.
 
-구현자가 기존 tag authoring 방식에 맞춰 확정한다.
-
-권장 예:
-
-- `Item.HoneyContainer`
-- `Item.HoneyContainer.Source`
-- `Item.HoneyContainer.Target`
-- `Item.UseArea.HoneyTransfer.SourceSlot`
-- `Item.UseArea.HoneyTransfer.TargetSlot`
-
-Config/Content tag asset 수정이 필요하면 구현하지 말고 최종 보고 또는 `.md/USER_UNREAL.md`에 수동 작업으로 적는다.
+`Content/` asset은 구현 에이전트가 수정/저장하지 않는다.
 
 ## 수정하면 안 되는 것
 
-- 기존 UCLASS/USTRUCT/UENUM rename 금지
-- 기존 Blueprint API 삭제/rename 금지
-- `Content/` 에셋 저장 금지
-- `Config/DefaultEngine.ini` CoreRedirect 추가 금지. 이번 작업은 신규 class/struct 추가 중심이어야 한다.
-- `APlacedItemActor`에 꿀 용기 전용 state/nozzle/transfer 기능을 직접 추가하지 않는다.
-- `AHoneyDecantingTable`에 transfer 계산을 하드코딩하지 않는다.
-- `HoneyRipness` 오탈자 parameter를 새 정본으로 만들지 않는다. 정본은 `HoneyRipeness`다.
+- 기존 UCLASS/USTRUCT/UENUM rename 금지.
+- 기존 Blueprint API 삭제/rename 금지.
+- 기존 벌통 여왕벌을 분봉 본진으로 이동시키지 않는다.
+- 기존 벌통 colony population, 소비장 bee count, honey production, disease/aggression 계산을 변경하지 않는다.
+- 자동 분봉 발생 조건을 추가하지 않는다.
+- `벌 운반통` item instance에 포획 벌 수 state를 추가하지 않는다.
+- `Content/` asset 저장 금지.
+- Core Redirect 추가 금지. 이번 작업은 신규 class/API 추가 중심이어야 한다.
 
 ## 문서 반영
 
@@ -397,28 +323,25 @@ Config/Content tag asset 수정이 필요하면 구현하지 말고 최종 보�
 - `.md/0_ARCHITECTURE.md`
   - Source 구조 counts
   - 시스템 간 책임 흐름
-  - 꿀 용기/소분 작업대 요약
-- `.md/Architecture/InventorySystem.md`
-  - `FHoneyContainerItemState`
-  - `UHoneyContainerItemDefinition`
-  - state copy/write-back 주의
+  - 벌통 분봉 테스트 시작 API, 분봉 본진, route actor, 벌 운반통 action 요약
 - `.md/Architecture/WorldActorsSystem.md`
-  - `AHoneyContainerActor`
-  - `AHoneyContainerSlotActor`
-  - `UHoneyTransferComponent`
-  - nozzle/retrieve action
-  - `AHoneyDecantingTable`
+  - `ABeeSwarmClusterActor`
+  - `ABeehiveSwarmRouteActor`
+  - `ABeehive` 분봉 시작 API와 no-colony-mutation 전제
+- `.md/Architecture/InventorySystem.md`
+  - `UBeeCarrierUseAction`
+  - 포획 결과 item state 미저장 전제
 - `.md/Architecture/FocusSystem.md`
-  - 노즐 PartFocus descriptor/toggle 경로
-
-Core Redirect 문서는 신규 추가만이면 갱신하지 않는다.
+  - 분봉 본진 FocusEngaged item-use-area 경로가 기존 generic scope/provider를 사용한다는 점
+- `.md/Architecture/CoreSystem.md`
+  - 신규 추가만이면 Core Redirect 갱신 불필요
 
 ## 검증
 
 공백/패치 검증:
 
 ```powershell
-git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
 ```
 
 UBT 빌드:
@@ -430,35 +353,38 @@ UBT 빌드:
 검색 검증:
 
 ```powershell
-rg -n "HoneyRipness|SourceCan|TargetJar" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+rg -n "BeeCarrierUseAction|BeeSwarmClusterActor|BeehiveSwarmRouteActor|Item.UseArea.SwarmCluster.BeeCarrier" Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
+rg -n "ColonyBeeCount.*Swarm|QueenBeeChildActor.*Swarm|SetColonyBeeCount\\(|DetachFromActor" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
 ```
 
-위 검색은 새 정본에 맞지 않는 이름이 남지 않았는지 확인하기 위한 것이다. QnA의 과거 선택지에만 남는 경우는 허용되지만, 새 구현 코드와 정본 문서에는 남기지 않는다.
+두 번째 검색은 분봉 테스트 시작 경로가 기존 벌통 상태/여왕벌을 직접 변경하지 않는지 확인하기 위한 것이다. 무관한 기존 API 선언/문서 결과는 허용되지만, 새 분봉 시작 로직에서 기존 벌통 여왕벌 이동이나 colony count 차감이 보이면 수정한다.
 
 ## 수동 PIE 확인
 
-1. `BP_HoneyDecantingTable` 또는 해당 BP child에서 source/target slot class와 slot mesh를 설정한다.
-2. source slot에는 source tag를 가진 꿀 용기 item만 배치되는지 확인한다.
-3. target slot에는 target tag를 가진 꿀 용기 item만 배치되는지 확인한다.
-4. source container nozzle hover/click prompt가 표시되는지 확인한다.
-5. 배출 시작 시 source container `HoneyStreamNiagara`가 활성화되고 `HoneyDensity`, `HoneyRipeness`, `DropLength=0`이 적용되는지 확인한다.
-6. `DropLength`가 source stream Z와 target pour target Z 차이까지 증가하는 동안 실제 volume이 이동하지 않는지 확인한다.
-7. 목적값 도달 후 volume이 `TransferRateMlPerSecond`에 맞춰 이동하는지 확인한다.
-8. source empty 또는 target full에서 자동 정지하고 Niagara가 즉시 사라지는지 확인한다.
-9. target에 기존 꿀이 있을 때 volume-weighted average와 density/ripeness invariant가 유지되는지 확인한다.
-10. 배치된 꿀 용기를 회수한 뒤 hotbar item instance에 volume/density/ripeness가 보존되는지 확인한다.
-11. hotbar/storage 이동 후 꿀 용기 state가 보존되는지 확인한다.
-12. 다른 작업대 actor에 `UHoneyTransferComponent`와 source/target slot을 붙여도 같은 이송 규칙을 재사용할 수 있는지 구조적으로 확인한다.
+1. `BP_BeeSwarmClusterActor`에서 cluster Niagara와 capture use-area mesh가 보이는지 확인한다.
+2. cluster Niagara에 `AliveRadius`, `SpawnAmount`, `SphereRadius` 초기값이 적용되는지 확인한다.
+3. cluster center에 별도 여왕벌이 spawn/attach되는지 확인한다.
+4. 외부 BP에서 벌통의 `BeginSwarmingAtTransform`을 호출하면 지정 위치에 cluster가 생성되는지 확인한다.
+5. 벌통 입구 `SwarmExitPoint`에서 cluster center까지 route spline Niagara가 생성되는지 확인한다.
+6. route Niagara가 기존 출근용 spline Niagara asset과 같은 parameter 계약으로 동작하는지 확인한다.
+7. cluster actor를 FocusEngaged할 수 있는지 확인한다.
+8. FocusEngaged 후 `벌 운반통` 선택 시 capture use-area가 표시되는지 확인한다.
+9. LMB hold 상태에서 use-area 위를 천천히 드래그하면 `AliveRadius`가 base rate로 감소하는지 확인한다.
+10. 빠르게 드래그하면 `AliveRadius` 감소 속도가 증가하는지 확인한다.
+11. `AliveRadius <= 0`에서 captured 이벤트가 1회만 발생하고 use-area가 비활성화되는지 확인한다.
+12. 분봉 시작/포획 중 기존 벌통의 `ColonyBeeCount`, 기존 여왕벌 위치, 소비장 벌 수가 변경되지 않는지 확인한다.
 
 ## 최종 보고 요구사항
 
 - 변경 파일
 - 새 UCLASS/USTRUCT/UENUM 목록
 - 추가한 Blueprint/API 계약
-- 꿀 이송 state flow 요약
-- 회수 state write-back 경로
-- `HoneyDensity/HoneyRipeness` invariant 적용 위치
-- Niagara/material parameter 이름
+- 추가한 Gameplay Tag
+- 분봉 시작 flow 요약
+- cluster Niagara parameter 이름
+- route spline Niagara parameter 이름
+- `벌 운반통` drag speed 계산/AliveRadius 감소 방식
+- 기존 벌통 상태를 변경하지 않는 검증 내용
 - 아키텍처 문서 반영 내용
 - 빌드 결과 또는 미수행 사유
 - 필요한 수동 BP/Content 작업 목록
