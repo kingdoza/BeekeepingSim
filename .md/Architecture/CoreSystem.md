@@ -55,3 +55,8 @@ Core Redirect는 Blueprint/asset 직렬화 호환 목적이다. 새 rename을 �
 - legacy 문서나 prompt 파일의 과거 내용이 현재 정본과 충돌하지 않도록 최종 링크를 정리한다.
 - 새 system 간 예외 의존을 추가할 때는 `.md/0_ARCHITECTURE.md`의 의존 방향과 관련 system 문서를 함께 갱신한다.
 - editor-only customization이 runtime module/package 경계나 shipping build에 영향을 주지 않는지 확인한다.
+
+## Update 2026-06-13 (Swarming Test Additions)
+
+- 분봉 테스트 구현은 신규 class/API/gameplay tag 추가만 포함한다.
+- 기존 `UCLASS`/`USTRUCT`/`UENUM` rename 또는 삭제가 없으므로 `Config/DefaultEngine.ini` `[CoreRedirects]` 갱신은 필요 없다.

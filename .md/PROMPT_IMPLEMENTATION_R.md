@@ -1,37 +1,49 @@
-# 구현 수정 프롬프트: 작업대 소비장 BP 이동 Hook 리뷰 Finding
+# 구현 수정 프롬프트: 분봉 테스트 포획 Rate 리뷰 Finding
 
 ## 우선순위
 
-1. Medium: 리뷰 제외 범위인 `Content/` uasset 변경이 작업 트리에 포함됨
+1. Major: `UBeeCarrierUseAction`의 `AliveRadius` 감소 rate가 리뷰 프롬프트의 수식과 다름
 
 ## 발견 문제
 
-### 1. `Content/` 에셋 변경이 포함되어 리뷰 제외 조건과 충돌함
+### 1. 벌 운반통 drag bonus 계산이 요구 수식과 다름
 
 - 대상 파일:
-  - `Content/UncappingTable/BP_UncappingTable.uasset`
-  - `Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/B/TY/CBSCZKPDWZ0EC8SZ1B49HB.uasset`
-- 확인 결과:
-  - `git status --short`에서 위 두 uasset이 modified로 표시된다.
-  - 이번 리뷰 프롬프트는 `Content/` 에셋을 수정 대상에서 제외했다.
-  - C++ hook 자체는 `AUncappingTableCombSlot`에 좁게 추가되어 있지만, 현재 작업 트리 상태로는 "Content 변경 없음" 검증을 통과할 수 없다.
+  - `Source/BeekeepingSim/Public/Inventory/BeeCarrierUseAction.h`
+  - `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
+  - `.md/Architecture/InventorySystem.md`
+- 문제:
+  - 리뷰 프롬프트의 기대 수식은 `Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime`으로 계산한 drag speed를 그대로 bonus rate 계산에 쓰는 형태다.
+  - 현재 구현은 `DragSpeedSmoothingAlpha`로 smoothing한 값에서 `MinDragSpeedForBonus`를 뺀 값을 bonus speed로 사용한다.
 - 영향:
-  - C++ Blueprint hook 변경과 Editor/레벨 asset 변경이 같은 변경 세트에 섞일 수 있다.
-  - BP/레벨 저장 여부가 의도된 수동 작업인지, 실수로 저장된 asset churn인지 리뷰자가 판단할 수 없다.
+  - 느린 드래그/빠른 드래그 포획 속도 차이가 프롬프트의 계산과 다르게 나타난다.
+  - C++ 구현과 `.md/PROMPT_REVIEW.md`의 기대 구현이 불일치한다.
 - 수정 방향:
-  - 이번 C++/문서 변경 세트에서는 위 `Content/` 변경을 제외한다.
-  - 해당 uasset 수정이 의도된 Editor 수동 작업이면 별도 변경 세트로 분리하고, 어떤 BP/레벨 작업을 수행했는지 별도 검증 기록을 남긴다.
-  - 의도치 않은 변경이면 사용자 승인 없이 다른 변경을 되돌리지 말고, 작업자가 직접 정리하거나 명시 승인을 받은 뒤 정리한다.
+  - `ApplyUseEffect`에서 둘째 tick 이후 `DragSpeed = Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime`을 계산한다.
+  - 첫 tick 또는 hit point 없음이면 bonus 없이 base rate만 적용한다.
+  - rate는 아래 수식을 따른다.
+
+```cpp
+Rate = BaseAliveRadiusDecreasePerSecond + BonusSpeed * DragSpeedToAliveRadiusDecreaseScale;
+Rate = Clamp(Rate, 0.0f, MaxAliveRadiusDecreasePerSecond);
+DeltaAliveRadius = Rate * DeltaTime;
+```
+
+  - `BonusSpeed`의 정의가 raw drag speed인지 threshold 적용 값인지 애매하면 구현 전 `.md/QNA_IMPLEMENTATION.md`에 질문한다. 이번 리뷰 프롬프트 기준으로는 smoothing 적용은 제거하는 쪽이 일치한다.
+  - smoothing/threshold를 제거하면 관련 UPROPERTY와 `.md/Architecture/InventorySystem.md` 설명도 함께 정리한다.
 
 ## 검증 방법
 
-- 상태 확인:
-  - `git status --short -- Content`
-- 기대:
-  - C++/문서 리뷰 변경 세트에서는 `Content/` modified 항목이 없어야 한다.
-- UBT:
-  - `BeekeepingSimEditor Win64 Development`
+- 정적 검색:
+  - `rg -n "SmoothedDragSpeed|DragSpeedSmoothingAlpha|MinDragSpeedForBonus|BeeCarrierUseAction" Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory .md/Architecture/InventorySystem.md`
+- 빌드:
+  - `& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE`
+- 수동 PIE:
+  - 첫 tick은 base rate만 적용되는지 확인한다.
+  - 같은 `DeltaTime`에서 더 긴 drag distance가 더 큰 `AliveRadius` 감소량을 만드는지 확인한다.
+  - `AliveRadius`가 실제 감소한 tick에만 action result success가 true인지 확인한다.
 
 ## 문서 반영 필요 여부
 
-- 불필요. `.md/USER_UNREAL.md`에는 `BP_UncappingTableCombSlot`에서 수동으로 구현/compile/save해야 할 작업이 이미 기록되어 있다.
+- 필요.
+- `UBeeCarrierUseAction` rate 계산을 수정하면 `.md/Architecture/InventorySystem.md`의 Bee Carrier Use Action 설명도 동일 수식으로 맞춘다.

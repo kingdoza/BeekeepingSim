@@ -6,6 +6,7 @@
 #include "Environment/GameTimeBucketSubsystem.h"
 #include "Focus/AnchoredFocusCursorActionComponent.h"
 #include "Components/ChildActorComponent.h"
+#include "Engine/World.h"
 #include "NiagaraComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
@@ -19,6 +20,8 @@
 #include "Focus/FocusTargetComponent.h"
 #include "Focus/CursorPartFocusScopeComponent.h"
 #include "WorldActors/BeehiveDualSwarmActor.h"
+#include "WorldActors/BeehiveSwarmRouteActor.h"
+#include "WorldActors/BeeSwarmClusterActor.h"
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/BeehiveCombSlotActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
@@ -145,6 +148,9 @@ ABeehive::ABeehive()
 	SwarmSpline = CreateDefaultSubobject<USplineComponent>(TEXT("SwarmSpline"));
 	SwarmSpline->SetupAttachment(Root);
 
+	SwarmExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SwarmExitPoint"));
+	SwarmExitPoint->SetupAttachment(Root);
+
 	BeehiveSwarmChildActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("BeehiveSwarmChildActor"));
 	BeehiveSwarmChildActor->SetupAttachment(Root);
 
@@ -168,6 +174,8 @@ ABeehive::ABeehive()
 	CombActorClass = ABeehiveCombActor::StaticClass();
 	CombSlotActorClass = ABeehiveCombSlotActor::StaticClass();
 	QueenBeeActorClass = AQueenBeeActor::StaticClass();
+	SwarmClusterActorClass = ABeeSwarmClusterActor::StaticClass();
+	SwarmRouteActorClass = ABeehiveSwarmRouteActor::StaticClass();
 
 	CursorPartFocusScope = CreateDefaultSubobject<UCursorPartFocusScopeComponent>(TEXT("CursorPartFocusScope"));
 	LidPartFocusAction = CreateDefaultSubobject<UCursorPartFocusActionComponent>(TEXT("LidPartFocusAction"));
@@ -235,6 +243,8 @@ void ABeehive::BeginPlay()
 
 void ABeehive::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearActiveTestSwarm(true);
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UGameTimeBucketSubsystem* BucketSubsystem = World->GetSubsystem<UGameTimeBucketSubsystem>())
@@ -256,6 +266,95 @@ void ABeehive::ApplyBeeSwarmHour24(float Hour24)
 	BeeSwarmHour24 = NormalizeHour24(Hour24);
 	ApplySettingsToDualSwarmChildActor();
 	UE_LOG(LogBeekeepingBeeSwarm, Log, TEXT("%s BeeSwarmHour24 set to %f"), *GetName(), BeeSwarmHour24);
+}
+
+bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
+{
+	UWorld* World = GetWorld();
+	if (!World || !SwarmClusterActorClass || !SwarmRouteActorClass)
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	if (bDestroyPreviousTestSwarmOnStart)
+	{
+		ClearActiveTestSwarm(true);
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.Instigator = GetInstigator();
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	ABeeSwarmClusterActor* ClusterActor = World->SpawnActor<ABeeSwarmClusterActor>(
+		SwarmClusterActorClass,
+		TargetTransform,
+		SpawnParameters);
+	if (!ClusterActor)
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	ClusterActor->InitializeSwarmCluster(
+		SwarmClusterInitialAliveRadius,
+		SwarmClusterSpawnAmount,
+		SwarmClusterSphereRadius);
+
+	const FVector RouteStartLocation = ResolveSwarmExitWorldLocation();
+	const USceneComponent* ClusterCenter = ClusterActor->GetClusterCenterComponent();
+	const FVector RouteEndLocation = ClusterCenter ? ClusterCenter->GetComponentLocation() : ClusterActor->GetActorLocation();
+	const FTransform RouteSpawnTransform(FRotator::ZeroRotator, RouteStartLocation);
+
+	ABeehiveSwarmRouteActor* RouteActor = World->SpawnActor<ABeehiveSwarmRouteActor>(
+		SwarmRouteActorClass,
+		RouteSpawnTransform,
+		SpawnParameters);
+	if (!RouteActor)
+	{
+		ClusterActor->Destroy();
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	RouteActor->ConfigureRoute(RouteStartLocation, RouteEndLocation);
+	RouteActor->ApplyExternalSwarmParameters(SwarmRouteParameters);
+
+	ActiveSwarmClusterActor = ClusterActor;
+	ActiveSwarmRouteActor = RouteActor;
+	ReceiveSwarmingStarted(ClusterActor, RouteActor);
+	return true;
+}
+
+bool ABeehive::BeginSwarmingAtActor(AActor* TargetActor)
+{
+	if (!IsValid(TargetActor))
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	return BeginSwarmingAtTransform(TargetActor->GetActorTransform());
+}
+
+void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
+{
+	if (bDestroyActors)
+	{
+		if (IsValid(ActiveSwarmRouteActor))
+		{
+			ActiveSwarmRouteActor->Destroy();
+		}
+
+		if (IsValid(ActiveSwarmClusterActor))
+		{
+			ActiveSwarmClusterActor->Destroy();
+		}
+	}
+
+	ActiveSwarmRouteActor = nullptr;
+	ActiveSwarmClusterActor = nullptr;
 }
 
 void ABeehive::ApplyAttractionSwarmSettings()
@@ -1627,6 +1726,16 @@ void ABeehive::RebuildItemUseAreaDescriptorsIfAvailable()
 	{
 		ItemUseAreaScope->RebuildItemUseAreaDescriptors();
 	}
+}
+
+FVector ABeehive::ResolveSwarmExitWorldLocation() const
+{
+	return SwarmExitPoint ? SwarmExitPoint->GetComponentLocation() : GetActorLocation();
+}
+
+void ABeehive::NotifySwarmingStartFailed()
+{
+	ReceiveSwarmingStartFailed();
 }
 
 void ABeehive::RefreshHiveDiseaseVisuals()

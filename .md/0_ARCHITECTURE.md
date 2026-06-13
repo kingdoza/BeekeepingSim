@@ -3,7 +3,7 @@
 ## 문서 기준
 
 - 기준일: 2026-06-10(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table 반영 후 현재 Source 구조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table, swarming test capture 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 181개
-  - Public header: 100개
-  - Private cpp/header: 81개
+- 현재 대상 C++ 파일 수: 187개
+  - Public header: 103개
+  - Private cpp/header: 84개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -62,9 +62,9 @@ Source/BeekeepingSim/
   - Environment: Public 9 / Private 4
   - Focus: Public 22 / Private 14
   - Interaction: Public 2 / Private 2
-  - Inventory: Public 21 / Private 16
+  - Inventory: Public 22 / Private 17
   - UI: Public 8 / Private 7
-  - WorldActors: Public 32 / Private 32
+  - WorldActors: Public 34 / Private 34
 
 ## 시스템 간 책임 흐름
 
@@ -80,6 +80,9 @@ Source/BeekeepingSim/
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
+- `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeeSwarmClusterActor`와 `ABeehiveSwarmRouteActor`만 spawn한다.
+- `ABeeSwarmClusterActor`는 분봉 본진의 `AliveRadius` source of truth, 구형 Niagara parameter, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유한다.
+- `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor` 기반 runtime 3-point spline route를 구성하고 기존 spline swarm Niagara parameter 계약을 유지한다.
 - `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
 - `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
@@ -125,6 +128,7 @@ Source/BeekeepingSim/
 - 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
 - `ABeehive`와 `AUncappingTable`은 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area host를 구현한다.
 - `AUncappingTable`은 native WorldActor이며 anchored cursor FocusEngaged 상태에서 단일 `AUncappingTableCombSlot` child actor를 통해 소비장 배치/회수/뒤집기/밀도질 use-area를 제공한다.
+- `ABeeSwarmClusterActor`는 generic `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent` 경로로 `Item.UseArea.SwarmCluster.BeeCarrier` 영역을 제공한다.
 - 작업대 empty slot 배치는 `UItemPlacementUseAction` + item-use-area LMB 경로를 사용하고, occupied comb 회수는 `UCombUncappingPartFocusActionComponent`의 PartFocus secondary retrieve bridge가 hotbar state-aware acquire를 사용한다.
 - `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.HoneyComb` use-area에서 LMB hold-use 중 현재 visible face의 capping mask를 원형 brush로 제거한다. 실제 mask pixel이 제거된 tick에만 `bSucceeded=true`를 반환하며 내구도 감소와 채밀/수확은 구현하지 않는다.
 - 작업대 소비장 PartFocus `잡기/놓기` active 상태는 `AUncappingTableCombSlot`이 별도 bool로 소유하며, 잡기 상태에서는 occupied comb capping use-area와 `UCombUncappingUseAction` begin/apply가 비활성화된다.
@@ -134,6 +138,7 @@ Source/BeekeepingSim/
 - 꿀 이송 진행 상태와 규칙은 `UHoneyTransferComponent`가 소유한다. DropLength grow가 목표 길이에 도달한 뒤 volume transfer가 시작되며, target density/ripeness는 volume-weighted average로 혼합된다. 목표 길이는 source container `HoneyStreamNiagara`와 target container/slot `PourTarget`의 world Z 차이로 계산한다.
 - `AHoneyDecantingTable`은 native FocusEngaged 작업대 host이며 source/target slot child actor와 `UHoneyTransferComponent`를 조립하고 이송 계산은 구현하지 않는다.
 - `FItemActionContext`는 item-use-area cursor hit fields(`bHasItemUseAreaHit`, `ItemUseAreaImpactPoint`, `ItemUseAreaImpactNormal`)를 포함하며, `UCursorItemUseAreaScopeComponent`가 hovered descriptor의 trace hit를 context로 전달한다.
+- `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` use-area에서 LMB hold 중 context impact point 이동 속도로 `ABeeSwarmClusterActor::AliveRadius` 감소량을 증가시키며, 포획 결과를 item instance state에 저장하지 않는다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 `AGameTimeOfDayActor`의 24시간 가속 시간과 `ADynamicSky`의 하늘/조명/태양/달 연출을 `ITimeOfDayProvider` 계약으로 분리한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
@@ -358,3 +363,14 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - material parameter 정본은 `HoneyDensity`, `HoneyRipeness`이고 Niagara parameter 정본은 `User.HoneyDensity`, `User.HoneyRipeness`, `User.DropLength`다.
 - 꿀 줄기 Niagara component는 source `AHoneyContainerActor::HoneyStreamNiagara`가 소유한다. `UHoneyTransferComponent`는 active source stream을 제어하고, target length는 `Max(0, SourceStream.Z - TargetPourTarget.Z)`로 계산한다.
 - `UCursorPartFocusActionComponent` primary lifecycle 함수는 C++ subclass가 instant primary action을 구현할 수 있도록 virtual로 열렸다.
+
+## Update 2026-06-13 (Swarming Test Capture)
+
+- 외부 Blueprint가 `ABeehive::BeginSwarmingAtTransform` 또는 `BeginSwarmingAtActor`를 호출해 분봉 테스트를 수동 시작한다.
+- 시작 시 `ABeehive`는 `SwarmExitPoint` world location에서 분봉 본진 center까지 `ABeehiveSwarmRouteActor` route spline을 구성하고 `SwarmRouteParameters`를 `ApplyExternalSwarmParameters`로 주입한다.
+- `ABeeSwarmClusterActor`는 `AliveRadius`, `SpawnAmount`, `SphereRadius`를 source of truth로 소유하고 Niagara user parameter `User.AliveRadius`, `User.SpawnAmount`, `User.SphereRadius`에 적용한다.
+- 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 둔다.
+- `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` hit context의 impact point 이동 속도로 bonus rate를 계산해 `AliveRadius`를 감소시킨다. 포획 결과는 item instance runtime state에 저장하지 않는다.
+- `AliveRadius <= 0`이면 captured로 전환하고 capture use-area를 비활성화한 뒤 descriptor를 rebuild한다. actor destroy, 여왕벌 숨김, 완료 연출은 Blueprint event 영역이다.
+- 이번 분봉 테스트 시작 경로는 `ColonyBeeCount`, 기존 벌통 여왕벌 위치, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 새 GameplayTag: `Item.UseArea.SwarmCluster.BeeCarrier`, `Item.BeeCarrier`.

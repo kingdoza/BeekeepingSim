@@ -20,6 +20,8 @@ class UStaticMeshComponent;
 class UPrimitiveComponent;
 class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
+class ABeehiveSwarmRouteActor;
+class ABeeSwarmClusterActor;
 class ABeehiveCombActor;
 class ABeehiveCombSlotActor;
 class AQueenBeeActor;
@@ -64,6 +66,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Bee Swarm")
 	void ApplyBeeSwarmHour24(float Hour24);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
+	bool BeginSwarmingAtTransform(const FTransform& TargetTransform);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
+	bool BeginSwarmingAtActor(AActor* TargetActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
+	void ClearActiveTestSwarm(bool bDestroyActors);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Swarming Test")
+	ABeeSwarmClusterActor* GetActiveSwarmClusterActor() const { return ActiveSwarmClusterActor; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Swarming Test")
+	ABeehiveSwarmRouteActor* GetActiveSwarmRouteActor() const { return ActiveSwarmRouteActor; }
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Swarming Test")
+	USceneComponent* GetSwarmExitPointComponent() const { return SwarmExitPoint; }
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Attraction Swarm")
 	void ApplyAttractionSwarmSettings();
@@ -204,6 +224,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TObjectPtr<USplineComponent> SwarmSpline;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
+	TObjectPtr<USceneComponent> SwarmExitPoint;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive")
 	bool bIsLidOpen = false;
 
@@ -248,6 +271,27 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm")
 	TSubclassOf<ABeehiveDualSwarmActor> BeeSplineSwarmActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
+	TSubclassOf<ABeeSwarmClusterActor> SwarmClusterActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
+	TSubclassOf<ABeehiveSwarmRouteActor> SwarmRouteActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0"))
+	float SwarmClusterInitialAliveRadius = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0"))
+	int32 SwarmClusterSpawnAmount = 300;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0"))
+	float SwarmClusterSphereRadius = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
+	FBeeSplineSwarmAppliedParameters SwarmRouteParameters;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
+	bool bDestroyPreviousTestSwarmOnStart = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm", meta = (ClampMin = "0"))
 	int32 ColonyBeeCount = 100;
@@ -396,6 +440,12 @@ protected:
 	UPROPERTY(Transient)
 	int32 LastAppliedAttractionSwarmSpawnAmount = INDEX_NONE;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ABeeSwarmClusterActor> ActiveSwarmClusterActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABeehiveSwarmRouteActor> ActiveSwarmRouteActor;
+
 private:
 	static float NormalizeHour24(float Hour24);
 	static float EvaluateActivity(const FBeehiveDirectionalSwarmSettings& Settings, float Hour24);
@@ -419,6 +469,8 @@ private:
 	void RefreshCurrentCombCountFromSlots();
 	void RegisterCombPartsToScope();
 	void RebuildItemUseAreaDescriptorsIfAvailable();
+	FVector ResolveSwarmExitWorldLocation() const;
+	void NotifySwarmingStartFailed();
 	void RefreshHiveDiseaseVisuals();
 	void ApplyDiseaseToCombActors(float DiseaseRatio);
 	void ApplyDiseaseToQueenBee(float DiseaseRatio);
@@ -463,6 +515,12 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Part Focus")
 	void ReceiveCombPartFocusAbort(ABeehiveCombActor* CombActor, ABeekeeperCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
+	void ReceiveSwarmingStarted(ABeeSwarmClusterActor* ClusterActor, ABeehiveSwarmRouteActor* RouteActor);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
+	void ReceiveSwarmingStartFailed();
 
 public:
 	virtual void OnFocusEnter_Implementation(ABeekeeperCharacter* InteractingCharacter) override;

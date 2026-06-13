@@ -13,6 +13,10 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombLiftComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.h`
@@ -78,7 +82,9 @@
 
 ## Key Classes
 
-- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner
+- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner
+- `ABeeSwarmClusterActor`: 분봉 본진 actor. `AliveRadius` capture progress source of truth, cluster Niagara parameters, 별도 queen child actor, FocusEngaged bee-carrier use-area를 소유한다.
+- `ABeehiveSwarmRouteActor`: 벌통 입구에서 분봉 본진 center까지 runtime spline route를 구성하는 `ABeeSplineSwarmActor` subclass. 기존 spline swarm Niagara parameter 계약을 재사용한다.
 - `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
 - `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다. 작업대 comb PartFocus 잡기 상태 source of truth(`bCombPartFocusEngaged`)를 소유하고, 잡기/놓기/강제 종료 Blueprint hook을 제공한다.
@@ -126,6 +132,7 @@
 - `UChildActorComponent` 1개 (`QueenBeeChildActor`)
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
 - `USceneComponent` 1개 (`CombLiftTargetRoot`)
+- `USceneComponent` 1개 (`SwarmExitPoint`)를 분봉 테스트 route start point로 사용한다.
 - `UBeehiveCombLiftComponent` 1개 (`CombLiftComponent`)
 - `UCursorPartFocusScopeComponent` 1개 (`CursorPartFocusScope`)
 - `UCursorPartFocusActionComponent` 1개 (`LidPartFocusAction`)
@@ -134,6 +141,16 @@
 - `UNiagaraComponent` 1개 (`AttractionSwarmNiagara`)
 - `UNiagaraComponent` 1개 (`DiseaseVfxNiagara`)를 직접 소유하며 Niagara System/transform은 BP/Details에서 authoring
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
+- `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterInitialAliveRadius`, `SwarmClusterSpawnAmount`, `SwarmClusterSphereRadius`, `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
+- transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`
+- 분봉 테스트 API:
+  - `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
+  - `BeginSwarmingAtActor(AActor* TargetActor)`
+  - `ClearActiveTestSwarm(bool bDestroyActors)`
+  - `GetActiveSwarmClusterActor()`, `GetActiveSwarmRouteActor()`, `GetSwarmExitPointComponent()`
+- 분봉 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, cluster/route spawn 실패
+- 분봉 시작 성공 flow: 이전 test swarm 정리 옵션 처리 -> cluster spawn -> `InitializeSwarmCluster` -> route spawn -> `ConfigureRoute(SwarmExitPoint, ClusterCenter)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> `ReceiveSwarmingStarted`
+- 분봉 테스트 시작은 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
@@ -328,6 +345,50 @@
 - Niagara Spline Data Interface는 `User.SwarmSpline` Object parameter를 통해 Beehive가 전달한 `SwarmSpline`을 참조한다.
 - `ABeeSplineSwarmActor`는 기존 단일 actor 워크플로우를 유지한다.
 - Spline point 자동 생성/삭제/재배치 기능은 제공하지 않음
+
+### `ABeeSwarmClusterActor`
+
+- 구성:
+  - `Root`
+  - `ClusterCenter`
+  - `ClusterNiagara`
+  - `QueenBeeChildActor`
+  - `CaptureUseAreaMesh`
+  - `FocusAnchor`, `CharacterAnchor` (`ComponentTags`: `FocusAnchor`, `CharacterAnchor`)
+  - `UFocusTargetComponent`
+  - `UAnchoredFocusCursorActionComponent`
+  - `UCursorItemUseAreaScopeComponent`
+  - `UItemUseAreaMeshProviderComponent`
+- `CaptureUseAreaMesh`는 `UItemUseAreaMeshComponent`이며 area tag는 `Item.UseArea.SwarmCluster.BeeCarrier`다.
+- `CaptureUseAreaMesh` effect target은 `ComponentOwner` 정책으로 `ABeeSwarmClusterActor`를 `Context.ItemUseEffectTargetObject`에 전달한다.
+- `AliveRadius`가 capture progress의 source of truth다. `DecreaseAliveRadius`/`SetAliveRadius`는 변경 즉시 `ClusterNiagara` parameter를 갱신한다.
+- cluster Niagara parameter 계약:
+  - `User.AliveRadius` (Float)
+  - `User.SpawnAmount` (Int32)
+  - `User.SphereRadius` (Float)
+- `AliveRadius <= 0.0f`이면 captured로 전환한다. 전환은 1회만 발생하고, `CaptureUseAreaMesh`를 비활성화한 뒤 item-use-area descriptor를 rebuild한다.
+- captured 이후 actor destroy, 여왕벌 숨김, 완료 연출은 `ReceiveSwarmCaptured` Blueprint event에서 처리한다.
+- 여왕벌은 `SwarmQueenBeeActorClass` child actor로 별도 생성하며 기존 벌통 `QueenBeeChildActor`를 이동하거나 재사용하지 않는다.
+- 여왕벌 위치는 `ClusterCenter`에 attach된 `QueenBeeChildActor` relative location `QueenCenterOffset`만 사용한다.
+- Blueprint events:
+  - `ReceiveSwarmClusterInitialized`
+  - `ReceiveAliveRadiusChanged(float NewAliveRadius)`
+  - `ReceiveSwarmCaptured`
+
+### `ABeehiveSwarmRouteActor`
+
+- `ABeeSplineSwarmActor` subclass다.
+- `ConfigureRoute(StartWorldLocation, EndWorldLocation)`는 actor location을 start로 맞추고 local 3-point spline arc(start/mid/end)를 구성한다.
+- mid point는 `(Start + End) * 0.5 + FVector(0, 0, RouteMidPointHeightOffset)`다.
+- `ConfigureRouteToCluster`는 end location을 `ABeeSwarmClusterActor::GetClusterCenterComponent()` world location으로 잡는다.
+- route Niagara parameter 계약은 기존 `ABeeSplineSwarmActor::ApplyExternalSwarmParameters`와 같다.
+  - `User.SwarmSpline`
+  - `User.SplineLength`
+  - `User.StartShapeExtent`
+  - `User.EndShapeExtent`
+  - `User.SpawnAmount`
+  - `User.SpeedMin`
+  - `User.SpeedMax`
 
 ### `ABeehiveCombActor`
 
@@ -758,3 +819,23 @@
   - native anchored cursor FocusEngaged 작업대
   - source/target slot child actor를 transfer component에 연결
 - 이번 범위에서 Content/Niagara asset은 수정하지 않는다. BP child에서 mesh/material/Niagara system/tag query를 authoring한다.
+
+## Update 2026-06-13 (Swarming Test Cluster + Route)
+
+- `ABeeSwarmClusterActor`를 추가했다.
+  - 분봉 본진 actor이며 FocusEngaged host다.
+  - `AliveRadius`가 포획 진행 source of truth이고 `User.AliveRadius`에 즉시 반영된다.
+  - 별도 `SwarmQueenBeeActorClass` child actor를 cluster center에 유지한다.
+  - `Item.UseArea.SwarmCluster.BeeCarrier` capture use-area를 generic mesh provider 경로로 제공한다.
+- `ABeehiveSwarmRouteActor`를 추가했다.
+  - `ABeeSplineSwarmActor`를 상속하고 runtime start/mid/end spline route를 구성한다.
+  - route end는 분봉 본진 actor origin이 아니라 cluster center component world location이다.
+- `ABeehive`에 외부 Blueprint 테스트용 분봉 시작 API를 추가했다.
+  - `BeginSwarmingAtTransform`, `BeginSwarmingAtActor`, `ClearActiveTestSwarm`
+  - 시작 성공 event: `ReceiveSwarmingStarted`
+  - 시작 실패 event: `ReceiveSwarmingStartFailed`
+- 분봉 테스트 시작은 기존 벌통 상태를 변경하지 않는다.
+  - `ColonyBeeCount` 차감 없음
+  - 기존 `QueenBeeChildActor` detach/move 없음
+  - active comb bee count/target count 변경 없음
+  - 자동 분봉 조건 및 bucket subscription 추가 없음

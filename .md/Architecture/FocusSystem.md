@@ -108,6 +108,7 @@
 ## FocusEngaged Item Use Area Design
 
 - Item-use area는 벌통 전용이 아니라 FocusEngaged host actor가 선택적으로 제공하는 generic 기능으로 설계한다.
+- 분봉 본진(`ABeeSwarmClusterActor`)도 별도 전용 Focus 경로를 만들지 않고 이 generic item-use-area scope/provider 계약을 사용한다.
 - Generic naming 기준:
   - `UCursorItemUseAreaScopeComponent`
   - `FItemUseAreaDescriptor`
@@ -385,3 +386,11 @@
 - 꿀 용기 source slot의 nozzle descriptor는 `AHoneyContainerActor`가 소유한 `UHoneyNozzlePartFocusActionComponent`를 action handler로 사용한다.
 - nozzle action은 concrete `AHoneyDecantingTable`을 cast하지 않고, owning placement slot의 attach parent/host에서 `UHoneyTransferComponent`를 찾아 transfer toggle을 요청한다.
 - nozzle prompt availability와 실제 toggle은 같은 transfer-context resolve helper를 공유한다.
+
+## Update 2026-06-13 (Swarm Cluster Item Use Area)
+
+- `ABeeSwarmClusterActor`는 `UFocusTargetComponent` + `UAnchoredFocusCursorActionComponent`로 FocusEngaged host가 된다.
+- 분봉 본진의 벌 운반통 사용영역은 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent` + `UItemUseAreaMeshComponent` 기존 generic 경로로 제공한다.
+- area tag는 `Item.UseArea.SwarmCluster.BeeCarrier`이며, effect target은 `UItemUseAreaMeshComponent`의 `ComponentOwner` 정책으로 `ABeeSwarmClusterActor`가 된다.
+- captured 상태에서는 cluster actor의 `IItemUseAreaActivationProvider`/component enabled 상태가 use-area를 비활성화하고 descriptor rebuild가 hover/use 대상에서 제거한다.
+- `UBeeCarrierUseAction`은 cursor trace를 직접 반복하지 않고 `FItemActionContext`의 item-use-area hit fields를 사용한다.
