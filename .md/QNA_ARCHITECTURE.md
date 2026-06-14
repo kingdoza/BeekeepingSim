@@ -7,8 +7,92 @@
 - 분봉 시작 시 기존 벌통의 `ColonyBeeCount`, 기존 `QueenBeeChildActor`, 소비장 벌 수/target count는 변경하지 않는다.
 - 분봉 본진의 여왕벌은 기존 벌통 여왕벌을 이동하지 않고, 분봉 본진 actor가 별도 spawn/child actor로 소유한다.
 - `벌 운반통` 포획 결과는 `UItemInstance` optional `FBeeCarrierItemState`로 저장한다. 분봉 본진 포획 진행 source of truth는 벌 수(`CapturedBeeAmount` 또는 `RemainingBeeAmount`)이며, `AliveRadius`는 구 부피 공식으로 파생해 Niagara에 주입한다.
+- 모든 여왕벌은 `왕롱` 아이템으로 포획할 수 있다. 왕롱은 `UItemInstance` optional `FQueenCageItemState`로 여왕벌 0/1마리 상태만 저장하며 `MaxStack=1` invariant를 가진다.
+- 분봉 본진 완료는 벌 포획과 여왕벌 포획이 모두 끝났을 때만 성립한다. 벌만 전부 포획된 상태는 BeeCarrier use-area를 닫지만, `ReceiveSwarmCaptured` 같은 최종 완료 이벤트는 여왕벌까지 포획된 뒤 발생해야 한다.
 
 ## 미해결 질문
+
+### [왕롱 여왕벌 포획]
+
+1. 왕롱 item state 저장 모델
+- 질문 내용: `왕롱`이 포획한 여왕벌을 inventory item에 어떤 형태로 저장할 것인가?
+- 필요한 이유: 왕롱은 월드 actor reference가 아니라 hotbar/storage 이동 후에도 유지되는 item runtime state를 가져야 한다. 또한 왕롱은 무조건 여왕벌 1마리만 담을 수 있다.
+- 선택지
+  - 옵션 A: `UItemInstance`에 optional `FQueenCageItemState`를 추가하고, `UQueenCageItemDefinition`은 `MaxStack=1`을 강제한다. state에는 `bHasQueen`, `CapturedQueenBeeClass`, 최소 queen stat만 저장한다.
+  - 옵션 B: 왕롱 actor/presentation에만 여왕벌 reference를 저장한다.
+  - 옵션 C: 왕롱 포획을 item state 없이 즉시 다른 월드 actor spawn으로 처리한다.
+- 권장 옵션: 옵션 A. 꿀 용기/BeeCarrier와 같은 optional runtime state 패턴이고, inventory 이동/저장 후에도 상태 보존이 가능하다.
+- 답변: 옵션 A. `FQueenCageItemState`를 `UItemInstance` optional runtime state로 추가하고, 왕롱 item은 `UQueenCageItemDefinition` 기반 `MaxStack=1` item으로 다룬다. 왕롱은 `bHasQueen=false/true`만으로 비어 있음/가득 참을 표현하며 2마리 이상은 허용하지 않는다.
+
+2. 왕롱에 저장할 여왕벌 정보 범위
+- 질문 내용: 포획 시 여왕벌의 어떤 정보를 왕롱 state에 저장할 것인가?
+- 필요한 이유: actor reference를 저장하면 월드 actor 제거, 저장/로드, hotbar/storage 이동에서 깨질 수 있다. 반대로 모든 actor state를 저장하면 아직 사용처 없는 복잡도가 커진다.
+- 선택지
+  - 옵션 A: 최소 runtime state만 저장한다. `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`, `bHasQueen`을 저장하고 actor reference는 저장하지 않는다.
+  - 옵션 B: `AQueenBeeActor*` reference를 item state에 저장한다.
+  - 옵션 C: 여왕벌 class만 저장하고 산란력/질병값은 기본값으로 재생성한다.
+- 권장 옵션: 옵션 A. 현재 여왕벌 gameplay state를 보존하면서도 월드 actor lifetime에 의존하지 않는다.
+- 답변: 옵션 A. 왕롱에는 actor reference를 저장하지 않고 `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`, `bHasQueen` 중심의 최소 state를 저장한다.
+
+3. 여왕벌 item-use-area 위치
+- 질문 내용: 여왕벌 포획용 item-use-area mesh는 어디에 둘 것인가?
+- 필요한 이유: 벌통 여왕벌과 분봉 본진 여왕벌 모두 `AQueenBeeActor` child actor로 존재한다. 공통 위치에 둬야 모든 여왕벌이 같은 왕롱 포획 경로를 사용할 수 있다.
+- 선택지
+  - 옵션 A: `AQueenBeeActor`에 `QueenCageUseAreaMesh`를 추가하고 `QueenBeeMesh` 하위에 attach한다. area tag는 `Item.UseArea.QueenBee.QueenCage`, effect target은 `ComponentOwner`로 둔다.
+  - 옵션 B: `ABeehive`와 `ABeeSwarmClusterActor`가 각각 별도 queen capture use-area를 소유한다.
+  - 옵션 C: cursor trace로 여왕벌 mesh를 직접 hit test하고 item-use-area provider는 사용하지 않는다.
+- 권장 옵션: 옵션 A. 모든 여왕벌 actor가 같은 포획 영역을 제공하고, 기존 item-use-area scope/provider 경로를 재사용할 수 있다.
+- 답변: 옵션 A. `QueenCageUseAreaMesh`는 `AQueenBeeActor` 내부에서 생성하며 `QueenBeeMesh` 하위에 attach한다.
+
+4. 포획 처리 owner
+- 질문 내용: 왕롱 action이 여왕벌 actor를 직접 제거할 것인가, 여왕벌을 소유한 host가 제거/상태 변경을 처리할 것인가?
+- 필요한 이유: 벌통 여왕벌은 `ABeehive`의 산란/위치 갱신 상태와 연결되고, 분봉 본진 여왕벌은 분봉 완료 조건과 연결된다. 단순 actor destroy만 하면 host 상태와 재생성 경로가 어긋날 수 있다.
+- 선택지
+  - 옵션 A: `IQueenBeeCaptureSource` 인터페이스를 추가하고 `ABeehive`, `ABeeSwarmClusterActor`가 구현한다. `AQueenBeeActor`는 포획 대상/use-area와 export state만 제공하고, 실제 포획 가능 여부와 host mutation은 source host가 처리한다.
+  - 옵션 B: `UQueenCageUseAction`이 target queen actor를 직접 destroy한다.
+  - 옵션 C: `AQueenBeeActor`가 자신의 owner를 직접 cast해 host 상태를 변경한다.
+- 권장 옵션: 옵션 A. 여왕벌 공통 포획 경로를 유지하면서 host별 domain state를 각 owner가 책임진다.
+- 답변: 옵션 A. `IQueenBeeCaptureSource`를 두고 `ABeehive`, `ABeeSwarmClusterActor`가 여왕벌 제거/비활성화와 host 상태 변경을 담당한다.
+
+5. 포획 입력 방식
+- 질문 내용: 왕롱 사용은 hold/progress 방식인가, 유효 영역 위에서 즉시 포획인가?
+- 필요한 이유: BeeCarrier는 drag speed/rate가 필요하지만 왕롱은 1마리 단위 포획이라 rate 모델이 과하다.
+- 선택지
+  - 옵션 A: 왕롱 active 상태에서 유효 여왕벌 item-use-area 위 LMB 적용 시 즉시 1회 포획한다.
+  - 옵션 B: 일정 시간 hold progress를 채워야 포획한다.
+  - 옵션 C: BeeCarrier처럼 cursor drag speed에 따라 포획 progress가 증가한다.
+- 권장 옵션: 옵션 A. 요구사항이 1마리 포획이고 왕롱 capacity가 1이므로 단순한 1회 성공 action이 충분하다.
+- 답변: 옵션 A. 왕롱은 drag/rate/progress 없이 유효 여왕벌 영역 위에서 즉시 1회 포획한다.
+
+6. 왕롱이 이미 찬 경우
+- 질문 내용: 이미 여왕벌이 든 왕롱으로 다른 여왕벌을 포획하려 하면 어떻게 처리할 것인가?
+- 필요한 이유: 왕롱은 무조건 한 마리만 포획할 수 있어 overwrite/swap/drop 정책을 정해야 한다.
+- 선택지
+  - 옵션 A: 사용 불가로 처리한다. overwrite, swap, 방출은 이번 범위 제외다.
+  - 옵션 B: 기존 여왕벌 state를 새 여왕벌로 덮어쓴다.
+  - 옵션 C: 기존 여왕벌을 월드에 방출하고 새 여왕벌을 포획한다.
+- 권장 옵션: 옵션 A. capacity invariant가 단순하고, 방출/교체 UX는 별도 기능으로 설계하는 편이 안전하다.
+- 답변: 옵션 A. `bHasQueen=true`인 왕롱은 추가 포획을 시작/적용할 수 없다.
+
+7. 벌통 여왕벌 포획 후 벌통 상태
+- 질문 내용: 벌통의 기존 `QueenBeeChildActor`가 포획되면 벌통 gameplay state는 어떻게 바뀌는가?
+- 필요한 이유: 현재 `ABeehive`는 queen child actor를 산란력 계산과 위치 갱신에 사용한다. 포획 후에도 `EnsureQueenBeeChildActorClass`가 다시 생성하면 포획 상태가 무효가 된다.
+- 선택지
+  - 옵션 A: `ABeehive`에 `bHasQueenBee`를 추가한다. 포획 성공 시 false로 바꾸고 queen child를 제거/숨김 처리한다. `CalculateBeeIncreaseAmount()`는 0, `UpdateQueenBeeLocation()`은 no-op, `IsQueenBeeAttachedToComb()`은 false가 된다. `ColonyBeeCount`와 소비장 벌 수는 즉시 변경하지 않는다.
+  - 옵션 B: queen actor만 destroy하고 기존 벌통 로직은 그대로 둔다.
+  - 옵션 C: 여왕벌 포획 즉시 colony bee count와 모든 comb target bee count를 감소시킨다.
+- 권장 옵션: 옵션 A. 여왕벌 없음 상태를 명시하고 기존 colony/comb state를 즉시 훼손하지 않는다.
+- 답변: 옵션 A. 벌통은 `bHasQueenBee=false` 상태를 source of truth로 갖고, 여왕벌이 없으면 산란/위치 갱신/소비장 부착 판정을 비활성화한다.
+
+8. 분봉 본진 여왕벌 포획 후 완료 조건
+- 질문 내용: 분봉 본진은 벌만 모두 포획하면 완료인가, 여왕벌까지 포획해야 완료인가?
+- 필요한 이유: 기존 분봉 본진 구현/문서는 `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수 0을 captured 완료 조건으로 설명한다. 사용자는 분봉 본진은 여왕벌까지 잡아야 끝난다고 확정했다.
+- 선택지
+  - 옵션 A: 분봉 본진 최종 완료 조건은 `AllBeesCaptured && bQueenCaptured`다. 벌만 모두 포획되면 BeeCarrier use-area와 `AliveRadius`는 완료 상태가 되지만, `bCaptured`/`ReceiveSwarmCaptured` 같은 최종 완료는 여왕벌 포획 후 발생한다.
+  - 옵션 B: 벌만 모두 포획하면 완료하고 여왕벌 포획은 선택 보너스로 둔다.
+  - 옵션 C: 여왕벌만 포획하면 벌 포획 여부와 무관하게 완료한다.
+- 권장 옵션: 옵션 A. BeeCarrier 벌 포획과 왕롱 여왕벌 포획을 독립 진행으로 유지하면서, 분봉 회수 완료 판정은 둘 다 끝난 뒤로 명확해진다.
+- 답변: 옵션 A. `ABeeSwarmClusterActor`는 벌 전량 포획 상태와 여왕벌 포획 상태를 분리해서 추적하고, 분봉 본진 최종 captured/완료 이벤트는 벌과 여왕벌이 모두 포획된 뒤에만 발생한다.
 
 ### [BeeCarrier 분봉 포획 상태]
 
