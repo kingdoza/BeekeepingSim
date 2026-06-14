@@ -27,6 +27,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive Swarm Route")
 	float RouteMidPointHeightOffset = 120.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive Swarm Route", meta = (ClampMin = "0.0"))
+	float ForwardLeadDistance = 150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive Swarm Route", meta = (ClampMin = "1.0"))
+	float AutoMiddlePointSpacing = 300.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive Swarm Route", meta = (ClampMin = "1"))
+	int32 MaxAutoMiddlePointCount = 11;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Beehive Swarm Route")
 	FVector RouteEndWorldLocation = FVector::ZeroVector;
+
+private:
+	int32 CalculateAutoMiddlePointCount(float LeadToEndDistance) const;
+	void BuildAutoRouteSplinePoints(const FVector& StartWorldLocation, const FVector& EndWorldLocation, TArray<FVector>& OutWorldPoints) const;
 };

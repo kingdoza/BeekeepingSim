@@ -378,8 +378,10 @@
 ### `ABeehiveSwarmRouteActor`
 
 - `ABeeSplineSwarmActor` subclass다.
-- `ConfigureRoute(StartWorldLocation, EndWorldLocation)`는 actor location을 start로 맞추고 local 3-point spline arc(start/mid/end)를 구성한다.
-- mid point는 `(Start + End) * 0.5 + FVector(0, 0, RouteMidPointHeightOffset)`다.
+- `ConfigureRoute(StartWorldLocation, EndWorldLocation)`는 actor location을 start로 맞추고 `Start -> ForwardLeadPoint -> 자동 중간점들 -> End` spline arc를 구성한다.
+- `ForwardLeadPoint`는 route actor forward 방향으로 `ForwardLeadDistance`만큼 앞선 점이며, `ABeehive`는 route actor spawn rotation을 `SwarmExitPoint` rotation으로 맞춘다.
+- 자동 중간점 수는 `AutoMiddlePointSpacing` 기반 segment count에서 계산하고, `MaxAutoMiddlePointCount`로 clamp한 뒤 항상 홀수로 보정한다.
+- 자동 중간점 높이는 `Sin(Alpha * PI) * RouteMidPointHeightOffset`으로 계산한다. 홀수 중간점의 중앙 index는 `Alpha == 0.5`라서 중앙점 1개만 `RouteMidPointHeightOffset`에 도달한다.
 - `ConfigureRouteToCluster`는 end location을 `ABeeSwarmClusterActor::GetClusterCenterComponent()` world location으로 잡는다.
 - route Niagara parameter 계약은 기존 `ABeeSplineSwarmActor::ApplyExternalSwarmParameters`와 같다.
   - `User.SwarmSpline`
@@ -828,7 +830,7 @@
   - 별도 `SwarmQueenBeeActorClass` child actor를 cluster center에 유지한다.
   - `Item.UseArea.SwarmCluster.BeeCarrier` capture use-area를 generic mesh provider 경로로 제공한다.
 - `ABeehiveSwarmRouteActor`를 추가했다.
-  - `ABeeSplineSwarmActor`를 상속하고 runtime start/mid/end spline route를 구성한다.
+  - `ABeeSplineSwarmActor`를 상속하고 runtime 거리 기반 자동 중간점 spline route를 구성한다.
   - route end는 분봉 본진 actor origin이 아니라 cluster center component world location이다.
 - `ABeehive`에 외부 Blueprint 테스트용 분봉 시작 API를 추가했다.
   - `BeginSwarmingAtTransform`, `BeginSwarmingAtActor`, `ClearActiveTestSwarm`

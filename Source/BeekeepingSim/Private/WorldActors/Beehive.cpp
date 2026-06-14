@@ -302,10 +302,11 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 		SwarmClusterSpawnAmount,
 		SwarmClusterSphereRadius);
 
-	const FVector RouteStartLocation = ResolveSwarmExitWorldLocation();
+	const FTransform RouteStartTransform = SwarmExitPoint ? SwarmExitPoint->GetComponentTransform() : GetActorTransform();
+	const FVector RouteStartLocation = RouteStartTransform.GetLocation();
 	const USceneComponent* ClusterCenter = ClusterActor->GetClusterCenterComponent();
 	const FVector RouteEndLocation = ClusterCenter ? ClusterCenter->GetComponentLocation() : ClusterActor->GetActorLocation();
-	const FTransform RouteSpawnTransform(FRotator::ZeroRotator, RouteStartLocation);
+	const FTransform RouteSpawnTransform(RouteStartTransform.GetRotation(), RouteStartLocation);
 
 	ABeehiveSwarmRouteActor* RouteActor = World->SpawnActor<ABeehiveSwarmRouteActor>(
 		SwarmRouteActorClass,

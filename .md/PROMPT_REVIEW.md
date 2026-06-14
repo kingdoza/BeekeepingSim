@@ -1,131 +1,127 @@
-# 분봉 테스트 기능 리뷰 프롬프트
+# ABeehiveSwarmRouteActor Spline 자동 중간점 리뷰 프롬프트
 
 ## 리뷰 목표
 
-이번 리뷰는 외부 Blueprint 호출로 벌통 분봉 테스트를 시작하고, 분봉 본진에서 벌 운반통 hold-use로 `AliveRadius`를 감소시키는 C++ 구현만 검토한다.
+이번 리뷰는 이미 구현된 분봉 테스트 기능 중 `ABeehiveSwarmRouteActor` route spline 생성 개선만 검토한다.
 
-이번 범위 제외:
+검토 대상은 고정 start/mid/end 3-point route를 거리 기반 자동 중간점 route로 바꾼 C++ 변경과, route actor spawn rotation을 `SwarmExitPoint` rotation으로 맞춘 `ABeehive` 변경이다.
 
+이번 리뷰 범위에서 제외한다.
+
+- `ABeeSwarmClusterActor` 신규/중복 구현 여부가 아닌 기존 동작 전체 재검토
+- `UBeeCarrierUseAction` 포획 rate, item state, Focus 경로
 - 자동 분봉 발생 조건
-- colony simulation 반영
-- 포획 결과 inventory 저장
-- `Content/` asset 수정/저장
+- colony/queen/comb simulation 반영
+- `Content/` asset 설정/저장
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_REVIEW.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/QNA_ARCHITECTURE.md`
-- `.md/QNA_IMPLEMENTATION.md`
 - `.md/Architecture/CoreSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/InventorySystem.md`
+- `.md/PROMPT_IMPLEMENTATION.md`
 
 ## 리뷰 대상 파일
 
 Source:
 
-- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/Inventory/BeeCarrierUseAction.h`
-- `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
 
-Config/docs:
+Docs:
 
-- `Config/DefaultGameplayTags.ini`
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/FocusSystem.md`
-- `.md/Architecture/CoreSystem.md`
 - `.md/PROMPT_REVIEW.md`
 
 ## 기대 구현
 
-### 1. 분봉 본진 actor
+### 1. Route actor API/UPROPERTY
 
-- `ABeeSwarmClusterActor`는 FocusEngaged host여야 한다.
-- `UFocusTargetComponent`, `UAnchoredFocusCursorActionComponent`, `UCursorItemUseAreaScopeComponent`, `UItemUseAreaMeshProviderComponent`를 사용해야 한다.
-- `CaptureUseAreaMesh`는 `UItemUseAreaMeshComponent`이고 tag는 `Item.UseArea.SwarmCluster.BeeCarrier`여야 한다.
-- effect target은 `ABeeSwarmClusterActor`로 resolve되어야 한다.
-- `AliveRadius`가 포획 진행 source of truth여야 한다.
-- `AliveRadius`, `SpawnAmount`, `SphereRadius`가 Niagara parameter에 즉시 반영되어야 한다.
-- `AliveRadius <= 0` captured 전환은 1회만 발생해야 한다.
-- captured 후 use-area는 비활성화되고 descriptors가 rebuild되어야 한다.
-- 기존 벌통 여왕벌을 이동/재사용하지 않고, 분봉 본진이 별도 queen child actor를 소유해야 한다.
+- 기존 `ABeehiveSwarmRouteActor` class를 유지해야 한다.
+- 새 route actor class를 추가하지 않아야 한다.
+- 기존 `RouteMidPointHeightOffset` 이름을 변경하지 않아야 한다.
+- 기존 public Blueprint API인 `ConfigureRoute`, `ConfigureRouteToCluster`, `GetRouteEndWorldLocation`을 삭제/rename하지 않아야 한다.
+- 다음 tuning property가 Blueprint에서 조정 가능해야 한다.
+  - `ForwardLeadDistance`
+  - `AutoMiddlePointSpacing`
+  - `MaxAutoMiddlePointCount`
 
-### 2. route actor
+### 2. 거리 기반 자동 중간점 계산
 
-- `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor`를 상속해야 한다.
-- runtime spline은 start/mid/end 3-point arc로 구성되어야 한다.
-- route end는 cluster actor origin이 아니라 `GetClusterCenterComponent()` world location이어야 한다.
-- 기존 spline Niagara parameter 계약을 유지해야 한다.
+- `ConfigureRoute(StartWorldLocation, EndWorldLocation)`는 actor location을 start로 맞춰야 한다.
+- route world point 순서는 다음이어야 한다.
+  - `P0 = StartWorldLocation`
+  - `P1 = StartWorldLocation + GetActorForwardVector() * ForwardLeadDistance`
+  - `A0..An = P1`과 `EndWorldLocation` 사이의 자동 중간점
+  - `Pend = EndWorldLocation`
+- 자동 중간점 개수는 최소 1개여야 한다.
+- 자동 중간점 개수는 항상 홀수여야 한다.
+- `AutoMiddlePointSpacing`은 최소 1.0으로 방어되어야 한다.
+- `MaxAutoMiddlePointCount` clamp 후에도 홀수 보정이 유지되어야 한다.
 
-### 3. 벌통 테스트 시작 API
+### 3. 중앙점 높이 invariant
 
-- `ABeehive::BeginSwarmingAtTransform`와 `BeginSwarmingAtActor`가 BlueprintCallable이어야 한다.
-- class/world/spawn 실패 시 false 반환과 `ReceiveSwarmingStartFailed` event가 있어야 한다.
-- 성공 시 cluster spawn, initialize, route spawn, configure, external parameter 적용 후 `ReceiveSwarmingStarted` event가 호출되어야 한다.
-- `bDestroyPreviousTestSwarmOnStart=true`면 이전 active test swarm actors를 destroy해야 한다.
-- `ClearActiveTestSwarm`은 destroy 여부를 명시적으로 처리해야 한다.
-- `EndPlay`에서 active test swarm cleanup이 누락되지 않았는지 확인한다.
-
-### 4. 기존 벌통 상태 무변경
-
-분봉 테스트 시작 경로에서 아래가 없어야 한다.
-
-- `ColonyBeeCount` 차감 또는 `SetColonyBeeCount` 호출
-- 기존 `QueenBeeChildActor` detach/move/reparent
-- active comb spawn/target bee count 변경
-- 새 time bucket subscription
-- 자동 분봉 조건 추가
-
-### 5. 벌 운반통 action
-
-- `UBeeCarrierUseAction`은 `UHoldItemUseAction` 기반이어야 한다.
-- use-area query는 `Item.UseArea.SwarmCluster.BeeCarrier`여야 한다.
-- `CanBeginUse`는 super, target cluster 유효성, captured 여부, item-use-area hit context를 확인해야 한다.
-- action 내부에서 mouse deproject/trace를 다시 수행하지 않아야 한다.
-- drag speed는 `Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime`이어야 한다.
-- 첫 tick 또는 hit point 없음은 base rate만 적용해야 한다.
-- rate 공식:
+자동 중간점 높이는 아래 형태여야 한다.
 
 ```cpp
-Rate = BaseAliveRadiusDecreasePerSecond + BonusSpeed * DragSpeedToAliveRadiusDecreaseScale;
-Rate = Clamp(Rate, 0.0f, MaxAliveRadiusDecreasePerSecond);
-DeltaAliveRadius = Rate * DeltaTime;
+Alpha = static_cast<float>(Index + 1) / static_cast<float>(AutoMiddlePointCount + 1);
+HeightRatio = FMath::Sin(Alpha * UE_PI);
+Point = Base + FVector::UpVector * RouteMidPointHeightOffset * HeightRatio;
 ```
 
-- `DecreaseAliveRadius`가 실제 감소를 만든 tick에만 `bSucceeded=true`여야 한다.
-- item stack, durability, item runtime state를 변경하지 않아야 한다.
-- `EndUse`에서 drag transient state를 reset해야 한다.
+리뷰에서 확인할 invariant:
 
-## Gameplay Tag
+- `AutoMiddlePointCount`가 홀수이면 중앙 index는 `AutoMiddlePointCount / 2`다.
+- 중앙 index의 `Alpha`는 정확히 `0.5f`다.
+- 중앙 index의 `HeightRatio`는 `1.0f`다.
+- 따라서 자동 중간점 중 중앙점 1개만 `RouteMidPointHeightOffset` 높이에 도달해야 한다.
+- 양쪽 중간점은 `sin(alpha * pi)` 곡선으로 대칭에 가깝게 올라갔다 내려가야 한다.
 
-신규 tag만 추가되어야 한다.
+### 4. Spline 적용
 
-- `Item.UseArea.SwarmCluster.BeeCarrier`
-- `Item.BeeCarrier`
+- spline point 계산은 world space에서 수행해야 한다.
+- `SwarmSpline`에 넣을 때는 route actor local space로 변환해야 한다.
+- 첫 point는 actor location과 같으므로 local zero여야 한다.
+- 나머지는 `GetActorTransform().InverseTransformPosition(WorldPoint)` 경로를 사용해야 한다.
+- 모든 spline point는 `ESplinePointType::Curve`로 설정해야 한다.
+- point 추가 후 `SwarmSpline->UpdateSpline()`과 `ApplySplineLengthParameter()`가 호출되어야 한다.
+- 기존 Niagara parameter 계약인 `User.SwarmSpline`, `User.SplineLength` 갱신 흐름을 깨지 않아야 한다.
 
-기존 tag rename/redirect 또는 Core Redirect 추가가 있으면 문제로 본다.
+### 5. Beehive route spawn rotation
 
-## 권장 검색
+- `ABeehive::BeginSwarmingAtTransform`에서 route actor spawn transform은 `SwarmExitPoint` transform을 기준으로 해야 한다.
+- `SwarmExitPoint`가 있으면 location과 rotation을 모두 사용해야 한다.
+- `SwarmExitPoint`가 없으면 `GetActorTransform()` fallback을 사용해야 한다.
+- route actor의 `GetActorForwardVector()`가 첫 lead 방향으로 쓰이므로 `FRotator::ZeroRotator` 고정 spawn이면 문제로 본다.
+- route end는 계속 cluster actor origin이 아니라 `ClusterCenter` world location이어야 한다.
+
+### 6. 변경 금지 사항
+
+이번 route 개선에서 아래 변경이 보이면 문제로 본다.
+
+- `ABeeSwarmClusterActor` 중복 구현 또는 불필요한 동작 변경
+- `UBeeCarrierUseAction` 수정
+- 새 Focus 경로 추가
+- 기존 UCLASS/UFUNCTION/UPROPERTY rename
+- Core Redirect 추가
+- `Content/` asset 수정
+- 분봉 시작 시 `ColonyBeeCount`, 기존 벌통 `QueenBeeChildActor`, active comb bee count/target count 변경
+
+## 권장 검색 검증
 
 ```powershell
-rg -n "BeeCarrierUseAction|BeeSwarmClusterActor|BeehiveSwarmRouteActor|Item.UseArea.SwarmCluster.BeeCarrier" Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
-rg -n "ColonyBeeCount.*Swarm|QueenBeeChildActor.*Swarm|SetColonyBeeCount\\(|DetachFromActor" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
-rg -n "CoreRedirects|SwarmCluster|BeeCarrier" Config .md/Architecture/CoreSystem.md
+rg -n "ForwardLeadDistance|AutoMiddlePointSpacing|MaxAutoMiddlePointCount|RouteMidPointHeightOffset" Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp .md
+rg -n "FRotator::ZeroRotator.*Route|RouteSpawnTransform" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp
+rg -n "BeeCarrierUseAction|BeeSwarmClusterActor|SetColonyBeeCount\\(|DetachFromActor|QueenBeeChildActor.*Swarm" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory
 ```
 
 ## 검증 명령
 
 ```powershell
-git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
+git diff --check -- Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
 ```powershell
@@ -134,19 +130,21 @@ git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private Con
 
 ## 수동 PIE 확인
 
-- `BP_BeeSwarmClusterActor`에 cluster Niagara, capture use-area mesh/material, queen BP class를 설정한다.
-- `BP_Beehive`에 `SwarmExitPoint`, `SwarmClusterActorClass`, `SwarmRouteActorClass`를 설정한다.
-- route actor BP에 기존 spline swarm Niagara asset을 설정한다.
-- 벌 운반통 item definition에 `UBeeCarrierUseAction` action spec을 추가한다.
-- 외부 BP에서 벌통 `BeginSwarmingAtTransform` 또는 `BeginSwarmingAtActor`를 호출한다.
-- cluster 생성, route Niagara, FocusEngaged, use-area 표시, slow/fast drag rate 차이, captured 1회 전환을 확인한다.
-- 분봉 시작/포획 중 기존 벌통 `ColonyBeeCount`, 기존 여왕벌 위치, 소비장 벌 수가 변하지 않는지 확인한다.
+1. `SwarmExitPoint` rotation을 바꾸면 route 첫 lead 방향이 같이 바뀌는지 확인한다.
+2. 짧은 거리에서도 자동 중간점이 최소 1개 생성되는지 확인한다.
+3. 긴 거리에서는 `AutoMiddlePointSpacing`에 따라 중간점 수가 증가하는지 확인한다.
+4. 자동 중간점 개수가 항상 홀수인지 spline visualizer 또는 디버그 로그로 확인한다.
+5. 자동 중간점 중 중앙점 1개만 `RouteMidPointHeightOffset` 높이에 도달하는지 확인한다.
+6. 중앙점 양쪽 점들이 부드러운 arc로 이어지는지 확인한다.
+7. spline end가 계속 분봉 본진 `ClusterCenter`에 도달하는지 확인한다.
+8. route Niagara가 새 spline을 따라가는지 확인한다.
 
 ## 리뷰 결과 작성 형식
 
 리뷰 결과는 `.md/AGENT_REVIEW.md` 기준으로 작성한다.
 
 - Findings first: severity, file/line, 문제, 영향, 수정 방향
-- blocking/major issue가 없으면 "검토 범위에서 발견된 blocking/major issue 없음"을 명확히 적는다.
-- 남은 리스크는 UBT/PIE/BP 수동 확인 여부와 연결해서 적는다.
-- 구현 요약은 findings 이후에 짧게 둔다.
+- blocking/major issue가 없으면 "검토 범위에서 blocking/major issue 없음"을 명확히 적는다.
+- 남은 리스크는 UBT/PIE/BP 수동 확인 여부와 연결해 적는다.
+- 구현 요약은 findings 뒤에 짧게 적는다.
+- 구현 에이전트에게 넘길 수정이 있으면 `.md/PROMPT_IMPLEMENTATION_R.md`에 작성한다.
