@@ -1,6 +1,8 @@
 #include "Inventory/BeeCarrierUseAction.h"
 
 #include "GameplayTagContainer.h"
+#include "Inventory/BeeCarrierItemDefinition.h"
+#include "Inventory/ItemInstance.h"
 #include "WorldActors/BeeSwarmClusterActor.h"
 
 UBeeCarrierUseAction::UBeeCarrierUseAction()
@@ -22,7 +24,14 @@ bool UBeeCarrierUseAction::CanBeginUse(const FItemActionContext& Context) const
 	}
 
 	const ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
-	return ClusterActor && !ClusterActor->IsCaptured() && Context.bHasItemUseAreaHit && Context.ItemUseAreaHitComponent;
+	const UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
+	return ClusterActor
+		&& !ClusterActor->IsCaptured()
+		&& ClusterActor->GetRemainingBeeAmount() > KINDA_SMALL_NUMBER
+		&& SourceBeeCarrier
+		&& SourceBeeCarrier->GetBeeCarrierFreeCapacity() > KINDA_SMALL_NUMBER
+		&& Context.bHasItemUseAreaHit
+		&& Context.ItemUseAreaHitComponent;
 }
 
 void UBeeCarrierUseAction::EndUse(const FItemActionContext& Context, bool bWasCanceled)
@@ -39,14 +48,22 @@ bool UBeeCarrierUseAction::CanApplyUseEffect(const FItemActionContext& Context) 
 	}
 
 	const ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
-	return ClusterActor && !ClusterActor->IsCaptured();
+	const UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
+	return ClusterActor
+		&& !ClusterActor->IsCaptured()
+		&& ClusterActor->GetRemainingBeeAmount() > KINDA_SMALL_NUMBER
+		&& SourceBeeCarrier
+		&& SourceBeeCarrier->GetBeeCarrierFreeCapacity() > KINDA_SMALL_NUMBER
+		&& Context.bHasItemUseAreaHit
+		&& Context.ItemUseAreaHitComponent;
 }
 
 FItemActionExecutionResult UBeeCarrierUseAction::ApplyUseEffect(const FItemActionContext& Context, float DeltaTime)
 {
 	FItemActionExecutionResult Result;
 	ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
-	if (!ClusterActor || ClusterActor->IsCaptured())
+	UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
+	if (!ClusterActor || ClusterActor->IsCaptured() || !SourceBeeCarrier)
 	{
 		return Result;
 	}
@@ -70,18 +87,36 @@ FItemActionExecutionResult UBeeCarrierUseAction::ApplyUseEffect(const FItemActio
 	}
 
 	const float BonusSpeed = FMath::Max(0.0f, DragSpeedCmPerSecond - FMath::Max(0.0f, MinDragSpeedForBonus));
-	float Rate = FMath::Max(0.0f, BaseAliveRadiusDecreasePerSecond)
-		+ BonusSpeed * FMath::Max(0.0f, DragSpeedToAliveRadiusDecreaseScale);
-	Rate = FMath::Clamp(Rate, 0.0f, FMath::Max(0.0f, MaxAliveRadiusDecreasePerSecond));
+	float CaptureRate = FMath::Max(0.0f, BaseBeeCapturePerSecond)
+		+ BonusSpeed * FMath::Max(0.0f, DragSpeedToBeeCaptureScale);
+	CaptureRate = FMath::Clamp(CaptureRate, 0.0f, FMath::Max(0.0f, MaxBeeCapturePerSecond));
 
-	const float ActualDecrease = ClusterActor->DecreaseAliveRadius(Rate * SafeDeltaTime);
-	Result.bSucceeded = ActualDecrease > KINDA_SMALL_NUMBER;
+	float RequestedBeeAmount = CaptureRate * SafeDeltaTime;
+	RequestedBeeAmount = FMath::Min(RequestedBeeAmount, SourceBeeCarrier->GetBeeCarrierFreeCapacity());
+
+	const float ActualCaptured = ClusterActor->CaptureBees(RequestedBeeAmount);
+	if (ActualCaptured > KINDA_SMALL_NUMBER)
+	{
+		SourceBeeCarrier->AddCapturedBees(ActualCaptured);
+		Result.bSucceeded = true;
+	}
 	return Result;
 }
 
 ABeeSwarmClusterActor* UBeeCarrierUseAction::ResolveTargetCluster(const FItemActionContext& Context) const
 {
 	return Cast<ABeeSwarmClusterActor>(Context.ItemUseEffectTargetObject);
+}
+
+UItemInstance* UBeeCarrierUseAction::ResolveSourceBeeCarrier(const FItemActionContext& Context) const
+{
+	UItemInstance* SourceItemInstance = Context.SourceItemInstance;
+	if (!SourceItemInstance || !Cast<UBeeCarrierItemDefinition>(SourceItemInstance->GetDefinition()))
+	{
+		return nullptr;
+	}
+
+	return SourceItemInstance;
 }
 
 void UBeeCarrierUseAction::ResetDragState()

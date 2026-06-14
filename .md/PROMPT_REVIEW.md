@@ -1,150 +1,137 @@
-# ABeehiveSwarmRouteActor Spline 자동 중간점 리뷰 프롬프트
+# BeeCarrier 포획 상태와 분봉 본진 부피 반경 구현 리뷰 프롬프트
 
 ## 리뷰 목표
 
-이번 리뷰는 이미 구현된 분봉 테스트 기능 중 `ABeehiveSwarmRouteActor` route spline 생성 개선만 검토한다.
+이미 구현된 분봉 테스트 기능 확장이 의도대로 반영됐는지 C++/문서 기준으로 리뷰한다.
 
-검토 대상은 고정 start/mid/end 3-point route를 거리 기반 자동 중간점 route로 바꾼 C++ 변경과, route actor spawn rotation을 `SwarmExitPoint` rotation으로 맞춘 `ABeehive` 변경이다.
-
-이번 리뷰 범위에서 제외한다.
-
-- `ABeeSwarmClusterActor` 신규/중복 구현 여부가 아닌 기존 동작 전체 재검토
-- `UBeeCarrierUseAction` 포획 rate, item state, Focus 경로
-- 자동 분봉 발생 조건
-- colony/queen/comb simulation 반영
-- `Content/` asset 설정/저장
+핵심 변경은 `벌 운반통` 포획 결과를 `UItemInstance` runtime state로 저장하고, 분봉 본진 포획 진행의 source of truth를 `AliveRadius`에서 벌 수(`CapturedBeeAmount`/remaining bees)로 바꾸는 것이다. `AliveRadius`는 남은 벌 수 비율에서 구 부피 공식으로 파생되어 Niagara `User.AliveRadius`에 반영되어야 한다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_REVIEW.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/CoreSystem.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/PROMPT_IMPLEMENTATION.md`
+- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/CoreSystem.md`
 
 ## 리뷰 대상 파일
 
-Source:
-
-- `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-
-Docs:
-
+- `Source/BeekeepingSim/Public/Inventory/BeeCarrierItemDefinition.h`
+- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
+- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
+- `Source/BeekeepingSim/Public/Inventory/BeeCarrierUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
+- `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
 - `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/PROMPT_REVIEW.md`
+- `.md/Architecture/FocusSystem.md`
 
-## 기대 구현
+## 기대 구현 요약
 
-### 1. Route actor API/UPROPERTY
+### Inventory
 
-- 기존 `ABeehiveSwarmRouteActor` class를 유지해야 한다.
-- 새 route actor class를 추가하지 않아야 한다.
-- 기존 `RouteMidPointHeightOffset` 이름을 변경하지 않아야 한다.
-- 기존 public Blueprint API인 `ConfigureRoute`, `ConfigureRouteToCluster`, `GetRouteEndWorldLocation`을 삭제/rename하지 않아야 한다.
-- 다음 tuning property가 Blueprint에서 조정 가능해야 한다.
-  - `ForwardLeadDistance`
-  - `AutoMiddlePointSpacing`
-  - `MaxAutoMiddlePointCount`
+- `UBeeCarrierItemDefinition : UItemDefinition`이 추가되어야 한다.
+- BeeCarrier definition은 `MaxStack=1` invariant를 가진다.
+- `MaxCapturedBeeAmount`가 최대 수용량 source of truth다.
+- `DefaultCapturedBeeAmount`는 item instance 초기 state에 clamp되어 반영된다.
+- `FBeeCarrierItemState`는 `UItemInstance` optional runtime state이며 `bHasState`, `CapturedBeeAmount`만 저장한다.
+- `UItemInstance`는 BeeCarrier state API를 제공해야 한다.
+  - `SetBeeCarrierState`
+  - `AddCapturedBees`
+  - `ClearBeeCarrierState`
+  - `HasBeeCarrierState`
+  - `GetBeeCarrierState`
+  - `GetCapturedBeeAmount`
+  - `GetCapturedBeeCountRounded`
+  - `GetBeeCarrierFreeCapacity`
+- `SetBeeCarrierState`는 definition이 `UBeeCarrierItemDefinition`이 아니면 state를 clear해야 한다.
+- `CapturedBeeAmount`는 `0..MaxCapturedBeeAmount`로 clamp되어야 한다.
+- `CopyRuntimeStateFrom`은 BeeCarrier state도 복사해야 한다.
+- stack helper의 max stack/compatibility 계산은 BeeCarrier를 `MaxStack=1`과 runtime-state-aware item으로 다뤄야 한다.
 
-### 2. 거리 기반 자동 중간점 계산
+### WorldActors
 
-- `ConfigureRoute(StartWorldLocation, EndWorldLocation)`는 actor location을 start로 맞춰야 한다.
-- route world point 순서는 다음이어야 한다.
-  - `P0 = StartWorldLocation`
-  - `P1 = StartWorldLocation + GetActorForwardVector() * ForwardLeadDistance`
-  - `A0..An = P1`과 `EndWorldLocation` 사이의 자동 중간점
-  - `Pend = EndWorldLocation`
-- 자동 중간점 개수는 최소 1개여야 한다.
-- 자동 중간점 개수는 항상 홀수여야 한다.
-- `AutoMiddlePointSpacing`은 최소 1.0으로 방어되어야 한다.
-- `MaxAutoMiddlePointCount` clamp 후에도 홀수 보정이 유지되어야 한다.
-
-### 3. 중앙점 높이 invariant
-
-자동 중간점 높이는 아래 형태여야 한다.
+- `ABeeSwarmClusterActor`는 `InitialAliveRadius`와 `CapturedBeeAmount`를 추가로 소유해야 한다.
+- `SpawnAmount`는 분봉 본진 총 벌 수로 쓰인다.
+- `CaptureBees(float RequestedBeeAmount)`는 요청량을 `0..RemainingBeeAmount`로 clamp하고 실제 포획량을 반환해야 한다.
+- `CapturedBeeAmount` 변경 후 `AliveRadius`는 아래 공식으로 재계산되어야 한다.
 
 ```cpp
-Alpha = static_cast<float>(Index + 1) / static_cast<float>(AutoMiddlePointCount + 1);
-HeightRatio = FMath::Sin(Alpha * UE_PI);
-Point = Base + FVector::UpVector * RouteMidPointHeightOffset * HeightRatio;
+AliveRadius = InitialAliveRadius * Cbrt(RemainingBeeAmount / TotalBeeAmount);
 ```
 
-리뷰에서 확인할 invariant:
+- Unreal 구현에서는 `FMath::Pow(RemainingRatio, 1.0f / 3.0f)`를 사용해도 된다.
+- `AliveRadius` 변경은 `ClusterNiagara`의 `User.AliveRadius`에 즉시 반영되어야 한다.
+- captured 판정은 `CapturedBeeAmount >= TotalBeeAmount` 또는 잔여 벌 수 0 기준이어야 한다.
+- captured 전환은 1회만 발생하고, `AliveRadius=0` 적용, capture use-area 비활성화, descriptor rebuild를 수행해야 한다.
+- 기존 `DecreaseAliveRadius(float)` API는 삭제/rename하지 않고 legacy/manual visual wrapper로 남겨야 한다.
+- BeeCarrier gameplay path가 `DecreaseAliveRadius`를 호출하면 안 된다.
 
-- `AutoMiddlePointCount`가 홀수이면 중앙 index는 `AutoMiddlePointCount / 2`다.
-- 중앙 index의 `Alpha`는 정확히 `0.5f`다.
-- 중앙 index의 `HeightRatio`는 `1.0f`다.
-- 따라서 자동 중간점 중 중앙점 1개만 `RouteMidPointHeightOffset` 높이에 도달해야 한다.
-- 양쪽 중간점은 `sin(alpha * pi)` 곡선으로 대칭에 가깝게 올라갔다 내려가야 한다.
+### BeeCarrier Use Action
 
-### 4. Spline 적용
+- `UBeeCarrierUseAction`은 target cluster, BeeCarrier source item, 남은 수용량, cluster 잔여 벌 수, item-use-area hit context를 확인해야 한다.
+- action 내부에서 mouse deproject/trace를 다시 수행하면 안 된다.
+- drag speed는 `Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime` raw 값이어야 한다.
+- 첫 tick 또는 hit point 없음은 bonus 없이 base rate만 적용한다.
+- capture rate는 bees/sec 단위여야 한다.
 
-- spline point 계산은 world space에서 수행해야 한다.
-- `SwarmSpline`에 넣을 때는 route actor local space로 변환해야 한다.
-- 첫 point는 actor location과 같으므로 local zero여야 한다.
-- 나머지는 `GetActorTransform().InverseTransformPosition(WorldPoint)` 경로를 사용해야 한다.
-- 모든 spline point는 `ESplinePointType::Curve`로 설정해야 한다.
-- point 추가 후 `SwarmSpline->UpdateSpline()`과 `ApplySplineLengthParameter()`가 호출되어야 한다.
-- 기존 Niagara parameter 계약인 `User.SwarmSpline`, `User.SplineLength` 갱신 흐름을 깨지 않아야 한다.
-
-### 5. Beehive route spawn rotation
-
-- `ABeehive::BeginSwarmingAtTransform`에서 route actor spawn transform은 `SwarmExitPoint` transform을 기준으로 해야 한다.
-- `SwarmExitPoint`가 있으면 location과 rotation을 모두 사용해야 한다.
-- `SwarmExitPoint`가 없으면 `GetActorTransform()` fallback을 사용해야 한다.
-- route actor의 `GetActorForwardVector()`가 첫 lead 방향으로 쓰이므로 `FRotator::ZeroRotator` 고정 spawn이면 문제로 본다.
-- route end는 계속 cluster actor origin이 아니라 `ClusterCenter` world location이어야 한다.
-
-### 6. 변경 금지 사항
-
-이번 route 개선에서 아래 변경이 보이면 문제로 본다.
-
-- `ABeeSwarmClusterActor` 중복 구현 또는 불필요한 동작 변경
-- `UBeeCarrierUseAction` 수정
-- 새 Focus 경로 추가
-- 기존 UCLASS/UFUNCTION/UPROPERTY rename
-- Core Redirect 추가
-- `Content/` asset 수정
-- 분봉 시작 시 `ColonyBeeCount`, 기존 벌통 `QueenBeeChildActor`, active comb bee count/target count 변경
-
-## 권장 검색 검증
-
-```powershell
-rg -n "ForwardLeadDistance|AutoMiddlePointSpacing|MaxAutoMiddlePointCount|RouteMidPointHeightOffset" Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp .md
-rg -n "FRotator::ZeroRotator.*Route|RouteSpawnTransform" Source/BeekeepingSim/Private/WorldActors/Beehive.cpp
-rg -n "BeeCarrierUseAction|BeeSwarmClusterActor|SetColonyBeeCount\\(|DetachFromActor|QueenBeeChildActor.*Swarm" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory
+```cpp
+BonusSpeed = Max(0, DragSpeedCmPerSecond - MinDragSpeedForBonus);
+Rate = BaseBeeCapturePerSecond + BonusSpeed * DragSpeedToBeeCaptureScale;
+Rate = Clamp(Rate, 0.0f, MaxBeeCapturePerSecond);
+RequestedBeeAmount = Rate * DeltaTime;
 ```
+
+- `RequestedBeeAmount`는 BeeCarrier 남은 수용량으로 clamp해야 한다.
+- 실제 포획량은 `Cluster->CaptureBees(RequestedBeeAmount)` 반환값이어야 한다.
+- 실제 포획량이 0보다 클 때만 `SourceItemInstance->AddCapturedBees(ActualCaptured)`를 호출하고 `Result.bSucceeded=true`여야 한다.
+- item stack/durability는 변경하지 않아야 한다.
+
+## 반드시 확인할 불변조건
+
+- 기존 벌통 `ColonyBeeCount`, 기존 벌통 `QueenBeeChildActor`, active comb bee count/target count, bucket subscription은 이 작업에서 변경되면 안 된다.
+- 새 Focus 경로나 새 actor class를 만들면 안 된다.
+- `Content/` asset 수정/저장은 없어야 한다.
+- Core Redirect 추가는 없어야 한다.
+- 기존 `DecreaseAliveRadius`, `BeginSwarmingAtTransform`, `BeginSwarmingAtActor` 같은 Blueprint API 삭제/rename은 없어야 한다.
 
 ## 검증 명령
 
 ```powershell
-git diff --check -- Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-## 수동 PIE 확인
+```powershell
+rg -n "FBeeCarrierItemState|UBeeCarrierItemDefinition|CaptureBees|BaseBeeCapturePerSecond|CapturedBeeAmount|InitialAliveRadius" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+rg -n "DecreaseAliveRadius\(" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
+rg -n "ColonyBeeCount.*Swarm|QueenBeeChildActor.*Swarm|SetColonyBeeCount\(|DetachFromActor" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+```
 
-1. `SwarmExitPoint` rotation을 바꾸면 route 첫 lead 방향이 같이 바뀌는지 확인한다.
-2. 짧은 거리에서도 자동 중간점이 최소 1개 생성되는지 확인한다.
-3. 긴 거리에서는 `AutoMiddlePointSpacing`에 따라 중간점 수가 증가하는지 확인한다.
-4. 자동 중간점 개수가 항상 홀수인지 spline visualizer 또는 디버그 로그로 확인한다.
-5. 자동 중간점 중 중앙점 1개만 `RouteMidPointHeightOffset` 높이에 도달하는지 확인한다.
-6. 중앙점 양쪽 점들이 부드러운 arc로 이어지는지 확인한다.
-7. spline end가 계속 분봉 본진 `ClusterCenter`에 도달하는지 확인한다.
-8. route Niagara가 새 spline을 따라가는지 확인한다.
+두 번째 검색에서 `DecreaseAliveRadius` 선언/구현은 남아 있어야 한다. `UBeeCarrierUseAction` 또는 BeeCarrier 포획 경로에서 호출되면 finding으로 보고한다.
 
-## 리뷰 결과 작성 형식
+## 수동 PIE 리뷰 포인트
 
-리뷰 결과는 `.md/AGENT_REVIEW.md` 기준으로 작성한다.
+1. BeeCarrier item definition parent를 `UBeeCarrierItemDefinition`으로 설정하고 `MaxCapturedBeeAmount`를 지정한다.
+2. 새 BeeCarrier item instance가 `DefaultCapturedBeeAmount`를 state로 가진다.
+3. hotbar/storage 이동 후 `CapturedBeeAmount`가 유지된다.
+4. 분봉 본진 포획 중 BeeCarrier `CapturedBeeAmount`가 증가한다.
+5. 같은 drag speed에서는 포획 벌 수가 시간에 대해 거의 선형으로 증가한다.
+6. `AliveRadius`는 선형이 아니라 `InitialAliveRadius * cbrt(Remaining/Total)`로 감소한다.
+7. `SpawnAmount=500`, `InitialAliveRadius=20`, `CapturedBeeAmount=437.5` 근처에서 `AliveRadius`가 약 10이다.
+8. BeeCarrier가 가득 차면 더 이상 포획되지 않는다.
+9. 분봉 본진 잔여 벌 수가 0이면 captured event가 1회만 발생하고 use-area가 비활성화된다.
+10. 기존 `DecreaseAliveRadius` Blueprint 호출은 compile/runtime 문제 없이 남아 있지만 BeeCarrier 포획에는 쓰이지 않는다.
 
-- Findings first: severity, file/line, 문제, 영향, 수정 방향
-- blocking/major issue가 없으면 "검토 범위에서 blocking/major issue 없음"을 명확히 적는다.
-- 남은 리스크는 UBT/PIE/BP 수동 확인 여부와 연결해 적는다.
-- 구현 요약은 findings 뒤에 짧게 적는다.
-- 구현 에이전트에게 넘길 수정이 있으면 `.md/PROMPT_IMPLEMENTATION_R.md`에 작성한다.
+## 리뷰 출력 형식
+
+- Findings first. 심각도 순으로 파일/라인을 포함한다.
+- 합당한 finding이 없으면 "중요 finding 없음"이라고 명시한다.
+- 이후 테스트/검증 결과, 남은 수동 BP/Content 확인 항목을 짧게 정리한다.

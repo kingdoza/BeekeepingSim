@@ -6,9 +6,61 @@
 - 분봉 1차 구현은 외부 Blueprint에서 수동으로 시작해 테스트하는 범위다. 자동 발생 조건, 시간 bucket, AI/시뮬레이션 연동은 이번 범위에서 제외한다.
 - 분봉 시작 시 기존 벌통의 `ColonyBeeCount`, 기존 `QueenBeeChildActor`, 소비장 벌 수/target count는 변경하지 않는다.
 - 분봉 본진의 여왕벌은 기존 벌통 여왕벌을 이동하지 않고, 분봉 본진 actor가 별도 spawn/child actor로 소유한다.
-- `벌 운반통` 포획 결과는 이번 범위에서 item instance runtime state로 저장하지 않는다. 포획 진행 source of truth는 분봉 본진 actor의 `AliveRadius`다.
+- `벌 운반통` 포획 결과는 `UItemInstance` optional `FBeeCarrierItemState`로 저장한다. 분봉 본진 포획 진행 source of truth는 벌 수(`CapturedBeeAmount` 또는 `RemainingBeeAmount`)이며, `AliveRadius`는 구 부피 공식으로 파생해 Niagara에 주입한다.
 
 ## 미해결 질문
+
+### [BeeCarrier 분봉 포획 상태]
+
+1. BeeCarrier 포획 결과 저장 모델
+- 질문 내용: `벌 운반통`이 분봉 본진에서 포획한 벌 수를 inventory item에 저장할 것인가?
+- 필요한 이유: 기존 확정 전제는 포획 결과를 item instance runtime state에 저장하지 않고 `ABeeSwarmClusterActor::AliveRadius`만 감소시키는 것이었다. 이제 `벌 운반통`에 실제 포획 벌 수가 들어가야 하면 inventory state 모델이 필요하다.
+- 선택지
+  - 옵션 A: `UItemInstance`에 optional `FBeeCarrierItemState`를 추가하고, 정적 최대 수용량은 `UBeeCarrierItemDefinition` 또는 item definition 확장에 둔다. BeeCarrier item은 `MaxStack=1` invariant를 가진다.
+  - 옵션 B: 포획 벌 수를 item state에 저장하지 않고, 분봉 본진 actor의 상태만 줄인다.
+  - 옵션 C: 포획 벌 수를 BeeCarrier world/held presentation actor에만 저장한다.
+- 권장 옵션: 옵션 A. 꿀 용기/소비장 state 보존 패턴과 일관되고, hotbar/storage 이동 후에도 포획 결과를 유지할 수 있다.
+- 답변: 옵션 A. `FBeeCarrierItemState`를 `UItemInstance` optional runtime state로 추가하고, 최대 수용량은 `UBeeCarrierItemDefinition::MaxCapturedBeeAmount`가 소유한다. BeeCarrier item은 `MaxStack=1`로 다룬다.
+
+2. 분봉 본진 포획 source of truth
+- 질문 내용: 분봉 본진의 `AliveRadius`와 남은 벌 수 중 무엇을 포획 진행의 source of truth로 삼을 것인가?
+- 필요한 이유: 반지름을 직접 선형 감소시키면 드래그 속도가 일정할 때 `AliveRadius`가 선형 감소하고, 부피 기준 포획 벌 수는 비선형으로 증가한다. 사용자가 원하는 모델은 벌 수가 포획량 기준으로 줄고 `AliveRadius`가 구 부피 공식으로 파생되는 구조다.
+- 선택지
+  - 옵션 A: `ABeeSwarmClusterActor`가 `InitialAliveRadius`, `CapturedBeeAmount` 또는 `RemainingBeeAmount`를 source of truth로 소유하고, `AliveRadius = InitialAliveRadius * Cbrt(RemainingBeeAmount / TotalBeeAmount)`로 계산해 Niagara에 주입한다.
+  - 옵션 B: `AliveRadius`를 계속 source of truth로 두고, BeeCarrier에 저장할 포획 벌 수만 `SpawnAmount * (1 - Pow(AliveRadius / InitialAliveRadius, 3))`로 계산한다.
+  - 옵션 C: 현재 구현처럼 `AliveRadius`를 선형 감소시키고 포획 벌 수 저장은 하지 않는다.
+- 권장 옵션: 옵션 A. 포획량과 운반통 저장량이 같은 기준을 공유하고, 구형 본진 VFX 반경은 물리적 부피 모델에서 파생된다.
+- 답변: 옵션 A. 분봉 본진은 벌 수를 포획 진행 source of truth로 삼고, `AliveRadius`는 남은 벌 수 비율의 세제곱근으로 계산하는 파생 시각값으로 둔다.
+
+3. BeeCarrier 포획 rate와 수용량 clamp
+- 질문 내용: `UBeeCarrierUseAction`의 drag speed 기반 rate는 어떤 단위로 해석하고, 운반통 수용량/분봉 본진 잔여량을 어떻게 적용할 것인가?
+- 필요한 이유: 현재 action의 rate는 `AliveRadius/sec` 의미다. 부피 기준 포획으로 바꾸면 action은 `bees/sec`를 요청하고, 실제 포획량은 본진 잔여 벌 수와 운반통 남은 수용량으로 clamp해야 한다.
+- 선택지
+  - 옵션 A: action 설정을 `BaseBeeCapturePerSecond`, `DragSpeedToBeeCaptureScale`, `MaxBeeCapturePerSecond`로 전환한다. 매 tick requested capture를 벌 수 단위로 계산하고, `ClusterRemainingBeeAmount`와 `CarrierFreeCapacity` 중 작은 값으로 clamp한다.
+  - 옵션 B: 기존 `BaseAliveRadiusDecreasePerSecond` 설정을 유지하고, 감소시킬 radius를 벌 수로 역변환한다.
+  - 옵션 C: 운반통 수용량은 무시하고 분봉 본진 잔여 벌 수만 clamp한다.
+- 권장 옵션: 옵션 A. action 설정 단위가 실제 domain mutation인 포획 벌 수와 일치하고, 가득 찬 운반통/빈 본진에서 같은 규칙으로 중단할 수 있다.
+- 답변: 옵션 A. `UBeeCarrierUseAction`은 drag speed에서 `bees/sec` 포획량을 계산하고, 분봉 본진 잔여 벌 수와 BeeCarrier 남은 수용량을 모두 반영해 실제 포획량을 clamp한다.
+
+4. 포획 벌 수의 소수/정수 처리
+- 질문 내용: tick 단위 포획 계산에서 나온 소수 벌 수를 item/cluster state에 어떻게 저장하고 표시할 것인가?
+- 필요한 이유: `DeltaTime` 기반 capture rate는 소수 포획량을 만들 수 있다. 매 tick 정수 반올림을 하면 프레임레이트에 따라 누적 포획량이 달라질 수 있다.
+- 선택지
+  - 옵션 A: cluster와 BeeCarrier item state는 내부적으로 `float CapturedBeeAmount`를 저장하고, UI/Blueprint 표시용 query에서만 `RoundToInt` 또는 `FloorToInt`로 정수 표시한다.
+  - 옵션 B: item state는 `int32 CapturedBeeCount`만 저장하고, action이 transient fractional remainder를 보관한다.
+  - 옵션 C: 매 tick capture amount를 즉시 `RoundToInt`해 item state에 더한다.
+- 권장 옵션: 옵션 A. 프레임레이트 독립 누적이 쉽고, 정수 표시는 UI/게임플레이 판단 지점에서만 통일하면 된다.
+- 답변: 옵션 A. 내부 state는 `float CapturedBeeAmount`로 누적하고, 표시/Blueprint 편의 query에서만 정수화한다.
+
+5. 기존 `DecreaseAliveRadius` API 유지 방식
+- 질문 내용: 기존 Blueprint/API에 노출된 `ABeeSwarmClusterActor::DecreaseAliveRadius(float)`를 부피 기준 포획 모델에서 어떻게 처리할 것인가?
+- 필요한 이유: 기존 구현과 문서에는 `DecreaseAliveRadius`가 포획 진행 API로 노출되어 있다. 삭제/rename하면 Blueprint/API 호환과 Core Redirect 검토가 필요할 수 있다.
+- 선택지
+  - 옵션 A: `DecreaseAliveRadius`는 삭제/rename하지 않고 legacy/manual visual wrapper로 유지한다. BeeCarrier는 새 `CaptureBees(float RequestedBeeAmount)` API만 사용한다.
+  - 옵션 B: `DecreaseAliveRadius`를 삭제하고 모든 호출을 `CaptureBees`로 교체한다.
+  - 옵션 C: `DecreaseAliveRadius` 내부에서 radius 감소량을 벌 수로 환산해 `CaptureBees`로 라우팅한다.
+- 권장 옵션: 옵션 A. Blueprint/API 안정성을 유지하면서 새 포획 경로의 source of truth를 명확히 분리한다.
+- 답변: 옵션 A. 기존 `DecreaseAliveRadius`는 삭제/rename하지 않고 legacy/manual visual 조정 API로 유지한다. BeeCarrier 포획 경로는 새 `CaptureBees(float RequestedBeeAmount)` API를 사용한다.
 
 ### [꿀 용기와 소분 작업대]
 

@@ -2,6 +2,7 @@
 
 #include "Engine/Texture2D.h"
 #include "Engine/StaticMesh.h"
+#include "Inventory/BeeCarrierItemDefinition.h"
 #include "Inventory/HoneyContainerItemDefinition.h"
 #include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemAction.h"
@@ -31,6 +32,7 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 	SetStackCount(InStackCount);
 	ClearBeehiveCombState();
 	ClearHoneyContainerState();
+	ClearBeeCarrierState();
 	if (const UHoneyContainerItemDefinition* HoneyContainerDefinition = Cast<UHoneyContainerItemDefinition>(Definition))
 	{
 		const float SanitizedMaxVolume = FMath::Max(0.0f, HoneyContainerDefinition->MaxVolumeMl);
@@ -39,6 +41,10 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 			SanitizedCurrentVolume,
 			HoneyContainerDefinition->DefaultHoneyDensity,
 			HoneyContainerDefinition->DefaultHoneyRipeness);
+	}
+	if (const UBeeCarrierItemDefinition* BeeCarrierDefinition = Cast<UBeeCarrierItemDefinition>(Definition))
+	{
+		SetBeeCarrierState(BeeCarrierDefinition->DefaultCapturedBeeAmount);
 	}
 	RebuildActions();
 }
@@ -70,7 +76,8 @@ TSubclassOf<AItemPresentationActor> UItemInstance::GetHeldPresentationActorClass
 
 void UItemInstance::SetStackCount(int32 NewStackCount)
 {
-	const int32 MaxStack = Cast<UHoneyContainerItemDefinition>(Definition) ? 1 : (Definition ? FMath::Max(1, Definition->MaxStack) : 1);
+	const bool bForceSingleStack = Cast<UHoneyContainerItemDefinition>(Definition) || Cast<UBeeCarrierItemDefinition>(Definition);
+	const int32 MaxStack = bForceSingleStack ? 1 : (Definition ? FMath::Max(1, Definition->MaxStack) : 1);
 	StackCount = FMath::Clamp(NewStackCount, 0, MaxStack);
 }
 
@@ -162,12 +169,65 @@ bool UItemInstance::HasHoneyContainerState() const
 	return HoneyContainerState.bHasState;
 }
 
+void UItemInstance::SetBeeCarrierState(float CapturedBeeAmount)
+{
+	const UBeeCarrierItemDefinition* BeeCarrierDefinition = Cast<UBeeCarrierItemDefinition>(Definition);
+	if (!BeeCarrierDefinition)
+	{
+		ClearBeeCarrierState();
+		return;
+	}
+
+	const float MaxCapturedBeeAmount = FMath::Max(0.0f, BeeCarrierDefinition->MaxCapturedBeeAmount);
+	BeeCarrierState.bHasState = true;
+	BeeCarrierState.CapturedBeeAmount = FMath::Clamp(CapturedBeeAmount, 0.0f, MaxCapturedBeeAmount);
+}
+
+float UItemInstance::AddCapturedBees(float BeeAmount)
+{
+	const float OldCapturedBeeAmount = GetCapturedBeeAmount();
+	SetBeeCarrierState(OldCapturedBeeAmount + FMath::Max(0.0f, BeeAmount));
+	return FMath::Max(0.0f, GetCapturedBeeAmount() - OldCapturedBeeAmount);
+}
+
+void UItemInstance::ClearBeeCarrierState()
+{
+	BeeCarrierState = FBeeCarrierItemState();
+}
+
+bool UItemInstance::HasBeeCarrierState() const
+{
+	return BeeCarrierState.bHasState;
+}
+
+float UItemInstance::GetCapturedBeeAmount() const
+{
+	return HasBeeCarrierState() ? FMath::Max(0.0f, BeeCarrierState.CapturedBeeAmount) : 0.0f;
+}
+
+int32 UItemInstance::GetCapturedBeeCountRounded() const
+{
+	return FMath::Max(0, FMath::RoundToInt(GetCapturedBeeAmount()));
+}
+
+float UItemInstance::GetBeeCarrierFreeCapacity() const
+{
+	const UBeeCarrierItemDefinition* BeeCarrierDefinition = Cast<UBeeCarrierItemDefinition>(Definition);
+	if (!BeeCarrierDefinition)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Max(0.0f, FMath::Max(0.0f, BeeCarrierDefinition->MaxCapturedBeeAmount) - GetCapturedBeeAmount());
+}
+
 void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance)
 {
 	if (!SourceItemInstance)
 	{
 		ClearBeehiveCombState();
 		ClearHoneyContainerState();
+		ClearBeeCarrierState();
 		return;
 	}
 
@@ -181,6 +241,16 @@ void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance
 	else
 	{
 		ClearHoneyContainerState();
+	}
+
+	if (SourceItemInstance->HasBeeCarrierState())
+	{
+		const FBeeCarrierItemState SourceState = SourceItemInstance->GetBeeCarrierState();
+		SetBeeCarrierState(SourceState.CapturedBeeAmount);
+	}
+	else
+	{
+		ClearBeeCarrierState();
 	}
 }
 

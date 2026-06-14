@@ -9,6 +9,7 @@
 - `Source/BeekeepingSim/Public/Inventory/ItemDefinition.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemDefinition.cpp`
 - `Source/BeekeepingSim/Public/Inventory/HoneyContainerItemDefinition.h`
+- `Source/BeekeepingSim/Public/Inventory/BeeCarrierItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemAction.h`
@@ -57,14 +58,15 @@
 - `UStorageBoxComponent`: storage 슬롯 상태 오너
 - `UItemDefinition`: 정적 아이템 데이터 asset
 - `UHoneyContainerItemDefinition`: 꿀 용기의 정적 용량/default volume/density/ripeness를 소유하는 `UItemDefinition` subclass. 꿀 용기 item은 `MaxStack=1` invariant를 가진다.
-- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체. 소비장 state와 꿀 용기 state 같은 optional runtime state를 보존한다.
+- `UBeeCarrierItemDefinition`: 벌 운반통의 정적 최대 포획 벌 수/default 포획 벌 수를 소유하는 `UItemDefinition` subclass. BeeCarrier item은 `MaxStack=1` invariant를 가진다.
+- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체. 소비장 state, 꿀 용기 state, BeeCarrier 포획 state 같은 optional runtime state를 보존한다.
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
 - `UActiveUseDurabilityItemDefinition`: active-use durability drain spec(`DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`)를 소유하는 `UItemDefinition` subclass
 - `UDisinfectantUseAction`: continuous hold-use 동안 벌통 위생성 증가 효과 action
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
-- `UBeeCarrierUseAction`: 분봉 본진 use-area에서 LMB hold 중 cursor impact point 이동 속도에 비례해 `ABeeSwarmClusterActor::AliveRadius`를 감소시키는 action. 포획 결과는 item instance state에 저장하지 않는다.
+- `UBeeCarrierUseAction`: 분봉 본진 use-area에서 LMB hold 중 cursor impact point 이동 속도에 비례해 bees/sec 포획량을 계산하고, 실제 포획량을 BeeCarrier item instance state에 저장하는 action.
 - `UCombUncappingUseAction`: 작업대 소비장 capping use-area에서 context hit point 기반 원형 brush로 현재 visible face의 wax capping mask를 제거하는 hold-use action. 작업대 comb PartFocus 잡기 상태에서는 begin/apply를 차단한다.
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
@@ -98,11 +100,13 @@
 
 - `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag container, max stack, durability 설정, action spec 배열을 가진다.
 - `UItemInstance`는 definition, stack count, durability, instance id, action instance 배열을 가진다.
-- `FBeehiveCombItemState`와 `FHoneyContainerItemState`는 `UItemInstance`에 저장되는 optional runtime state다.
+- `FBeehiveCombItemState`, `FHoneyContainerItemState`, `FBeeCarrierItemState`는 `UItemInstance`에 저장되는 optional runtime state다.
 - `FHoneyContainerItemState`는 `bHasState`, `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`만 저장한다. 최대 용량은 `UHoneyContainerItemDefinition::MaxVolumeMl`이 source of truth다.
+- `FBeeCarrierItemState`는 `bHasState`, `CapturedBeeAmount`만 저장한다. 최대 수용량은 `UBeeCarrierItemDefinition::MaxCapturedBeeAmount`가 source of truth다.
 - 꿀 용기 state invariant: `HoneyDensity < 1.0 && HoneyRipeness == 0.0` 또는 `HoneyDensity == 1.0 && HoneyRipeness >= 0.0`. `SetHoneyContainerState`와 꿀 용기 actor write-back 경로가 이 값을 sanitize한다.
 - `UHoneyContainerItemDefinition` item instance는 `InitializeFromDefinition()`에서 default current volume/density/ripeness를 sanitize해 꿀 용기 state로 초기화한다.
-- `UItemInstance::CopyRuntimeStateFrom`은 partial move 등 새 item instance 생성 경로에서 optional runtime state를 복사하는 helper다.
+- `UBeeCarrierItemDefinition` item instance는 `InitializeFromDefinition()`에서 `DefaultCapturedBeeAmount`를 `0..MaxCapturedBeeAmount`로 sanitize해 BeeCarrier state로 초기화한다.
+- `UItemInstance::CopyRuntimeStateFrom`은 partial move 등 새 item instance 생성 경로에서 optional runtime state를 복사하는 helper다. BeeCarrier state도 이 경로로 보존된다.
 - `UItemInstance`는 `IHotbarItemInterface`를 구현해 focus item rule 평가에 필요한 tag를 제공한다.
 - `InitializeFromDefinition()`은 definition을 저장하고 stack/durability를 clamp한 뒤 `RebuildActions()`로 action instance를 재생성한다.
 - Action 객체의 outer는 `UItemInstance`다. Definition의 `FItemActionSpec::ActionClass`가 abstract이면 생성하지 않는다.
@@ -142,7 +146,7 @@
   - 새 `UItemInstance` 생성
   - `FItemSlotMoveResult::RemainingQuantity` 계산
 - hotbar/storage partial move가 새 `UItemInstance`를 만들면 source item의 runtime state를 `CopyRuntimeStateFrom`으로 복사한다.
-- runtime state가 있는 item은 state 값이 같은 경우에만 stack merge 호환으로 본다. 꿀 용기는 definition/instance 양쪽에서 `MaxStack=1`로 다룬다.
+- runtime state가 있는 item은 state 값이 같은 경우에만 stack merge 호환으로 본다. 꿀 용기와 BeeCarrier는 definition/instance/helper 모두에서 `MaxStack=1`로 다룬다.
 - delegate broadcast, focus rule 재평가, slot enabled 갱신은 각 컴포넌트가 담당한다.
 
 ## Public Mutation API
@@ -195,10 +199,10 @@
 - Focus의 `UCursorItemUseAreaScopeComponent`는 선택 item의 `FindHoldItemUseAction()` 결과를 cache하고 LMB Press/Hold/Release를 hold-use lifecycle로 라우팅한다.
 - Hold-use item action은 use session 중 `TickUse(Context, DeltaTime)`와, 유효 area target 위에서 `ApplyUseEffect(Context, DeltaTime)` 형태의 지속 효과 호출을 지원한다.
 - `USmokerUseAction`은 `Item.UseArea.Beehive.Smoker` tag query와 함께 hold-use 시 `ABeehive::DecreaseAggression`을 호출한다. durability drain 적용 여부는 source item definition이 `UActiveUseDurabilityItemDefinition`인지에 따라 결정된다.
-- `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` tag query와 함께 hold-use 시 `Context.ItemUseEffectTargetObject`의 `ABeeSwarmClusterActor`를 대상으로 `AliveRadius`를 감소시킨다.
+- `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` tag query와 함께 hold-use 시 `Context.ItemUseEffectTargetObject`의 `ABeeSwarmClusterActor`를 대상으로 `CaptureBees`를 호출한다.
 - `UBeeCarrierUseAction`은 action 내부에서 mouse deproject/trace를 하지 않고 `Context.bHasItemUseAreaHit`와 `Context.ItemUseAreaImpactPoint`만 사용한다.
-- `UBeeCarrierUseAction`의 rate 계산은 `BaseAliveRadiusDecreasePerSecond + Max(0, DragSpeed - MinDragSpeedForBonus) * DragSpeedToAliveRadiusDecreaseScale`이며 `MaxAliveRadiusDecreasePerSecond`로 clamp한다.
-- 벌 운반통 포획 결과는 `UItemInstance` optional runtime state에 저장하지 않는다. 포획 진행과 captured 판정의 source of truth는 WorldActors의 `ABeeSwarmClusterActor::AliveRadius`다.
+- `UBeeCarrierUseAction`의 rate 계산은 `BaseBeeCapturePerSecond + Max(0, DragSpeed - MinDragSpeedForBonus) * DragSpeedToBeeCaptureScale`이며 `MaxBeeCapturePerSecond`로 clamp한다.
+- 요청 포획량은 `Rate * DeltaTime`이고, BeeCarrier 남은 수용량과 분봉 본진 잔여 벌 수로 clamp된다. 실제 포획된 벌 수만 `UItemInstance::AddCapturedBees`로 누적한다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`, item-use-area impact point/normal을 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
@@ -388,6 +392,9 @@
   - 첫 tick 또는 hit point가 없으면 base rate만 사용
   - 이후 tick은 `Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime`으로 raw drag speed를 계산한다.
   - bonus speed는 `Max(0, DragSpeed - MinDragSpeedForBonus)`다.
-  - 최종 감소량은 clamp된 rate에 `DeltaTime`을 곱해 `DecreaseAliveRadius`로 전달한다.
-- action은 item stack, durability, item runtime state를 직접 변경하지 않는다.
-- 포획 결과 inventory 저장은 이번 범위에서 구현하지 않는다.
+  - 최종 요청 포획량은 clamp된 bees/sec rate에 `DeltaTime`을 곱해 계산한다.
+- `UBeeCarrierItemDefinition`과 `FBeeCarrierItemState`를 추가했다.
+  - 최대 수용량은 definition의 `MaxCapturedBeeAmount`가 source of truth다.
+  - item instance에는 float `CapturedBeeAmount`만 저장한다.
+- action은 item stack/durability를 변경하지 않는다. 실제 포획량은 `UItemInstance::AddCapturedBees`로 BeeCarrier state에 누적한다.
+- `UItemInstance::CopyRuntimeStateFrom`과 `ItemStackMoveUtils` runtime-state compatibility는 BeeCarrier state를 포함한다.

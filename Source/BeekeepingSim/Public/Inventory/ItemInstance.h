@@ -61,6 +61,18 @@ struct FHoneyContainerItemState
 	float HoneyRipeness = 0.0f;
 };
 
+USTRUCT(BlueprintType)
+struct FBeeCarrierItemState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Bee Carrier")
+	bool bHasState = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Bee Carrier", meta = (ClampMin = "0.0"))
+	float CapturedBeeAmount = 0.0f;
+};
+
 UCLASS(BlueprintType)
 class BEEKEEPINGSIM_API UItemInstance : public UObject, public IHotbarItemInterface
 {
@@ -149,6 +161,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item|Honey Container")
 	FHoneyContainerItemState GetHoneyContainerState() const { return HoneyContainerState; }
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Bee Carrier")
+	void SetBeeCarrierState(float CapturedBeeAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Bee Carrier")
+	float AddCapturedBees(float BeeAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Bee Carrier")
+	void ClearBeeCarrierState();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
+	bool HasBeeCarrierState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
+	FBeeCarrierItemState GetBeeCarrierState() const { return BeeCarrierState; }
+
+	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
+	float GetCapturedBeeAmount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
+	int32 GetCapturedBeeCountRounded() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
+	float GetBeeCarrierFreeCapacity() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance);
 
@@ -189,6 +225,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Honey Container")
 	FHoneyContainerItemState HoneyContainerState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Bee Carrier")
+	FBeeCarrierItemState BeeCarrierState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	FGuid InstanceId;

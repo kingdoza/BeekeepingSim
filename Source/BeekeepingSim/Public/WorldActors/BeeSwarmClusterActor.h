@@ -38,14 +38,44 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster")
 	void SetAliveRadius(float NewAliveRadius);
 
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Capture")
+	float CaptureBees(float RequestedBeeAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Capture")
+	void SetCapturedBeeAmount(float NewCapturedBeeAmount);
+
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	float GetAliveRadius() const { return AliveRadius; }
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
+	float GetInitialAliveRadius() const { return InitialAliveRadius; }
 
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	float GetSphereRadius() const { return SphereRadius; }
 
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	int32 GetSpawnAmount() const { return SpawnAmount; }
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	float GetCapturedBeeAmount() const { return FMath::Max(0.0f, CapturedBeeAmount); }
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	int32 GetCapturedBeeCountRounded() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	float GetRemainingBeeAmount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	int32 GetRemainingBeeCountRounded() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	float GetTotalBeeAmount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	float CalculateAliveRadiusFromRemainingBees() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Capture")
+	void RefreshAliveRadiusFromBeeAmounts();
 
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	bool IsCaptured() const { return bCaptured; }
@@ -98,8 +128,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster", meta = (ClampMin = "0.0"))
 	float AliveRadius = 200.0f;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
+	float InitialAliveRadius = 200.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster", meta = (ClampMin = "0"))
 	int32 SpawnAmount = 300;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
+	float CapturedBeeAmount = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster", meta = (ClampMin = "0.0"))
 	float SphereRadius = 200.0f;

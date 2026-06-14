@@ -394,3 +394,4 @@
 - area tag는 `Item.UseArea.SwarmCluster.BeeCarrier`이며, effect target은 `UItemUseAreaMeshComponent`의 `ComponentOwner` 정책으로 `ABeeSwarmClusterActor`가 된다.
 - captured 상태에서는 cluster actor의 `IItemUseAreaActivationProvider`/component enabled 상태가 use-area를 비활성화하고 descriptor rebuild가 hover/use 대상에서 제거한다.
 - `UBeeCarrierUseAction`은 cursor trace를 직접 반복하지 않고 `FItemActionContext`의 item-use-area hit fields를 사용한다.
+- BeeCarrier 포획량 저장과 `AliveRadius` 부피 공식 파생은 Inventory/WorldActors 내부 책임이며, Focus generic scope/provider 경로는 변경하지 않는다.
