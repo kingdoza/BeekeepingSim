@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Focus/ItemUseAreaActivationProvider.h"
 #include "GameFramework/Actor.h"
+#include "WorldActors/QueenBeeCaptureSource.h"
 #include "BeeSwarmClusterActor.generated.h"
 
 class AQueenBeeActor;
@@ -16,7 +17,7 @@ class UNiagaraComponent;
 class USceneComponent;
 
 UCLASS(Blueprintable)
-class BEEKEEPINGSIM_API ABeeSwarmClusterActor : public AActor, public IItemUseAreaActivationProvider
+class BEEKEEPINGSIM_API ABeeSwarmClusterActor : public AActor, public IItemUseAreaActivationProvider, public IQueenBeeCaptureSource
 {
 	GENERATED_BODY()
 
@@ -80,6 +81,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	bool IsCaptured() const { return bCaptured; }
 
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Capture")
+	bool IsBeesCaptured() const { return bBeesCaptured; }
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Queen Bee")
+	bool IsQueenCaptured() const { return bQueenCaptured; }
+
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Components")
 	USceneComponent* GetClusterCenterComponent() const { return ClusterCenter; }
 
@@ -90,6 +97,8 @@ public:
 	void RebuildItemUseAreaDescriptors();
 
 	virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
+	virtual bool CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const override;
+	virtual bool CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState) override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -158,6 +167,12 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster")
 	bool bCaptured = false;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
+	bool bBeesCaptured = false;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Queen Bee")
+	bool bQueenCaptured = false;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster")
 	void ReceiveSwarmClusterInitialized();
 
@@ -170,7 +185,10 @@ protected:
 private:
 	void EnsureQueenBeeChildActorClass();
 	void ApplyQueenBeeTransform();
+	void RandomizeSwarmQueenRotation();
 	void ApplyCaptureUseAreaVisualIdleState();
 	void SetCaptureUseAreaActive(bool bActive);
+	void HandleBeesCapturedIfNeeded();
+	void HandleSwarmCapturedIfNeeded();
 	void HandleCapturedIfNeeded();
 };

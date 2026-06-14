@@ -12,6 +12,7 @@ class UItemAction;
 class UItemDefinition;
 class UHoldItemUseAction;
 class AItemPresentationActor;
+class AQueenBeeActor;
 
 USTRUCT(BlueprintType)
 struct FBeehiveCombItemState
@@ -71,6 +72,27 @@ struct FBeeCarrierItemState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Bee Carrier", meta = (ClampMin = "0.0"))
 	float CapturedBeeAmount = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FQueenCageItemState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
+	bool bHasState = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
+	bool bHasQueen = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
+	TSubclassOf<AQueenBeeActor> CapturedQueenBeeClass = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage", meta = (ClampMin = "0.0"))
+	float BaseEggLayingPower = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DiseaseValue = 0.0f;
 };
 
 UCLASS(BlueprintType)
@@ -185,6 +207,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item|Bee Carrier")
 	float GetBeeCarrierFreeCapacity() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Queen Cage")
+	void SetQueenCageEmptyState();
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Queen Cage")
+	void SetQueenCageState(const FQueenCageItemState& NewState);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Queen Cage")
+	void SetCapturedQueenBeeState(TSubclassOf<AQueenBeeActor> QueenClass, float BaseEggLayingPower, float DiseaseValue);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Queen Cage")
+	void ClearQueenCageState();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Queen Cage")
+	bool HasQueenCageState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Queen Cage")
+	FQueenCageItemState GetQueenCageState() const { return QueenCageState; }
+
+	UFUNCTION(BlueprintPure, Category = "Item|Queen Cage")
+	bool HasCapturedQueen() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Queen Cage")
+	bool CanAcceptQueenBee() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance);
 
@@ -228,6 +274,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Bee Carrier")
 	FBeeCarrierItemState BeeCarrierState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Queen Cage")
+	FQueenCageItemState QueenCageState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	FGuid InstanceId;

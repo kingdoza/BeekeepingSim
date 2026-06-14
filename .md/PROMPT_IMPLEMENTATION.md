@@ -50,6 +50,7 @@
 - 왕롱 사용은 drag/rate/progress 없이 유효 여왕벌 영역 위에서 즉시 1회 포획한다.
 - 이미 여왕벌이 든 왕롱은 추가 포획을 시작/적용할 수 없다.
 - 벌통 여왕벌 포획 시 기존 `ColonyBeeCount`, active comb bee count/target count는 즉시 변경하지 않는다.
+- 분봉 본진 여왕벌은 분봉 본진 생성/초기화 시 1회, pitch/yaw/roll 세 축 모두 랜덤 회전된 상태로 배치한다.
 - 분봉 본진 최종 완료 조건은 `AllBeesCaptured && bQueenCaptured`다.
 - 벌만 전부 포획되면 BeeCarrier use-area와 `AliveRadius`만 완료 처리한다. `bCaptured`/`ReceiveSwarmCaptured` 같은 최종 완료는 여왕벌까지 포획된 뒤 발생한다.
 - `Content/` asset은 수정하지 않는다.
@@ -398,10 +399,31 @@ bool bQueenCaptured = false;
   - `bBeesCaptured=false`
   - `bQueenCaptured=false`
   - queen child actor 생성/transform 적용
+  - 분봉 본진 여왕벌 child actor relative rotation을 pitch/yaw/roll 세 축 모두 랜덤화한다.
 - `OnConstruction()`/`BeginPlay()`도 sanitize:
   - `bCaptured = bBeesCaptured && bQueenCaptured`처럼 강제하지 말고, 입력값을 해치지 않되 invalid state를 최소 보정한다.
   - `bQueenCaptured=true`이면 queen child를 재생성하지 않는다.
   - `bBeesCaptured=true` 또는 `bCaptured=true`이면 BeeCarrier use-area 비활성.
+
+분봉 본진 여왕벌 랜덤 회전:
+
+- 적용 대상은 `ABeeSwarmClusterActor`가 소유한 분봉 본진 `QueenBeeChildActor`만이다.
+- 벌통의 일반 `ABeehive::QueenBeeChildActor` 회전/위치 갱신 규칙에는 적용하지 않는다.
+- 랜덤 회전은 spawn/`InitializeSwarmCluster()` 시점에 1회 적용한다.
+- `ApplyQueenBeeTransform()`이 location 보정 때문에 여러 번 호출될 수 있으므로, 그때마다 rotation을 다시 랜덤화하지 않는다.
+- yaw만 랜덤화하지 말고 pitch, yaw, roll 모두 랜덤화한다.
+
+권장 구현:
+
+```cpp
+const FRotator RandomQueenRotation(
+    FMath::FRandRange(0.0f, 360.0f),
+    FMath::FRandRange(0.0f, 360.0f),
+    FMath::FRandRange(0.0f, 360.0f));
+QueenBeeChildActor->SetRelativeRotation(RandomQueenRotation);
+```
+
+`FRotator` 인자 순서는 `Pitch, Yaw, Roll`이다. 구현자가 helper를 만든다면 `RandomizeSwarmQueenRotation()` 같은 private 함수로 분리하고, `InitializeSwarmCluster()`에서 queen child actor class/attach/location 적용 후 호출한다.
 
 `IsItemUseAreaMeshActive_Implementation()`:
 
@@ -457,6 +479,7 @@ bool bQueenCaptured = false;
 - `IQueenBeeCaptureSource`
 - `ABeehive`의 `bHasQueenBee`와 여왕벌 포획 후 산란/위치 갱신 비활성
 - `ABeeSwarmClusterActor`의 `bBeesCaptured`, `bQueenCaptured`, 최종 `bCaptured`
+- 분봉 본진 여왕벌은 초기화 시 pitch/yaw/roll 세 축 랜덤 회전으로 배치된다는 점
 - `ReceiveSwarmCaptured`가 최종 완료 이벤트라는 점
 
 ### `.md/Architecture/FocusSystem.md`
@@ -511,8 +534,10 @@ rg -n "ReceiveSwarmCaptured|HandleCapturedIfNeeded|IsCaptured\\(|SetCaptureUseAr
 8. 분봉 본진에서 BeeCarrier로 벌을 모두 포획해도 `ReceiveSwarmCaptured`가 아직 호출되지 않는지 확인한다.
 9. 분봉 본진에서 벌이 모두 포획된 뒤 왕롱으로 여왕벌을 포획하면 그때 `ReceiveSwarmCaptured`가 1회만 호출되는지 확인한다.
 10. 분봉 본진에서 여왕벌을 먼저 포획하고 나중에 벌을 모두 포획해도 최종 완료가 1회만 발생하는지 확인한다.
-11. hotbar/storage 이동 후 왕롱의 `FQueenCageItemState`가 유지되는지 확인한다.
-12. `Content/` asset은 필요한 BP/DataAsset 수동 authoring 외에는 C++ 구현 중 저장하지 않는다.
+11. 분봉 본진을 여러 번 생성해 여왕벌 child actor가 pitch/yaw/roll 세 축 모두 매번 다른 랜덤 회전으로 시작하는지 확인한다.
+12. 분봉 본진 생성 후 단순 transform 보정/descriptor rebuild 때문에 여왕벌 rotation이 계속 바뀌지 않는지 확인한다.
+13. hotbar/storage 이동 후 왕롱의 `FQueenCageItemState`가 유지되는지 확인한다.
+14. `Content/` asset은 필요한 BP/DataAsset 수동 authoring 외에는 C++ 구현 중 저장하지 않는다.
 
 ## 최종 보고 요구사항
 
@@ -524,6 +549,7 @@ rg -n "ReceiveSwarmCaptured|HandleCapturedIfNeeded|IsCaptured\\(|SetCaptureUseAr
 - `IQueenBeeCaptureSource` 구현 방식
 - 벌통 여왕벌 포획 후 `bHasQueenBee` 영향 범위
 - 분봉 본진 `bBeesCaptured`, `bQueenCaptured`, `bCaptured` 상태 전이
+- 분봉 본진 여왕벌 초기 pitch/yaw/roll 랜덤 회전 적용 위치
 - `ReceiveSwarmCaptured` 발생 조건
 - 아키텍처 문서 반영 내용
 - 빌드 결과 또는 미수행 사유

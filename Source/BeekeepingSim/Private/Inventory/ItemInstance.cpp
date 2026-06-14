@@ -7,6 +7,8 @@
 #include "Inventory/HoldItemUseAction.h"
 #include "Inventory/ItemAction.h"
 #include "Inventory/ItemDefinition.h"
+#include "Inventory/QueenCageItemDefinition.h"
+#include "WorldActors/QueenBeeActor.h"
 
 void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int32 InStackCount, float InDurability)
 {
@@ -33,6 +35,7 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 	ClearBeehiveCombState();
 	ClearHoneyContainerState();
 	ClearBeeCarrierState();
+	ClearQueenCageState();
 	if (const UHoneyContainerItemDefinition* HoneyContainerDefinition = Cast<UHoneyContainerItemDefinition>(Definition))
 	{
 		const float SanitizedMaxVolume = FMath::Max(0.0f, HoneyContainerDefinition->MaxVolumeMl);
@@ -45,6 +48,10 @@ void UItemInstance::InitializeFromDefinition(UItemDefinition* InDefinition, int3
 	if (const UBeeCarrierItemDefinition* BeeCarrierDefinition = Cast<UBeeCarrierItemDefinition>(Definition))
 	{
 		SetBeeCarrierState(BeeCarrierDefinition->DefaultCapturedBeeAmount);
+	}
+	if (Cast<UQueenCageItemDefinition>(Definition))
+	{
+		SetQueenCageEmptyState();
 	}
 	RebuildActions();
 }
@@ -76,7 +83,9 @@ TSubclassOf<AItemPresentationActor> UItemInstance::GetHeldPresentationActorClass
 
 void UItemInstance::SetStackCount(int32 NewStackCount)
 {
-	const bool bForceSingleStack = Cast<UHoneyContainerItemDefinition>(Definition) || Cast<UBeeCarrierItemDefinition>(Definition);
+	const bool bForceSingleStack = Cast<UHoneyContainerItemDefinition>(Definition)
+		|| Cast<UBeeCarrierItemDefinition>(Definition)
+		|| Cast<UQueenCageItemDefinition>(Definition);
 	const int32 MaxStack = bForceSingleStack ? 1 : (Definition ? FMath::Max(1, Definition->MaxStack) : 1);
 	StackCount = FMath::Clamp(NewStackCount, 0, MaxStack);
 }
@@ -221,6 +230,70 @@ float UItemInstance::GetBeeCarrierFreeCapacity() const
 	return FMath::Max(0.0f, FMath::Max(0.0f, BeeCarrierDefinition->MaxCapturedBeeAmount) - GetCapturedBeeAmount());
 }
 
+void UItemInstance::SetQueenCageEmptyState()
+{
+	if (!Cast<UQueenCageItemDefinition>(Definition))
+	{
+		ClearQueenCageState();
+		return;
+	}
+
+	QueenCageState = FQueenCageItemState();
+	QueenCageState.bHasState = true;
+}
+
+void UItemInstance::SetQueenCageState(const FQueenCageItemState& NewState)
+{
+	if (!Cast<UQueenCageItemDefinition>(Definition))
+	{
+		ClearQueenCageState();
+		return;
+	}
+
+	if (!NewState.bHasState || !NewState.bHasQueen || !NewState.CapturedQueenBeeClass)
+	{
+		SetQueenCageEmptyState();
+		return;
+	}
+
+	QueenCageState.bHasState = true;
+	QueenCageState.bHasQueen = true;
+	QueenCageState.CapturedQueenBeeClass = NewState.CapturedQueenBeeClass;
+	QueenCageState.BaseEggLayingPower = FMath::Max(0.0f, NewState.BaseEggLayingPower);
+	QueenCageState.DiseaseValue = FMath::Clamp(NewState.DiseaseValue, 0.0f, 1.0f);
+}
+
+void UItemInstance::SetCapturedQueenBeeState(TSubclassOf<AQueenBeeActor> QueenClass, float BaseEggLayingPower, float DiseaseValue)
+{
+	FQueenCageItemState NewState;
+	NewState.bHasState = true;
+	NewState.bHasQueen = QueenClass != nullptr;
+	NewState.CapturedQueenBeeClass = QueenClass;
+	NewState.BaseEggLayingPower = BaseEggLayingPower;
+	NewState.DiseaseValue = DiseaseValue;
+	SetQueenCageState(NewState);
+}
+
+void UItemInstance::ClearQueenCageState()
+{
+	QueenCageState = FQueenCageItemState();
+}
+
+bool UItemInstance::HasQueenCageState() const
+{
+	return QueenCageState.bHasState;
+}
+
+bool UItemInstance::HasCapturedQueen() const
+{
+	return HasQueenCageState() && QueenCageState.bHasQueen && QueenCageState.CapturedQueenBeeClass;
+}
+
+bool UItemInstance::CanAcceptQueenBee() const
+{
+	return Cast<UQueenCageItemDefinition>(Definition) && HasQueenCageState() && !HasCapturedQueen();
+}
+
 void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance)
 {
 	if (!SourceItemInstance)
@@ -228,6 +301,7 @@ void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance
 		ClearBeehiveCombState();
 		ClearHoneyContainerState();
 		ClearBeeCarrierState();
+		ClearQueenCageState();
 		return;
 	}
 
@@ -251,6 +325,15 @@ void UItemInstance::CopyRuntimeStateFrom(const UItemInstance* SourceItemInstance
 	else
 	{
 		ClearBeeCarrierState();
+	}
+
+	if (SourceItemInstance->HasQueenCageState())
+	{
+		SetQueenCageState(SourceItemInstance->GetQueenCageState());
+	}
+	else
+	{
+		ClearQueenCageState();
 	}
 }
 

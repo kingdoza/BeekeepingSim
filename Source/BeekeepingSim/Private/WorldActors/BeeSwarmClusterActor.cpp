@@ -87,10 +87,20 @@ void ABeeSwarmClusterActor::OnConstruction(const FTransform& Transform)
 	SpawnAmount = FMath::Max(0, SpawnAmount);
 	CapturedBeeAmount = FMath::Clamp(CapturedBeeAmount, 0.0f, GetTotalBeeAmount());
 	SphereRadius = FMath::Max(0.0f, SphereRadius);
+	if (bCaptured)
+	{
+		bBeesCaptured = true;
+		bQueenCaptured = true;
+	}
+	if (bBeesCaptured)
+	{
+		CapturedBeeAmount = GetTotalBeeAmount();
+		AliveRadius = 0.0f;
+	}
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
 	ApplyClusterNiagaraParameters();
-	SetCaptureUseAreaActive(!bCaptured);
+	SetCaptureUseAreaActive(!bBeesCaptured);
 	ApplyCaptureUseAreaVisualIdleState();
 }
 
@@ -99,10 +109,20 @@ void ABeeSwarmClusterActor::BeginPlay()
 	Super::BeginPlay();
 	InitialAliveRadius = FMath::Max(0.0f, InitialAliveRadius);
 	CapturedBeeAmount = FMath::Clamp(CapturedBeeAmount, 0.0f, GetTotalBeeAmount());
+	if (bCaptured)
+	{
+		bBeesCaptured = true;
+		bQueenCaptured = true;
+	}
+	if (bBeesCaptured)
+	{
+		CapturedBeeAmount = GetTotalBeeAmount();
+		AliveRadius = 0.0f;
+	}
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
 	ApplyClusterNiagaraParameters();
-	SetCaptureUseAreaActive(!bCaptured);
+	SetCaptureUseAreaActive(!bBeesCaptured);
 	ApplyCaptureUseAreaVisualIdleState();
 	HandleCapturedIfNeeded();
 }
@@ -110,6 +130,8 @@ void ABeeSwarmClusterActor::BeginPlay()
 void ABeeSwarmClusterActor::InitializeSwarmCluster(float InAliveRadius, int32 InSpawnAmount, float InSphereRadius)
 {
 	bCaptured = false;
+	bBeesCaptured = false;
+	bQueenCaptured = false;
 	InitialAliveRadius = FMath::Max(0.0f, InAliveRadius);
 	AliveRadius = InitialAliveRadius;
 	SpawnAmount = FMath::Max(0, InSpawnAmount);
@@ -118,6 +140,7 @@ void ABeeSwarmClusterActor::InitializeSwarmCluster(float InAliveRadius, int32 In
 
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
+	RandomizeSwarmQueenRotation();
 	SetCaptureUseAreaActive(true);
 	ApplyCaptureUseAreaVisualIdleState();
 	ApplyClusterNiagaraParameters();
@@ -159,7 +182,7 @@ float ABeeSwarmClusterActor::DecreaseAliveRadius(float DeltaRadius)
 
 void ABeeSwarmClusterActor::SetAliveRadius(float NewAliveRadius)
 {
-	const float ClampedAliveRadius = bCaptured ? 0.0f : FMath::Max(0.0f, NewAliveRadius);
+	const float ClampedAliveRadius = bBeesCaptured ? 0.0f : FMath::Max(0.0f, NewAliveRadius);
 	if (FMath::IsNearlyEqual(AliveRadius, ClampedAliveRadius))
 	{
 		HandleCapturedIfNeeded();
@@ -174,7 +197,7 @@ void ABeeSwarmClusterActor::SetAliveRadius(float NewAliveRadius)
 
 float ABeeSwarmClusterActor::CaptureBees(float RequestedBeeAmount)
 {
-	if (bCaptured || RequestedBeeAmount <= 0.0f)
+	if (bBeesCaptured || RequestedBeeAmount <= 0.0f)
 	{
 		return 0.0f;
 	}
@@ -200,6 +223,15 @@ float ABeeSwarmClusterActor::CaptureBees(float RequestedBeeAmount)
 void ABeeSwarmClusterActor::SetCapturedBeeAmount(float NewCapturedBeeAmount)
 {
 	const float TotalBeeAmount = GetTotalBeeAmount();
+	if (bBeesCaptured)
+	{
+		CapturedBeeAmount = TotalBeeAmount;
+		AliveRadius = 0.0f;
+		ApplyClusterNiagaraParameters();
+		HandleSwarmCapturedIfNeeded();
+		return;
+	}
+
 	CapturedBeeAmount = FMath::Clamp(NewCapturedBeeAmount, 0.0f, TotalBeeAmount);
 
 	const float OldAliveRadius = AliveRadius;
@@ -254,6 +286,11 @@ void ABeeSwarmClusterActor::RefreshAliveRadiusFromBeeAmounts()
 
 AQueenBeeActor* ABeeSwarmClusterActor::GetQueenBeeActor() const
 {
+	if (bQueenCaptured)
+	{
+		return nullptr;
+	}
+
 	return QueenBeeChildActor ? Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()) : nullptr;
 }
 
@@ -268,13 +305,56 @@ void ABeeSwarmClusterActor::RebuildItemUseAreaDescriptors()
 bool ABeeSwarmClusterActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const
 {
 	(void)HostActor;
-	return Component != CaptureUseAreaMesh || !IsCaptured();
+	return Component != CaptureUseAreaMesh || !IsBeesCaptured();
+}
+
+bool ABeeSwarmClusterActor::CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const
+{
+	return !bQueenCaptured
+		&& QueenBee
+		&& !QueenBee->IsCaptured()
+		&& QueenBee == GetQueenBeeActor();
+}
+
+bool ABeeSwarmClusterActor::CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState)
+{
+	OutCapturedState = FQueenCageItemState();
+	if (!CanCaptureQueenBee_Implementation(QueenBee))
+	{
+		return false;
+	}
+
+	OutCapturedState = QueenBee->MakeQueenCageItemState();
+	bQueenCaptured = true;
+	QueenBee->SetCaptured(true);
+
+	if (QueenBeeChildActor && QueenBeeChildActor->GetChildActorClass() != nullptr)
+	{
+		QueenBeeChildActor->SetChildActorClass(nullptr);
+	}
+
+	RebuildItemUseAreaDescriptors();
+	HandleSwarmCapturedIfNeeded();
+	return OutCapturedState.bHasState && OutCapturedState.bHasQueen && OutCapturedState.CapturedQueenBeeClass;
 }
 
 void ABeeSwarmClusterActor::EnsureQueenBeeChildActorClass()
 {
 	if (!QueenBeeChildActor)
 	{
+		return;
+	}
+
+	if (bQueenCaptured || bCaptured || !SwarmQueenBeeActorClass)
+	{
+		if (QueenBeeChildActor->GetChildActorClass() != nullptr)
+		{
+			if (AQueenBeeActor* QueenBee = Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()))
+			{
+				QueenBee->SetCaptured(true);
+			}
+			QueenBeeChildActor->SetChildActorClass(nullptr);
+		}
 		return;
 	}
 
@@ -300,6 +380,20 @@ void ABeeSwarmClusterActor::ApplyQueenBeeTransform()
 	}
 
 	QueenBeeChildActor->SetRelativeLocation(QueenCenterOffset);
+}
+
+void ABeeSwarmClusterActor::RandomizeSwarmQueenRotation()
+{
+	if (!QueenBeeChildActor || bQueenCaptured || bCaptured)
+	{
+		return;
+	}
+
+	const FRotator RandomQueenRotation(
+		FMath::FRandRange(0.0f, 360.0f),
+		FMath::FRandRange(0.0f, 360.0f),
+		FMath::FRandRange(0.0f, 360.0f));
+	QueenBeeChildActor->SetRelativeRotation(RandomQueenRotation);
 }
 
 void ABeeSwarmClusterActor::ApplyCaptureUseAreaVisualIdleState()
@@ -357,17 +451,48 @@ void ABeeSwarmClusterActor::SetCaptureUseAreaActive(bool bActive)
 
 void ABeeSwarmClusterActor::HandleCapturedIfNeeded()
 {
+	HandleBeesCapturedIfNeeded();
+	HandleSwarmCapturedIfNeeded();
+}
+
+void ABeeSwarmClusterActor::HandleBeesCapturedIfNeeded()
+{
+	if (bBeesCaptured)
+	{
+		return;
+	}
+
 	const float TotalBeeAmount = GetTotalBeeAmount();
 	const bool bNoBeesConfigured = TotalBeeAmount <= KINDA_SMALL_NUMBER;
 	const bool bAllBeesCaptured = !bNoBeesConfigured
 		&& (CapturedBeeAmount >= TotalBeeAmount || GetRemainingBeeAmount() <= KINDA_SMALL_NUMBER);
-	if (bCaptured || (!bNoBeesConfigured && !bAllBeesCaptured))
+	const bool bLegacyRadiusDepleted = AliveRadius <= KINDA_SMALL_NUMBER;
+	if (!bNoBeesConfigured && !bAllBeesCaptured && !bLegacyRadiusDepleted)
+	{
+		return;
+	}
+
+	bBeesCaptured = true;
+	CapturedBeeAmount = bNoBeesConfigured ? 0.0f : TotalBeeAmount;
+	const float OldAliveRadius = AliveRadius;
+	AliveRadius = 0.0f;
+	ApplyClusterNiagaraParameters();
+	if (!FMath::IsNearlyEqual(OldAliveRadius, AliveRadius))
+	{
+		ReceiveAliveRadiusChanged(AliveRadius);
+	}
+	SetCaptureUseAreaActive(false);
+	RebuildItemUseAreaDescriptors();
+}
+
+void ABeeSwarmClusterActor::HandleSwarmCapturedIfNeeded()
+{
+	if (bCaptured || !bBeesCaptured || !bQueenCaptured)
 	{
 		return;
 	}
 
 	bCaptured = true;
-	CapturedBeeAmount = bNoBeesConfigured ? 0.0f : TotalBeeAmount;
 	AliveRadius = 0.0f;
 	ApplyClusterNiagaraParameters();
 	SetCaptureUseAreaActive(false);

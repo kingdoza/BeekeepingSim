@@ -26,7 +26,7 @@ bool UBeeCarrierUseAction::CanBeginUse(const FItemActionContext& Context) const
 	const ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
 	const UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
 	return ClusterActor
-		&& !ClusterActor->IsCaptured()
+		&& !ClusterActor->IsBeesCaptured()
 		&& ClusterActor->GetRemainingBeeAmount() > KINDA_SMALL_NUMBER
 		&& SourceBeeCarrier
 		&& SourceBeeCarrier->GetBeeCarrierFreeCapacity() > KINDA_SMALL_NUMBER
@@ -50,7 +50,7 @@ bool UBeeCarrierUseAction::CanApplyUseEffect(const FItemActionContext& Context) 
 	const ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
 	const UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
 	return ClusterActor
-		&& !ClusterActor->IsCaptured()
+		&& !ClusterActor->IsBeesCaptured()
 		&& ClusterActor->GetRemainingBeeAmount() > KINDA_SMALL_NUMBER
 		&& SourceBeeCarrier
 		&& SourceBeeCarrier->GetBeeCarrierFreeCapacity() > KINDA_SMALL_NUMBER
@@ -63,7 +63,7 @@ FItemActionExecutionResult UBeeCarrierUseAction::ApplyUseEffect(const FItemActio
 	FItemActionExecutionResult Result;
 	ABeeSwarmClusterActor* ClusterActor = ResolveTargetCluster(Context);
 	UItemInstance* SourceBeeCarrier = ResolveSourceBeeCarrier(Context);
-	if (!ClusterActor || ClusterActor->IsCaptured() || !SourceBeeCarrier)
+	if (!ClusterActor || ClusterActor->IsBeesCaptured() || !SourceBeeCarrier)
 	{
 		return Result;
 	}

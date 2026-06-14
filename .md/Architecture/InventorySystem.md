@@ -10,6 +10,7 @@
 - `Source/BeekeepingSim/Private/Inventory/ItemDefinition.cpp`
 - `Source/BeekeepingSim/Public/Inventory/HoneyContainerItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/BeeCarrierItemDefinition.h`
+- `Source/BeekeepingSim/Public/Inventory/QueenCageItemDefinition.h`
 - `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
 - `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
 - `Source/BeekeepingSim/Public/Inventory/ItemAction.h`
@@ -25,6 +26,8 @@
 - `Source/BeekeepingSim/Private/Inventory/BeeBrushUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/BeeCarrierUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
+- `Source/BeekeepingSim/Public/Inventory/QueenCageUseAction.h`
+- `Source/BeekeepingSim/Private/Inventory/QueenCageUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/CombUncappingUseAction.h`
 - `Source/BeekeepingSim/Private/Inventory/CombUncappingUseAction.cpp`
 - `Source/BeekeepingSim/Public/Inventory/PollenPattyUseAction.h`
@@ -59,7 +62,8 @@
 - `UItemDefinition`: 정적 아이템 데이터 asset
 - `UHoneyContainerItemDefinition`: 꿀 용기의 정적 용량/default volume/density/ripeness를 소유하는 `UItemDefinition` subclass. 꿀 용기 item은 `MaxStack=1` invariant를 가진다.
 - `UBeeCarrierItemDefinition`: 벌 운반통의 정적 최대 포획 벌 수/default 포획 벌 수를 소유하는 `UItemDefinition` subclass. BeeCarrier item은 `MaxStack=1` invariant를 가진다.
-- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체. 소비장 state, 꿀 용기 state, BeeCarrier 포획 state 같은 optional runtime state를 보존한다.
+- `UQueenCageItemDefinition`: 왕롱 item definition. 여왕벌 1마리 capacity만 가지며 `MaxStack=1` invariant를 가진다.
+- `UItemInstance`: 런타임 아이템 상태와 action 소유 객체. 소비장 state, 꿀 용기 state, BeeCarrier 포획 state, QueenCage 여왕벌 state 같은 optional runtime state를 보존한다.
 - `UItemAction`: item definition action spec에서 생성되는 런타임 행동 베이스
 - `UHoldItemUseAction`: use-area tag query + LMB use session lifecycle + 효과 적용 경계 베이스
 - `UActiveUseDurabilityItemDefinition`: active-use durability drain spec(`DurabilityDrainPerSecond`, `DrainPolicy`, `bRemoveItemWhenDepleted`)를 소유하는 `UItemDefinition` subclass
@@ -67,6 +71,7 @@
 - `USmokerUseAction`: continuous hold-use 동안 벌통 공격성 감소 효과 action (item 소비 없음)
 - `UBeeBrushUseAction`: lifted comb use-area에서 visible face bee target 감소와 queen relocation 요청을 수행하는 action
 - `UBeeCarrierUseAction`: 분봉 본진 use-area에서 LMB hold 중 cursor impact point 이동 속도에 비례해 bees/sec 포획량을 계산하고, 실제 포획량을 BeeCarrier item instance state에 저장하는 action.
+- `UQueenCageUseAction`: 여왕벌 use-area에서 왕롱이 비어 있을 때 `IQueenBeeCaptureSource` host를 통해 `AQueenBeeActor`를 즉시 포획하고 `FQueenCageItemState`를 저장하는 action.
 - `UCombUncappingUseAction`: 작업대 소비장 capping use-area에서 context hit point 기반 원형 brush로 현재 visible face의 wax capping mask를 제거하는 hold-use action. 작업대 comb PartFocus 잡기 상태에서는 begin/apply를 차단한다.
 - `UItemPlacementUseAction`: slot interface 기반 generic placed-actor 배치 action
 - `UPollenPattyUseAction`: `UItemPlacementUseAction` 기반 wrapper(화분떡 태그/이벤트 유지)
@@ -100,13 +105,15 @@
 
 - `UItemDefinition`은 표시명, 설명, 아이콘, `WorldMesh`, `HeldPresentationActorClass`, gameplay tag container, max stack, durability 설정, action spec 배열을 가진다.
 - `UItemInstance`는 definition, stack count, durability, instance id, action instance 배열을 가진다.
-- `FBeehiveCombItemState`, `FHoneyContainerItemState`, `FBeeCarrierItemState`는 `UItemInstance`에 저장되는 optional runtime state다.
+- `FBeehiveCombItemState`, `FHoneyContainerItemState`, `FBeeCarrierItemState`, `FQueenCageItemState`는 `UItemInstance`에 저장되는 optional runtime state다.
 - `FHoneyContainerItemState`는 `bHasState`, `CurrentVolumeMl`, `HoneyDensity`, `HoneyRipeness`만 저장한다. 최대 용량은 `UHoneyContainerItemDefinition::MaxVolumeMl`이 source of truth다.
 - `FBeeCarrierItemState`는 `bHasState`, `CapturedBeeAmount`만 저장한다. 최대 수용량은 `UBeeCarrierItemDefinition::MaxCapturedBeeAmount`가 source of truth다.
+- `FQueenCageItemState`는 `bHasState`, `bHasQueen`, `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`를 저장한다. world actor reference는 저장하지 않는다.
 - 꿀 용기 state invariant: `HoneyDensity < 1.0 && HoneyRipeness == 0.0` 또는 `HoneyDensity == 1.0 && HoneyRipeness >= 0.0`. `SetHoneyContainerState`와 꿀 용기 actor write-back 경로가 이 값을 sanitize한다.
 - `UHoneyContainerItemDefinition` item instance는 `InitializeFromDefinition()`에서 default current volume/density/ripeness를 sanitize해 꿀 용기 state로 초기화한다.
 - `UBeeCarrierItemDefinition` item instance는 `InitializeFromDefinition()`에서 `DefaultCapturedBeeAmount`를 `0..MaxCapturedBeeAmount`로 sanitize해 BeeCarrier state로 초기화한다.
-- `UItemInstance::CopyRuntimeStateFrom`은 partial move 등 새 item instance 생성 경로에서 optional runtime state를 복사하는 helper다. BeeCarrier state도 이 경로로 보존된다.
+- `UQueenCageItemDefinition` item instance는 `InitializeFromDefinition()`에서 비어 있는 QueenCage state(`bHasQueen=false`)로 초기화한다.
+- `UItemInstance::CopyRuntimeStateFrom`은 partial move 등 새 item instance 생성 경로에서 optional runtime state를 복사하는 helper다. BeeCarrier/QueenCage state도 이 경로로 보존된다.
 - `UItemInstance`는 `IHotbarItemInterface`를 구현해 focus item rule 평가에 필요한 tag를 제공한다.
 - `InitializeFromDefinition()`은 definition을 저장하고 stack/durability를 clamp한 뒤 `RebuildActions()`로 action instance를 재생성한다.
 - Action 객체의 outer는 `UItemInstance`다. Definition의 `FItemActionSpec::ActionClass`가 abstract이면 생성하지 않는다.
@@ -146,7 +153,7 @@
   - 새 `UItemInstance` 생성
   - `FItemSlotMoveResult::RemainingQuantity` 계산
 - hotbar/storage partial move가 새 `UItemInstance`를 만들면 source item의 runtime state를 `CopyRuntimeStateFrom`으로 복사한다.
-- runtime state가 있는 item은 state 값이 같은 경우에만 stack merge 호환으로 본다. 꿀 용기와 BeeCarrier는 definition/instance/helper 모두에서 `MaxStack=1`로 다룬다.
+- runtime state가 있는 item은 state 값이 같은 경우에만 stack merge 호환으로 본다. 꿀 용기, BeeCarrier, QueenCage는 definition/instance/helper 모두에서 `MaxStack=1`로 다룬다.
 - delegate broadcast, focus rule 재평가, slot enabled 갱신은 각 컴포넌트가 담당한다.
 
 ## Public Mutation API
@@ -203,6 +210,8 @@
 - `UBeeCarrierUseAction`은 action 내부에서 mouse deproject/trace를 하지 않고 `Context.bHasItemUseAreaHit`와 `Context.ItemUseAreaImpactPoint`만 사용한다.
 - `UBeeCarrierUseAction`의 rate 계산은 `BaseBeeCapturePerSecond + Max(0, DragSpeed - MinDragSpeedForBonus) * DragSpeedToBeeCaptureScale`이며 `MaxBeeCapturePerSecond`로 clamp한다.
 - 요청 포획량은 `Rate * DeltaTime`이고, BeeCarrier 남은 수용량과 분봉 본진 잔여 벌 수로 clamp된다. 실제 포획된 벌 수만 `UItemInstance::AddCapturedBees`로 누적한다.
+- `UQueenCageUseAction`은 `Item.UseArea.QueenBee.QueenCage` tag query와 함께 hold-use 시작/적용 시 왕롱 definition, 빈 cage state, `AQueenBeeActor` target, `IQueenBeeCaptureSource` host, item-use-area hit context를 검증한다.
+- 왕롱 포획은 drag/rate/progress 없이 즉시 1회 실행되며, 성공 시 host가 반환한 `FQueenCageItemState`를 `UItemInstance::SetQueenCageState`로 저장한다. item stack/durability는 변경하지 않는다.
 - Item action은 사용 가능한 area tag query를 제공하고, Focus 쪽 item-use-area scope는 이를 `FItemUseAreaDescriptor::AreaTags`와 매칭한다.
 - `FItemActionContext`는 `FocusEngagedHostActor`, `ItemUseAreaId`, `ItemUseAreaTags`, `ItemUseAreaHitComponent`, `ItemUseEffectTargetObject`, item-use-area impact point/normal을 포함해 효과 target context를 전달한다.
 - 실제 효과 적용 빈도, 내구도 감소, 작업 진행도 누적 같은 rate limit은 item action 내부에서 관리한다.
@@ -398,3 +407,20 @@
   - item instance에는 float `CapturedBeeAmount`만 저장한다.
 - action은 item stack/durability를 변경하지 않는다. 실제 포획량은 `UItemInstance::AddCapturedBees`로 BeeCarrier state에 누적한다.
 - `UItemInstance::CopyRuntimeStateFrom`과 `ItemStackMoveUtils` runtime-state compatibility는 BeeCarrier state를 포함한다.
+
+## Update 2026-06-14 (Queen Cage Use Action)
+
+- `UQueenCageItemDefinition`을 추가했다. 왕롱은 항상 여왕벌 1마리 capacity이고 `MaxStack=1`이다.
+- `FQueenCageItemState`를 `UItemInstance` optional runtime state로 추가했다.
+  - 저장 값: `bHasState`, `bHasQueen`, `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`
+  - 저장하지 않는 값: 포획된 world actor reference
+- `UItemInstance`는 QueenCage state setter/query와 `CanAcceptQueenBee()`를 제공한다.
+  - 비-QueenCage definition이면 state를 clear한다.
+  - 비어 있는 cage는 `bHasState=true`, `bHasQueen=false`다.
+  - `bHasQueen=true`인데 queen class가 없으면 empty state로 sanitize한다.
+- `UQueenCageUseAction`을 추가했다. (`UHoldItemUseAction` 기반)
+  - use-area query tag: `Item.UseArea.QueenBee.QueenCage`
+  - target: `Context.ItemUseEffectTargetObject`의 `AQueenBeeActor`
+  - host: `Context.FocusEngagedHostActor`의 `IQueenBeeCaptureSource`
+  - 성공 시 `CaptureQueenBee`가 반환한 state를 왕롱 item instance에 저장한다.
+- `UItemInstance::CopyRuntimeStateFrom`과 `ItemStackMoveUtils` runtime-state compatibility는 QueenCage state를 포함한다.

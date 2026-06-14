@@ -17,6 +17,7 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/QueenBeeCaptureSource.h`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveDualSwarmActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActor.cpp`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.h`
@@ -82,8 +83,8 @@
 
 ## Key Classes
 
-- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner
-- `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` cluster Niagara parameter, 별도 queen child actor, FocusEngaged bee-carrier use-area를 소유한다.
+- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner + 벌통 여왕벌 capture source
+- `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` cluster Niagara parameter, 별도 queen child actor, FocusEngaged bee-carrier/queen-cage use-area를 소유한다. 최종 captured는 벌 전량 포획과 여왕벌 포획이 모두 끝난 상태다.
 - `ABeehiveSwarmRouteActor`: 벌통 입구에서 분봉 본진 center까지 runtime spline route를 구성하는 `ABeeSplineSwarmActor` subclass. 기존 spline swarm Niagara parameter 계약을 재사용한다.
 - `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
@@ -98,7 +99,8 @@
 - `UBeehiveCombLiftComponent`: active comb slot의 child actor component relative transform을 보간해 소비장 들기/내리기를 수행하는 component
 - `UBeehiveLidPartFocusActionComponent`: lid open part action policy preset (`PersistentAction`, `ProvidedStateTags={Beehive.LidOpen}`)
 - `UBeehiveCombPartFocusActionComponent`: comb lift part action policy preset (`PersistentAction`, `RequiredStateTags={Beehive.LidOpen}`, `ExclusiveGroup={Beehive.CombLift}`) + comb drag gesture 해석 owner
-- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유 + legacy disease material API 유지
+- `AQueenBeeActor`: 여왕벌 mesh actor, Tick마다 local yaw jitter 누적 + `BaseEggLayingPower` 보유 + 왕롱 use-area/state export + legacy disease material API 유지
+- `IQueenBeeCaptureSource`: `AQueenBeeActor` 포획 가능 여부와 host 상태 변경을 벌통/분봉 본진 쪽으로 위임하는 interface
 - `ABeehiveDualSwarmActor`: outgoing/ingoing Niagara 2개를 가진 벌통 전용 actor (Spline은 `ABeehive` 소유)
 - `ABeeSplineSwarmActor`: 기존 단일 swarm actor로 유지되며 dual swarm 구조와 별개 (`User.SwarmSpline`/`User.SplineLength` 바인딩 유지)
 - `AWorldItemPickup`: 단일 item definition 기반 pickup actor
@@ -130,6 +132,7 @@
 - `UAnchoredFocusCursorActionComponent`
 - `UChildActorComponent` 1개 (`BeehiveSwarmChildActor`)
 - `UChildActorComponent` 1개 (`QueenBeeChildActor`)
+- `bHasQueenBee`: 벌통 queen child actor 보유 여부. false이면 queen child 재생성/위치 갱신/산란 증가량 계산을 비활성화한다.
 - `USceneComponent` 1개 (`CombRackRoot`) + `MaxCombCount` 크기의 comb slot child actor component 배열
 - `USceneComponent` 1개 (`CombLiftTargetRoot`)
 - `USceneComponent` 1개 (`SwarmExitPoint`)를 분봉 테스트 route start point로 사용한다.
@@ -151,6 +154,13 @@
 - 분봉 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, cluster/route spawn 실패
 - 분봉 시작 성공 flow: 이전 test swarm 정리 옵션 처리 -> cluster spawn -> `InitializeSwarmCluster` -> route spawn -> `ConfigureRoute(SwarmExitPoint, ClusterCenter)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> `ReceiveSwarmingStarted`
 - 분봉 테스트 시작은 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 왕롱 포획 API:
+  - `HasQueenBee()`
+  - `SetHasQueenBee(bool bNewHasQueenBee)`
+  - `CanCaptureQueenBee(AQueenBeeActor* QueenBee)`
+  - `CaptureQueenBee(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState)`
+- 벌통 여왕벌 포획은 현재 `QueenBeeChildActor`의 child actor만 허용하고, 성공 시 `bHasQueenBee=false`로 전환해 child actor를 제거/재생성 차단한 뒤 item-use-area descriptor를 rebuild한다.
+- 벌통 여왕벌 포획은 `ColonyBeeCount`, active comb bee count/target count, honey state를 즉시 변경하지 않는다.
 - `ColonyBeeCount`, `BeeSwarmHour24`, `DualSwarmCommonSettings`, `OutgoingSwarmSettings`, `IngoingSwarmSettings`
 - `IGameTimeBucketListener`를 구현해 시간 bucket 이벤트를 구독
 - 기본 bucket 설정: `BeeSwarmBucketMinutes=10`, BeginPlay 즉시 적용 옵션 지원
@@ -164,6 +174,7 @@
 - pollen patty consumption 설정: `PollenPattyConsumptionAmountPerBucket`, `PollenPattyConsumptionSide(Leftmost/Rightmost)`, `PollenPattyConsumptionAreaTags`
 - colony population의 `ItemEggLayingBonus`는 선택된 active 화분떡 1개(`UPollenPattyItemDefinition`)의 `EggLayingMultiplier`를 사용한다.
 - queen 위치 갱신 규칙:
+  - `bHasQueenBee=false`이면 위치 갱신은 no-op이다.
   - active comb 후보에서 현재 lifted comb slot 제외
   - 중앙 slot일수록 높은 가중치로 weighted random 선택
   - 선택된 comb의 front/back attach point를 50:50로 선택
@@ -371,7 +382,7 @@
 - `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수가 0이면 captured로 전환한다. `SpawnAmount <= 0`인 본진도 포획 불가/완료 상태로 처리한다. 전환은 1회만 발생하고, `AliveRadius=0`을 Niagara에 적용한 뒤 `CaptureUseAreaMesh`를 비활성화하고 item-use-area descriptor를 rebuild한다.
 - captured 이후 actor destroy, 여왕벌 숨김, 완료 연출은 `ReceiveSwarmCaptured` Blueprint event에서 처리한다.
 - 여왕벌은 `SwarmQueenBeeActorClass` child actor로 별도 생성하며 기존 벌통 `QueenBeeChildActor`를 이동하거나 재사용하지 않는다.
-- 여왕벌 위치는 `ClusterCenter`에 attach된 `QueenBeeChildActor` relative location `QueenCenterOffset`만 사용한다.
+- 여왕벌 위치는 `ClusterCenter`에 attach된 `QueenBeeChildActor` relative location `QueenCenterOffset`을 사용한다. `InitializeSwarmCluster()` 시점에 child actor relative rotation의 pitch/yaw/roll 세 축을 1회 랜덤화하며, `ApplyQueenBeeTransform()` 재호출은 위치만 보정하고 회전을 다시 뽑지 않는다.
 - Blueprint events:
   - `ReceiveSwarmClusterInitialized`
   - `ReceiveAliveRadiusChanged(float NewAliveRadius)`
@@ -831,6 +842,7 @@
   - `InitialAliveRadius`, `SpawnAmount`, `CapturedBeeAmount`가 포획 진행 source of truth이고, 파생 `AliveRadius`가 `User.AliveRadius`에 즉시 반영된다.
   - 별도 `SwarmQueenBeeActorClass` child actor를 cluster center에 유지한다.
   - `Item.UseArea.SwarmCluster.BeeCarrier` capture use-area를 generic mesh provider 경로로 제공한다.
+  - child 여왕벌의 `Item.UseArea.QueenBee.QueenCage` use-area도 같은 generic mesh provider 경로로 수집된다.
 - `ABeehiveSwarmRouteActor`를 추가했다.
   - `ABeeSplineSwarmActor`를 상속하고 runtime 거리 기반 자동 중간점 spline route를 구성한다.
   - route end는 분봉 본진 actor origin이 아니라 cluster center component world location이다.
@@ -849,3 +861,29 @@
 - `ABeeSwarmClusterActor`에 `CaptureBees`, `SetCapturedBeeAmount`, captured/remaining/total bee amount query API를 추가했다.
 - 분봉 본진 포획 진행은 벌 수 기준이다. `AliveRadius`는 `InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`로 파생해 `User.AliveRadius`에 주입한다.
 - `DecreaseAliveRadius`는 기존 Blueprint API 호환을 위해 남기며, BeeCarrier 포획 gameplay에서는 사용하지 않는다.
+- `CaptureBees`에서 잔여 벌 수가 0이 되면 `bBeesCaptured=true`로 전환하고 BeeCarrier use-area를 비활성화하지만, `ReceiveSwarmCaptured`는 호출하지 않는다.
+
+## Update 2026-06-14 (Queen Cage Capture + Swarm Final Completion)
+
+- `AQueenBeeActor`에 `QueenCageUseAreaMesh`를 추가했다.
+  - 부착: `QueenBeeMesh` 하위
+  - area tag: `Item.UseArea.QueenBee.QueenCage`
+  - effect target: `ComponentOwner`, 즉 `Context.ItemUseEffectTargetObject`는 `AQueenBeeActor`
+  - `IsItemUseAreaMeshActive`는 captured queen에 대해 false를 반환한다.
+- `AQueenBeeActor::MakeQueenCageItemState()`는 왕롱 저장용 state를 export한다.
+  - 저장 값: queen class, `BaseEggLayingPower`, `DiseaseValue`
+  - world actor reference는 저장하지 않는다.
+- `IQueenBeeCaptureSource`를 추가했고, `ABeehive`와 `ABeeSwarmClusterActor`가 구현한다.
+- `ABeehive`는 `bHasQueenBee`를 여왕벌 보유 source of truth로 사용한다.
+  - `bHasQueenBee=false`이면 `GetQueenBeeActor()`는 null을 반환한다.
+  - queen location bucket/update, `IsQueenBeeAttachedToComb`, `TryBrushQueenBeeFromCombVisibleFace`는 no-op/false가 된다.
+  - `CalculateBeeIncreaseAmount()`는 queen이 없으면 0을 반환한다.
+  - 포획 성공 시 child actor를 제거하고 item-use-area descriptor를 rebuild한다.
+- `ABeeSwarmClusterActor`의 capture state는 3단계로 분리된다.
+  - `bBeesCaptured`: BeeCarrier로 벌이 모두 포획되었거나 총 벌 수가 0인 상태
+  - `bQueenCaptured`: 왕롱으로 분봉 본진 여왕벌이 포획된 상태
+  - `bCaptured`: 최종 완료. `bBeesCaptured && bQueenCaptured`일 때만 true
+- `ABeeSwarmClusterActor::InitializeSwarmCluster()`는 분봉 본진 여왕벌 child actor 배치 후 pitch/yaw/roll 세 축을 1회 랜덤 회전한다. 이후 transform 보정은 위치만 갱신하고 랜덤 회전을 다시 적용하지 않는다.
+- 분봉 본진에서 벌만 모두 포획되면 `AliveRadius=0`, cluster Niagara parameter 갱신, BeeCarrier use-area 비활성화, descriptor rebuild만 수행한다.
+- 분봉 본진에서 여왕벌 포획 성공 시 queen child actor를 제거/재생성 차단하고 descriptor를 rebuild한다.
+- `ReceiveSwarmCaptured`는 최종 완료 이벤트로 유지되며, `bBeesCaptured && bQueenCaptured && !bCaptured` 조건에서 1회만 호출된다.

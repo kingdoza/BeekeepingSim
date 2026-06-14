@@ -3,7 +3,7 @@
 ## 문서 기준
 
 - 기준일: 2026-06-10(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table, BeeCarrier 포획 state/분봉 부피 반경 모델 반영 후 현재 Source 구조 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table, BeeCarrier/QueenCage 포획 state, 분봉 최종 완료 조건 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 188개
-  - Public header: 104개
-  - Private cpp/header: 84개
+- 현재 대상 C++ 파일 수: 192개
+  - Public header: 107개
+  - Private cpp/header: 85개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -62,9 +62,9 @@ Source/BeekeepingSim/
   - Environment: Public 9 / Private 4
   - Focus: Public 22 / Private 14
   - Interaction: Public 2 / Private 2
-  - Inventory: Public 23 / Private 17
+  - Inventory: Public 25 / Private 18
   - UI: Public 8 / Private 7
-  - WorldActors: Public 34 / Private 34
+  - WorldActors: Public 35 / Private 34
 
 ## 시스템 간 책임 흐름
 
@@ -73,7 +73,7 @@ Source/BeekeepingSim/
 - Focus는 현재 타겟, engaged action, prompt, item rule, crosshair visibility의 단일 상태 오너다.
 - Interaction은 FocusAction의 구체 구현이며 pickup/storage 같은 도메인별 상호작용을 실행한다.
 - Inventory는 hotbar/storage/item instance의 실제 상태 변경과 stack 이동 결과를 소유한다.
-- Inventory는 꿀 용기 runtime state(`FHoneyContainerItemState`)와 BeeCarrier 포획 state(`FBeeCarrierItemState`)를 `UItemInstance`의 optional state로 보존하며, 정적 용량/default는 각 item definition subclass가 소유한다.
+- Inventory는 꿀 용기 runtime state(`FHoneyContainerItemState`), BeeCarrier 포획 state(`FBeeCarrierItemState`), QueenCage 여왕벌 state(`FQueenCageItemState`)를 `UItemInstance`의 optional state로 보존하며, 정적 용량/default는 각 item definition subclass가 소유한다.
 - UI는 위젯 상태, drag payload, drop 라우팅, runtime clock 표시, Blueprint 표시 API를 제공한다.
 - `WBP_FocusPrompt` 런타임 바인딩/텍스트/visibility/위치 갱신은 `UFocusPromptWidget`(C++ base widget)이 담당하고, 다중 상호작용 row 생성/수직 정렬/disabled 스타일은 Blueprint 작업 영역으로 유지한다.
 - Focus prompt entry 생성은 실제 실행 주체가 append API로 제공한다. 전역 Focus는 `UFocusActionComponent`, PartFocus는 `UCursorPartFocusActionComponent`가 context별 prompt entry와 availability를 제공한다.
@@ -81,10 +81,10 @@ Source/BeekeepingSim/
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
 - `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeeSwarmClusterActor`와 `ABeehiveSwarmRouteActor`만 spawn한다.
-- `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` Niagara parameter, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유한다.
+- `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` Niagara parameter, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유하며, 최종 완료는 벌 전량 포획과 여왕벌 포획이 모두 끝난 뒤 발생한다.
 - `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor` 기반 runtime route를 거리 기반 홀수 자동 중간점 spline으로 구성하고 기존 spline swarm Niagara parameter 계약을 유지한다.
 - `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
-- `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다.
+- `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다. 왕롱 포획으로 `bHasQueenBee=false`가 되면 여왕벌 child 재생성, 위치 갱신, 산란 증가량 계산은 비활성화된다.
 - `ABeehive`는 시간 bucket 구독(`ColonyPopulation`)을 통해 기본 60분마다 `ColonyBeeCount`를 자동 갱신한다.
 - `ABeehive`는 시간 bucket 구독(`HoneyProduction`)을 통해 기본 60분마다 꿀 생산을 처리한다.
 - `ABeehive`는 시간 bucket 구독(`PollenPattyConsumption`)을 통해 화분떡을 고정량(`PollenPattyConsumptionAmountPerBucket`) 소모한다.
@@ -99,6 +99,7 @@ Source/BeekeepingSim/
 - `ABeehiveCombActor`는 소비장 전체 기준 `TotalSpawnAmount`/`TotalTargetBeeCount`를 상태로 소유하고, Niagara 주입 시 front/back face 분배값(`Front=(Total+1)/2`, `Back=Total/2`)으로 `User.SpawnAmount`/`User.TargetBeeCount`를 각각 적용한다.
 - `AQueenBeeActor`는 Tick마다 `AddActorLocalRotation`으로 `[-YawJitterDegreesPerTick, +YawJitterDegreesPerTick]` yaw를 누적해 떨림을 만든다.
 - `AQueenBeeActor`는 `BaseEggLayingPower`를 소유하며 colony population 증가량 계산의 기본 산란력으로 사용된다.
+- `AQueenBeeActor`는 `QueenBeeMesh` 하위 `QueenCageUseAreaMesh`로 `Item.UseArea.QueenBee.QueenCage` 영역을 제공하고, 왕롱 포획 state export를 담당한다.
 - colony population 계산식 요약:
   - `Increase = QueenBaseEggLayingPower * ItemEggLayingBonus * TemperatureScore * BeeIncreaseCoefficient`
   - `EffectiveThreshold = Clamp(SanitationDiseaseThreshold, 0, MaxSanitationValue)`
@@ -128,7 +129,7 @@ Source/BeekeepingSim/
 - 사용영역 표시/점멸은 LMB와 무관하며, 선택 아이템과 area tag query가 매칭된 active descriptor 기준으로 처리한다.
 - `ABeehive`와 `AUncappingTable`은 `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent`를 통해 item-use-area host를 구현한다.
 - `AUncappingTable`은 native WorldActor이며 anchored cursor FocusEngaged 상태에서 단일 `AUncappingTableCombSlot` child actor를 통해 소비장 배치/회수/뒤집기/밀도질 use-area를 제공한다.
-- `ABeeSwarmClusterActor`는 generic `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent` 경로로 `Item.UseArea.SwarmCluster.BeeCarrier` 영역을 제공한다.
+- `ABeeSwarmClusterActor`는 generic `UCursorItemUseAreaScopeComponent` + `UItemUseAreaMeshProviderComponent` 경로로 `Item.UseArea.SwarmCluster.BeeCarrier` 영역과 child 여왕벌의 `Item.UseArea.QueenBee.QueenCage` 영역을 제공한다.
 - 작업대 empty slot 배치는 `UItemPlacementUseAction` + item-use-area LMB 경로를 사용하고, occupied comb 회수는 `UCombUncappingPartFocusActionComponent`의 PartFocus secondary retrieve bridge가 hotbar state-aware acquire를 사용한다.
 - `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.HoneyComb` use-area에서 LMB hold-use 중 현재 visible face의 capping mask를 원형 brush로 제거한다. 실제 mask pixel이 제거된 tick에만 `bSucceeded=true`를 반환하며 내구도 감소와 채밀/수확은 구현하지 않는다.
 - 작업대 소비장 PartFocus `잡기/놓기` active 상태는 `AUncappingTableCombSlot`이 별도 bool로 소유하며, 잡기 상태에서는 occupied comb capping use-area와 `UCombUncappingUseAction` begin/apply가 비활성화된다.
@@ -139,6 +140,7 @@ Source/BeekeepingSim/
 - `AHoneyDecantingTable`은 native FocusEngaged 작업대 host이며 source/target slot child actor와 `UHoneyTransferComponent`를 조립하고 이송 계산은 구현하지 않는다.
 - `FItemActionContext`는 item-use-area cursor hit fields(`bHasItemUseAreaHit`, `ItemUseAreaImpactPoint`, `ItemUseAreaImpactNormal`)를 포함하며, `UCursorItemUseAreaScopeComponent`가 hovered descriptor의 trace hit를 context로 전달한다.
 - `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` use-area에서 LMB hold 중 context impact point 이동 속도로 bees/sec 포획량을 계산하고, 실제 포획량을 BeeCarrier item instance state에 누적한다.
+- `UQueenCageUseAction`은 `Item.UseArea.QueenBee.QueenCage` use-area에서 `AQueenBeeActor`를 즉시 1회 포획하고, 결과를 `FQueenCageItemState`로 왕롱 item instance에 저장한다.
 - 기존 `ABeeSplineSwarmActor`/`BP_BeeSplineSwarm` 워크플로우는 별도로 유지된다.
 - Environment는 `AGameTimeOfDayActor`의 24시간 가속 시간과 `ADynamicSky`의 하늘/조명/태양/달 연출을 `ITimeOfDayProvider` 계약으로 분리한다.
 - Environment의 `UGameTimeBucketSubsystem`은 월드 공용 시간 bucket 이벤트를 제공하며, listener interface를 구현한 actor들에 n분 경계 이벤트를 dispatch한다.
@@ -369,8 +371,12 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - 외부 Blueprint가 `ABeehive::BeginSwarmingAtTransform` 또는 `BeginSwarmingAtActor`를 호출해 분봉 테스트를 수동 시작한다.
 - 시작 시 `ABeehive`는 `SwarmExitPoint` world location/rotation으로 `ABeehiveSwarmRouteActor`를 spawn하고, 분봉 본진 center까지 거리 기반 자동 중간점 route spline을 구성한 뒤 `SwarmRouteParameters`를 `ApplyExternalSwarmParameters`로 주입한다.
 - `ABeeSwarmClusterActor`는 `InitialAliveRadius`, `SpawnAmount`, `CapturedBeeAmount`, `SphereRadius`를 소유하고, `AliveRadius = InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`를 Niagara user parameter `User.AliveRadius`에 적용한다.
-- 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 둔다.
+- 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 두며, `InitializeSwarmCluster()` 시점에 pitch/yaw/roll 세 축을 1회 랜덤 회전한다.
 - `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` hit context의 impact point 이동 속도로 bees/sec bonus rate를 계산하고, 본진 잔여 벌 수와 BeeCarrier 남은 수용량으로 clamp한 실제 포획량을 `FBeeCarrierItemState`에 저장한다.
-- `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수가 0이면 captured로 전환하고 capture use-area를 비활성화한 뒤 descriptor를 rebuild한다. actor destroy, 여왕벌 숨김, 완료 연출은 Blueprint event 영역이다.
+- `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수가 0이면 `bBeesCaptured`로 전환하고 BeeCarrier capture use-area와 `AliveRadius`만 완료 처리한다.
+- `ABeehive`와 `ABeeSwarmClusterActor`는 `IQueenBeeCaptureSource`를 구현해 왕롱 포획 가능 여부와 host 상태 변경을 담당한다.
+- 왕롱 포획 결과는 `FQueenCageItemState`(`bHasQueen`, `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`)로 저장하며 world actor reference는 저장하지 않는다.
+- 분봉 본진의 최종 `bCaptured`/`ReceiveSwarmCaptured`는 `bBeesCaptured && bQueenCaptured`일 때 1회만 발생한다.
 - 이번 분봉 테스트 시작 경로는 `ColonyBeeCount`, 기존 벌통 여왕벌 위치, active comb bee count/target count, bucket subscription을 변경하지 않는다.
-- 새 GameplayTag: `Item.UseArea.SwarmCluster.BeeCarrier`, `Item.BeeCarrier`.
+- 왕롱으로 벌통 여왕벌을 포획해도 `ColonyBeeCount`, active comb bee count/target count, honey state는 즉시 변경하지 않는다.
+- 새 GameplayTag: `Item.UseArea.SwarmCluster.BeeCarrier`, `Item.BeeCarrier`, `Item.UseArea.QueenBee.QueenCage`, `Item.QueenCage`.

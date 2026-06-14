@@ -8,6 +8,7 @@
 #include "Focus/FocusInteractable.h"
 #include "GameplayTagContainer.h"
 #include "WorldActors/BeeSwarmTypes.h"
+#include "WorldActors/QueenBeeCaptureSource.h"
 #include "Beehive.generated.h"
 
 class UFocusTargetComponent;
@@ -45,7 +46,7 @@ enum class EPollenPattyConsumptionSide : uint8
 };
 
 UCLASS()
-class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener
+class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IQueenBeeCaptureSource
 {
 	GENERATED_BODY()
 
@@ -137,6 +138,12 @@ public:
 	void UpdateQueenBeeLocation();
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
+	bool HasQueenBee() const { return bHasQueenBee; }
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Queen Bee")
+	void SetHasQueenBee(bool bNewHasQueenBee);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
 	AQueenBeeActor* GetQueenBeeActor() const;
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Bee")
@@ -207,6 +214,9 @@ public:
 
 	virtual void GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBucketSubscription>& OutSubscriptions) const override;
 	virtual void OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& Event) override;
+
+	virtual bool CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const override;
+	virtual bool CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState) override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -325,6 +335,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
 	TSubclassOf<AQueenBeeActor> QueenBeeActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
+	bool bHasQueenBee = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee Time", meta = (ClampMin = "1", ClampMax = "1440"))
 	int32 QueenBeeLocationBucketMinutes = 60;

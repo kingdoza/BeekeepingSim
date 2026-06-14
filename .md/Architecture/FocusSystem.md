@@ -395,3 +395,11 @@
 - captured 상태에서는 cluster actor의 `IItemUseAreaActivationProvider`/component enabled 상태가 use-area를 비활성화하고 descriptor rebuild가 hover/use 대상에서 제거한다.
 - `UBeeCarrierUseAction`은 cursor trace를 직접 반복하지 않고 `FItemActionContext`의 item-use-area hit fields를 사용한다.
 - BeeCarrier 포획량 저장과 `AliveRadius` 부피 공식 파생은 Inventory/WorldActors 내부 책임이며, Focus generic scope/provider 경로는 변경하지 않는다.
+
+## Update 2026-06-14 (Queen Cage Use Area)
+
+- 왕롱 여왕벌 포획은 새 Focus 시스템을 추가하지 않고 기존 FocusEngaged item-use-area scope/provider 경로를 재사용한다.
+- `AQueenBeeActor::QueenCageUseAreaMesh`는 `Item.UseArea.QueenBee.QueenCage` area tag와 `ComponentOwner` effect target 정책을 가진다.
+- 벌통/분봉 본진 host의 `UItemUseAreaMeshProviderComponent`는 직접 child actor component 안의 `AQueenBeeActor` use-area mesh를 descriptor로 수집한다.
+- `UQueenCageUseAction`은 `FItemActionContext::ItemUseEffectTargetObject`의 `AQueenBeeActor`와 `FocusEngagedHostActor`의 `IQueenBeeCaptureSource`를 사용한다.
+- 포획 성공 후 host가 item-use-area descriptor를 rebuild해 captured queen use-area가 hover/use 대상에서 즉시 제거된다.

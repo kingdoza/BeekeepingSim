@@ -1147,8 +1147,21 @@ void ABeehive::RefreshCombSlotComponents()
 
 void ABeehive::EnsureQueenBeeChildActorClass()
 {
-	if (!QueenBeeChildActor || !QueenBeeActorClass)
+	if (!QueenBeeChildActor)
 	{
+		return;
+	}
+
+	if (!bHasQueenBee || !QueenBeeActorClass)
+	{
+		if (QueenBeeChildActor->GetChildActorClass() != nullptr)
+		{
+			if (AQueenBeeActor* QueenBee = Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()))
+			{
+				QueenBee->SetCaptured(true);
+			}
+			QueenBeeChildActor->SetChildActorClass(nullptr);
+		}
 		return;
 	}
 
@@ -1160,6 +1173,11 @@ void ABeehive::EnsureQueenBeeChildActorClass()
 
 void ABeehive::UpdateQueenBeeLocation()
 {
+	if (!bHasQueenBee)
+	{
+		return;
+	}
+
 	EnsureQueenBeeChildActorClass();
 	if (!QueenBeeChildActor || !QueenBeeChildActor->GetChildActor())
 	{
@@ -1185,14 +1203,32 @@ void ABeehive::UpdateQueenBeeLocation()
 	QueenBeeChildActor->SetRelativeRotation(FRotator(0.0f, RandomYaw, 0.0f));
 }
 
+void ABeehive::SetHasQueenBee(bool bNewHasQueenBee)
+{
+	if (bHasQueenBee == bNewHasQueenBee)
+	{
+		EnsureQueenBeeChildActorClass();
+		return;
+	}
+
+	bHasQueenBee = bNewHasQueenBee;
+	EnsureQueenBeeChildActorClass();
+	RebuildItemUseAreaDescriptorsIfAvailable();
+}
+
 AQueenBeeActor* ABeehive::GetQueenBeeActor() const
 {
+	if (!bHasQueenBee)
+	{
+		return nullptr;
+	}
+
 	return QueenBeeChildActor ? Cast<AQueenBeeActor>(QueenBeeChildActor->GetChildActor()) : nullptr;
 }
 
 bool ABeehive::IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) const
 {
-	if (!CombActor || !QueenBeeChildActor)
+	if (!bHasQueenBee || !CombActor || !QueenBeeChildActor)
 	{
 		return false;
 	}
@@ -1213,7 +1249,7 @@ bool ABeehive::IsQueenBeeAttachedToComb(const ABeehiveCombActor* CombActor) cons
 
 bool ABeehive::TryBrushQueenBeeFromCombVisibleFace(ABeehiveCombActor* CombActor)
 {
-	if (!CombActor || !QueenBeeChildActor || !QueenBeeChildActor->GetChildActor())
+	if (!bHasQueenBee || !CombActor || !QueenBeeChildActor || !QueenBeeChildActor->GetChildActor())
 	{
 		return false;
 	}
@@ -1268,6 +1304,27 @@ bool ABeehive::TryBrushQueenBeeFromCombVisibleFace(ABeehiveCombActor* CombActor)
 	const float RandomYaw = FMath::FRandRange(0.0f, 360.0f);
 	QueenBeeChildActor->SetRelativeRotation(FRotator(0.0f, RandomYaw, 0.0f));
 	return true;
+}
+
+bool ABeehive::CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const
+{
+	return bHasQueenBee
+		&& QueenBee
+		&& !QueenBee->IsCaptured()
+		&& QueenBee == GetQueenBeeActor();
+}
+
+bool ABeehive::CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState)
+{
+	OutCapturedState = FQueenCageItemState();
+	if (!CanCaptureQueenBee_Implementation(QueenBee))
+	{
+		return false;
+	}
+
+	OutCapturedState = QueenBee->MakeQueenCageItemState();
+	SetHasQueenBee(false);
+	return OutCapturedState.bHasState && OutCapturedState.bHasQueen && OutCapturedState.CapturedQueenBeeClass;
 }
 
 bool ABeehive::ChooseQueenBeeCombSlotIndex(int32& OutSlotIndex) const

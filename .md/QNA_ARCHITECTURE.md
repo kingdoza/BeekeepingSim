@@ -6,6 +6,7 @@
 - 분봉 1차 구현은 외부 Blueprint에서 수동으로 시작해 테스트하는 범위다. 자동 발생 조건, 시간 bucket, AI/시뮬레이션 연동은 이번 범위에서 제외한다.
 - 분봉 시작 시 기존 벌통의 `ColonyBeeCount`, 기존 `QueenBeeChildActor`, 소비장 벌 수/target count는 변경하지 않는다.
 - 분봉 본진의 여왕벌은 기존 벌통 여왕벌을 이동하지 않고, 분봉 본진 actor가 별도 spawn/child actor로 소유한다.
+- 분봉 본진 여왕벌은 분봉 본진 생성/초기화 시 1회, pitch/yaw/roll 세 축 모두 랜덤 회전된 상태로 배치한다. 벌통의 일반 여왕벌 위치 갱신/회전 규칙에는 적용하지 않는다.
 - `벌 운반통` 포획 결과는 `UItemInstance` optional `FBeeCarrierItemState`로 저장한다. 분봉 본진 포획 진행 source of truth는 벌 수(`CapturedBeeAmount` 또는 `RemainingBeeAmount`)이며, `AliveRadius`는 구 부피 공식으로 파생해 Niagara에 주입한다.
 - 모든 여왕벌은 `왕롱` 아이템으로 포획할 수 있다. 왕롱은 `UItemInstance` optional `FQueenCageItemState`로 여왕벌 0/1마리 상태만 저장하며 `MaxStack=1` invariant를 가진다.
 - 분봉 본진 완료는 벌 포획과 여왕벌 포획이 모두 끝났을 때만 성립한다. 벌만 전부 포획된 상태는 BeeCarrier use-area를 닫지만, `ReceiveSwarmCaptured` 같은 최종 완료 이벤트는 여왕벌까지 포획된 뒤 발생해야 한다.

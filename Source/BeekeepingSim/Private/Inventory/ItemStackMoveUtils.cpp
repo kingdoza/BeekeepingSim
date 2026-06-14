@@ -4,6 +4,8 @@
 #include "Inventory/HoneyContainerItemDefinition.h"
 #include "Inventory/ItemDefinition.h"
 #include "Inventory/ItemInstance.h"
+#include "Inventory/QueenCageItemDefinition.h"
+#include "WorldActors/QueenBeeActor.h"
 
 namespace ItemStackMoveUtils
 {
@@ -37,12 +39,22 @@ namespace
 			&& FMath::IsNearlyEqual(A.CapturedBeeAmount, B.CapturedBeeAmount, DurabilityStackTolerance);
 	}
 
+	bool AreQueenCageStatesEqual(const FQueenCageItemState& A, const FQueenCageItemState& B)
+	{
+		return A.bHasState == B.bHasState
+			&& A.bHasQueen == B.bHasQueen
+			&& A.CapturedQueenBeeClass == B.CapturedQueenBeeClass
+			&& FMath::IsNearlyEqual(A.BaseEggLayingPower, B.BaseEggLayingPower, DurabilityStackTolerance)
+			&& FMath::IsNearlyEqual(A.DiseaseValue, B.DiseaseValue, DurabilityStackTolerance);
+	}
+
 	bool HasRuntimeState(const UItemInstance* ItemInstance)
 	{
 		return ItemInstance
 			&& (ItemInstance->HasBeehiveCombState()
 				|| ItemInstance->HasHoneyContainerState()
-				|| ItemInstance->HasBeeCarrierState());
+				|| ItemInstance->HasBeeCarrierState()
+				|| ItemInstance->HasQueenCageState());
 	}
 
 	bool HasEquivalentRuntimeState(const UItemInstance* A, const UItemInstance* B)
@@ -54,13 +66,16 @@ namespace
 
 		return AreBeehiveCombStatesEqual(A->GetBeehiveCombState(), B->GetBeehiveCombState())
 			&& AreHoneyContainerStatesEqual(A->GetHoneyContainerState(), B->GetHoneyContainerState())
-			&& AreBeeCarrierStatesEqual(A->GetBeeCarrierState(), B->GetBeeCarrierState());
+			&& AreBeeCarrierStatesEqual(A->GetBeeCarrierState(), B->GetBeeCarrierState())
+			&& AreQueenCageStatesEqual(A->GetQueenCageState(), B->GetQueenCageState());
 	}
 }
 
 int32 ResolveMaxStack(const UItemDefinition* Definition)
 {
-	if (Cast<UHoneyContainerItemDefinition>(Definition) || Cast<UBeeCarrierItemDefinition>(Definition))
+	if (Cast<UHoneyContainerItemDefinition>(Definition)
+		|| Cast<UBeeCarrierItemDefinition>(Definition)
+		|| Cast<UQueenCageItemDefinition>(Definition))
 	{
 		return 1;
 	}
