@@ -1,274 +1,339 @@
-# Swarm cluster native FocusCollision implementation prompt
+# Colony swarming implementation prompt
 
 ## Goal
 
-Move the swarm cluster FocusEngaged hit proxy from Blueprint-authored `SphereCollision` to a native C++ component owned by `ABeeSwarmClusterActor`.
+Add a real colony swarming API while preserving the existing state-neutral manual/test swarming API.
 
-Decision confirmed by user:
+Confirmed direction:
 
-- Remove or disable the existing Blueprint `SphereCollision`.
-- Use only the new C++ `FocusCollision` for swarm cluster preview focus hit testing.
+- Existing `ABeehive::BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)` remain test/presentation APIs.
+- These existing APIs must keep their current contract: no queen removal, no `ColonyBeeCount` mutation, no active comb bee-count mutation.
+- Add separate real colony swarming APIs that use the same route-arrival cluster presentation but apply actual hive state impact.
 
-The native focus collision must:
+Real colony swarming behavior:
 
-1. Exist on every `ABeeSwarmClusterActor` instance.
-2. Block the focus trace while the actor is available for preview focus.
-3. Be disabled while the swarm cluster is FocusEngaged.
-4. Track cluster visual radius as `AliveRadius + 5.0f`.
+1. The source hive loses its queen.
+2. The source hive loses a random `Min~Max` percentage of its current `ColonyBeeCount`.
+3. The removed bee count becomes the spawned swarm cluster bee count.
+4. Route emission duration is based on the removed bee count, not the authored test `SwarmClusterSpawnAmount`.
 
 ## Required reading
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/CoreSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_IMPLEMENTATION.md`
 
 ## Relevant source files
 
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
-- `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
-- `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
-- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 
 ## Current code premises
 
-- `UBeekeeperFocusComponent::FindFocusTargetFromTrace()` line-traces on `FocusTraceChannel`, currently `ECC_Visibility`, then returns `HitActor->FindComponentByClass<UFocusTargetComponent>()`.
-- `ABeeSwarmClusterActor` has `UFocusTargetComponent` and `USwarmClusterFocusActionComponent`.
-- `USwarmClusterFocusActionComponent` derives from `UAnchoredFocusCursorActionComponent`.
-- `UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(...)` activates item-use-area and part-focus scopes.
-- FocusEngaged item-use-area cursor traces also use `ECC_Visibility`.
-- Therefore, the swarm cluster focus hit proxy must not keep blocking visibility while FocusEngaged is active, otherwise it can prevent BeeCarrier/QueenCage use-area hits.
-- `ABeeSwarmClusterActor::AliveRadius` changes through:
-  - density initialization
-  - intro growth
-  - `SetAliveRadius`
-  - BeeCarrier capture amount updates
-  - bees captured / final captured state
-- `ABeeSwarmClusterActor::ApplyClusterNiagaraParameters()` is the central current point for pushing `AliveRadius` to Niagara.
-
-## Implementation requirements
-
-### 1. Add native component
-
-Add a native sphere component to `ABeeSwarmClusterActor`.
-
-Header:
+- `ABeehive::BeginSwarmingAtTransform` currently starts a route-only session and spawns the cluster at route arrival.
+- `ABeehive::HandleActiveSwarmRouteArrived` currently initializes the cluster with `SwarmClusterSpawnAmount`.
+- Route emission duration is currently computed as:
 
 ```cpp
-class USphereComponent;
+RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount;
 ```
 
-Protected component property:
+- `SetColonyBeeCount(...)` is the correct source-of-truth mutation path for colony bee count because it refreshes:
+  - dual swarm settings
+  - attraction swarm settings
+  - active comb spawn amounts while preserving target ratios
+- `SetHasQueenBee(false)` is the correct source-of-truth mutation path for removing the hive queen because it clears/rebuilds the queen child actor and item-use-area descriptors.
+- Current architecture explicitly says manual swarming test does not modify `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, or bucket subscriptions. This must remain true for the existing test APIs.
+
+## Public API additions
+
+Add separate real colony swarming APIs on `ABeehive`.
+
+Recommended names:
 
 ```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-TObjectPtr<USphereComponent> FocusCollision;
+UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
+bool BeginColonySwarmingAtTransform(const FTransform& TargetTransform);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
+bool BeginColonySwarmingAtActor(AActor* TargetActor);
 ```
 
-Constructor:
+Do not rename or delete:
 
 ```cpp
-FocusCollision = CreateDefaultSubobject<USphereComponent>(TEXT("FocusCollision"));
-FocusCollision->SetupAttachment(ClusterCenter);
+BeginSwarmingAtTransform(...)
+BeginSwarmingAtActor(...)
 ```
 
-Collision defaults:
+Those remain manual/test APIs.
 
-- `QueryOnly`
-- all channels ignore
-- `ECC_Visibility` block
-- overlap events disabled
-- navigation disabled if available for the component
-- no physics
-- no visual rendering dependency
+## New authored settings
 
-Use local helper functions rather than scattering collision setup through the class.
+Add real swarming loss ratio settings to `ABeehive`.
 
-Suggested private helpers:
+Recommended names:
 
 ```cpp
-void RefreshFocusCollisionState();
-void SetFocusCollisionEnabled(bool bEnabled);
-float GetFocusCollisionRadius() const;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+float ColonySwarmingBeeLossRatioMin = 0.3f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+float ColonySwarmingBeeLossRatioMax = 0.6f;
 ```
 
-Suggested private state:
+Rules:
+
+- Values represent `0.0~1.0`, not `0~100`.
+- Clamp both to `0.0~1.0` before use.
+- If min is greater than max, sort them at calculation time rather than failing.
+- If both effectively produce zero removed bees, real swarming start should fail cleanly.
+
+## Shared start flow
+
+Do not duplicate the entire route-start implementation.
+
+Refactor into a private shared helper with a policy/input struct or clear parameters.
+
+Recommended shape:
 
 ```cpp
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Focus", meta = (AllowPrivateAccess = "true"))
-bool bFocusCollisionSuppressedForFocusEngaged = false;
-```
-
-If you do not need a stored bool because action state can be queried reliably, keep the implementation simpler. The key invariant is that radius updates must not accidentally re-enable collision during FocusEngaged.
-
-### 2. Radius synchronization
-
-The focus sphere radius must always follow:
-
-```cpp
-FocusCollisionRadius = FMath::Max(0.0f, AliveRadius) + 5.0f;
-```
-
-Add an editable padding only if needed:
-
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster|Focus", meta = (ClampMin = "0.0"))
-float FocusCollisionRadiusPadding = 5.0f;
-```
-
-Otherwise hard-code `5.0f` to match the user request.
-
-Call `RefreshFocusCollisionState()` from every path that can change `AliveRadius` or captured/focus state. At minimum:
-
-- constructor or post component setup for initial radius
-- `OnConstruction`
-- `BeginPlay`
-- `ApplyClusterNiagaraParameters`
-- `SetAliveRadius`
-- `ApplyIntroAliveRadiusVisual`
-- `FinishAliveRadiusIntroGrowth`
-- `HandleBeesCapturedIfNeeded`
-- `HandleSwarmCapturedIfNeeded`
-
-Preferred consolidation:
-
-- Put radius sync at the end of `ApplyClusterNiagaraParameters()`.
-- Ensure `ApplyClusterNiagaraParameters()` no longer returns before focus collision refresh. If `ClusterNiagara` is null, focus collision still needs to update.
-
-Example shape:
-
-```cpp
-void ABeeSwarmClusterActor::ApplyClusterNiagaraParameters()
+enum class EBeehiveSwarmingStartMode : uint8
 {
-    if (ClusterNiagara)
-    {
-        // existing Niagara parameter writes
-    }
+    TestPresentation,
+    ColonyImpact
+};
 
-    RefreshFocusCollisionState();
+struct FBeehiveSwarmingStartOptions
+{
+    EBeehiveSwarmingStartMode Mode = EBeehiveSwarmingStartMode::TestPresentation;
+    int32 ClusterSpawnAmount = 0;
+    bool bApplyColonyImpact = false;
+};
+
+bool BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options);
+```
+
+Simple alternatives are acceptable, but keep these invariants:
+
+- Existing test APIs call the shared helper with:
+  - `ClusterSpawnAmount = SwarmClusterSpawnAmount`
+  - `bApplyColonyImpact = false`
+- New colony APIs call the shared helper with:
+  - `ClusterSpawnAmount = OutgoingBeeCount`
+  - `bApplyColonyImpact = true`
+- Route timing and cluster arrival use the session cluster spawn amount, not always `SwarmClusterSpawnAmount`.
+
+## Real swarming start validation
+
+`BeginColonySwarmingAtTransform(...)` must validate before route start:
+
+```cpp
+if (!bHasQueenBee)
+{
+    NotifySwarmingStartFailed();
+    return false;
+}
+
+if (ColonyBeeCount <= 0)
+{
+    NotifySwarmingStartFailed();
+    return false;
 }
 ```
 
-### 3. Collision enabled rules
-
-`FocusCollision` should be enabled only when all are true:
-
-- component exists
-- actor is not final captured
-- actor is not pending kill/destroy
-- focus collision is not suppressed for active FocusEngaged
-
-`FocusCollision` should be disabled when any are true:
-
-- FocusEngaged starts on the swarm cluster
-- focus action aborts
-- final captured state is reached
-- actor is being destroyed
-
-During intro growth:
-
-- Keep `FocusCollision` enabled.
-- `USwarmClusterFocusActionComponent::CanBeginFocusAction(...)` already returns false while intro growth is active.
-- This allows hover/prompt to exist but FocusEngaged entry to remain unavailable until intro completes.
-
-When bees are fully captured but queen remains:
-
-- `AliveRadius` becomes `0.0f`, so `FocusCollision` becomes radius `5.0f`.
-- This follows the strict user request `AliveRadius + 5`.
-- Do not add a minimum focus radius unless the user explicitly asks later.
-
-### 4. FocusEngaged lifecycle integration
-
-Use the swarm-cluster-specific action component.
-
-In `USwarmClusterFocusActionComponent`, override:
+Then compute outgoing bee count:
 
 ```cpp
-virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
-virtual void OnFocusReturnCompleted(ABeekeeperCharacter* InteractingCharacter) override;
-virtual void OnFocusActionAborted(ABeekeeperCharacter* InteractingCharacter) override;
+const int32 PreSwarmBeeCount = FMath::Max(0, ColonyBeeCount);
+const float ClampedMin = FMath::Clamp(ColonySwarmingBeeLossRatioMin, 0.0f, 1.0f);
+const float ClampedMax = FMath::Clamp(ColonySwarmingBeeLossRatioMax, 0.0f, 1.0f);
+const float LossRatioMin = FMath::Min(ClampedMin, ClampedMax);
+const float LossRatioMax = FMath::Max(ClampedMin, ClampedMax);
+const float LossRatio = FMath::FRandRange(LossRatioMin, LossRatioMax);
+const int32 OutgoingBeeCount = FMath::Clamp(
+    FMath::RoundToInt(static_cast<float>(PreSwarmBeeCount) * LossRatio),
+    0,
+    PreSwarmBeeCount);
 ```
 
-Implementation behavior:
+If `OutgoingBeeCount <= 0`, fail cleanly with `NotifySwarmingStartFailed()` and return false.
 
-- Call `Super` first unless there is a concrete reason not to.
-- On engaged start:
-  - mark focus collision suppressed
-  - disable `FocusCollision`
-- On return completed:
-  - clear suppression
-  - refresh focus collision state
-- On abort:
-  - clear suppression
-  - refresh focus collision state
+Do not remove the queen if outgoing bee count is zero.
 
-Add public or private `ABeeSwarmClusterActor` methods as needed, for example:
+## Colony impact commit timing
+
+Apply colony state impact only after route actor spawn/config succeeds.
+
+Recommended route:
+
+1. Validate world/classes/session/rates.
+2. Compute outgoing bee count for colony mode.
+3. Spawn route actor.
+4. Configure route and apply route parameters.
+5. Compute route timings.
+6. Commit colony impact if this is colony mode.
+7. Store session state and schedule timers.
+
+The commit should happen before returning true but after route start cannot trivially fail.
+
+Recommended helper:
 
 ```cpp
-void SetFocusCollisionSuppressedForFocusEngaged(bool bSuppressed);
+void ApplyColonySwarmingImpact(int32 OutgoingBeeCount);
 ```
 
-Keep this API non-Blueprint unless Blueprint needs it. Do not expose new Blueprint surface unnecessarily.
+Implementation:
 
-### 5. Blueprint migration requirement
+```cpp
+void ABeehive::ApplyColonySwarmingImpact(int32 OutgoingBeeCount)
+{
+    SetColonyBeeCount(FMath::Max(0, ColonyBeeCount - FMath::Max(0, OutgoingBeeCount)));
+    SetHasQueenBee(false);
+}
+```
 
-Existing swarm cluster Blueprint must remove or disable its authored `SphereCollision`.
+Do not call `ReduceAllCombTargetBeeCountsByConfiguredRatio()` from this impact path. `SetColonyBeeCount()` already refreshes comb spawn amounts while preserving target ratios. Calling both would double-apply visual/target reduction.
 
-Manual asset action:
+## Session cluster spawn amount
 
-- Open the swarm cluster Blueprint currently using `ABeeSwarmClusterActor`.
-- Remove the Blueprint `SphereCollision`, or set it to `NoCollision`.
-- Compile and save the Blueprint.
+Add transient session state so route timers and arrival logic can use the correct amount.
 
-Important:
+Recommended:
 
-- If the BP `SphereCollision` remains with `Visibility` blocking, it can still intercept FocusEngaged internal item-use-area cursor traces even after native `FocusCollision` is disabled.
-- The implementation should not try to discover and mutate arbitrary Blueprint sphere components by name. The contract is native `FocusCollision` only, and BP duplicate collision must be removed/disabled manually.
+```cpp
+UPROPERTY(Transient)
+int32 ActiveSwarmClusterSpawnAmount = 0;
+```
 
-### 6. Blueprint/API/Core Redirect impact
+Rules:
 
-Expected C++ API impact:
+- Test APIs set this to authored `SwarmClusterSpawnAmount`.
+- Colony APIs set this to computed `OutgoingBeeCount`.
+- `ClearActiveTestSwarm(...)` or route session cleanup resets it to `0`.
+- Route emission duration uses `ActiveSwarmClusterSpawnAmount`.
+- Cluster arrival initialization uses `ActiveSwarmClusterSpawnAmount`.
 
-- Add `USphereComponent* FocusCollision` native component property to `ABeeSwarmClusterActor`.
-- No class rename.
-- No USTRUCT/UENUM rename.
-- No function/property deletion.
+Replace route emission duration calculation with session amount:
+
+```cpp
+const int32 SessionClusterSpawnAmount = FMath::Max(0, Options.ClusterSpawnAmount);
+const float RouteEmissionDurationSeconds = static_cast<float>(SessionClusterSpawnAmount) / RouteSpawnAmount;
+```
+
+At arrival:
+
+```cpp
+ClusterActor->InitializeSwarmClusterFromDensityWithIntroGrowth(
+    ActiveSwarmClusterSpawnAmount,
+    SwarmClusterBeeDensityPerCubicMeter,
+    ActiveSwarmRouteEmissionDurationSeconds);
+```
+
+## Queen state transfer
+
+Minimum required behavior:
+
+- `SetHasQueenBee(false)` removes the hive queen.
+- `ABeeSwarmClusterActor` still creates its own swarm queen through existing `SwarmQueenBeeActorClass`.
+
+Preferred behavior if low-risk:
+
+- Before `SetHasQueenBee(false)`, capture the source hive queen state:
+
+```cpp
+FQueenCageItemState OutgoingQueenState;
+if (const AQueenBeeActor* QueenBee = GetQueenBeeActor())
+{
+    OutgoingQueenState = QueenBee->MakeQueenCageItemState();
+}
+```
+
+- Store it in transient session state.
+- Pass it to `ABeeSwarmClusterActor` at arrival.
+- Use it to configure the cluster queen class, base egg laying power, and disease value.
+
+Only implement the preferred transfer if it can be done without broad API churn. If it requires new public setters on `AQueenBeeActor`, add only small, clearly named setters and document the Blueprint/API impact.
+
+If not implementing queen state transfer in this pass, explicitly report that colony swarming removes the source queen but the spawned swarm queen still uses `SwarmQueenBeeActorClass` defaults.
+
+## Failure and rollback policy
+
+Before route start success:
+
+- Do not mutate hive state.
+- Fail with `NotifySwarmingStartFailed()`.
+
+After route start success and colony impact commit:
+
+- Do not rollback queen/bee count if route timers later fail or cluster spawn fails.
+- If route arrival cluster spawn fails, call `NotifySwarmingStartFailed()` but keep the colony impact.
+
+Rationale:
+
+- Once real swarming starts, the queen and bees have left the source colony.
+- Rolling back would require restoring queen child actor state, colony count, route state, and presentation state together.
+
+## Existing test API behavior that must remain unchanged
+
+For `BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)`:
+
+- Do not check `bHasQueenBee`.
+- Do not check `ColonyBeeCount`.
+- Do not call `SetHasQueenBee(false)`.
+- Do not call `SetColonyBeeCount(...)`.
+- Continue using authored `SwarmClusterSpawnAmount`.
+- Continue allowing test route/cluster presentation without changing hive source-of-truth state.
+
+## Blueprint/API/Core Redirect impact
+
+Expected Blueprint API additions:
+
+- `BeginColonySwarmingAtTransform`
+- `BeginColonySwarmingAtActor`
+- `ColonySwarmingBeeLossRatioMin`
+- `ColonySwarmingBeeLossRatioMax`
+
+No Blueprint API deletion or rename is allowed.
 
 Core Redirect:
 
 - Not required.
 - Do not edit `Config/DefaultEngine.ini`.
 
-Blueprint impact:
+Blueprint behavior:
 
-- Existing Blueprint may gain a new inherited `FocusCollision` component.
-- Existing BP-authored `SphereCollision` must be removed or disabled manually.
-- Blueprint compile/save is required after migration.
+- Existing Blueprint calls to `BeginSwarmingAtTransform/Actor` remain test-only and state-neutral.
+- Blueprints that want real hive impact must switch to the new `BeginColonySwarmingAtTransform/Actor` calls.
 
 ## Documentation updates
 
 Update `.md/0_ARCHITECTURE.md`:
 
-- Mention that `ABeeSwarmClusterActor` owns native `FocusCollision` for preview focus hit testing.
-- Mention that the focus collision radius follows `AliveRadius + 5`.
-- Mention that FocusEngaged disables the focus collision so internal BeeCarrier/QueenCage item-use-area traces are not blocked.
+- Keep existing test API contract: no colony/queen/comb state mutation.
+- Add new colony swarming API contract:
+  - requires queen
+  - removes queen on route start success
+  - removes random min/max ratio of `ColonyBeeCount`
+  - removed bee count drives cluster `SpawnAmount` and route emission duration
 
 Update `.md/Architecture/WorldActorsSystem.md`:
 
-- Add `USphereComponent FocusCollision` to `ABeeSwarmClusterActor` composition.
-- Document collision policy:
-  - preview focus hit proxy
-  - visibility block while not FocusEngaged/final captured
-  - disabled during FocusEngaged
-  - radius sync from `AliveRadius + 5`
-- Add migration note: BP `SphereCollision` must be removed or set to `NoCollision`.
-
-Update `.md/Architecture/FocusSystem.md` only if needed:
-
-- If documenting cross-system trace behavior, add a short note that FocusEngaged hosts may disable their preview focus hit proxy during engaged mode so cursor item-use traces can hit internal use-area components.
+- `ABeehive` composition/settings:
+  - add colony swarming loss ratio settings
+  - add session cluster spawn amount state
+- Swarming flow:
+  - separate test presentation start from colony-impact start
+  - document commit timing and no-rollback policy
+  - document that `SetColonyBeeCount()` and `SetHasQueenBee(false)` are the mutation paths
+- Update the previous "test start does not modify colony state" wording so it applies only to the existing test API, not the new colony API.
 
 Do not update unrelated systems.
 
@@ -283,11 +348,11 @@ git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 Run focused searches:
 
 ```powershell
-rg -n "FocusCollision|SphereCollision|SetFocusCollision|RefreshFocusCollision|AliveRadius \\+ 5|OnFocusEngagedStarted|OnFocusReturnCompleted|OnFocusActionAborted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+rg -n "BeginSwarmingAtTransform|BeginSwarmingAtActor|BeginColonySwarming|ColonySwarmingBeeLossRatio|ActiveSwarmClusterSpawnAmount|ApplyColonySwarmingImpact|SwarmClusterSpawnAmount" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
 ```powershell
-rg -n "FindFocusTargetFromTrace|FocusTraceChannel|CursorTraceChannel|ECC_Visibility|ItemUseArea" Source/BeekeepingSim/Private/Focus Source/BeekeepingSim/Public/Focus
+rg -n "SetHasQueenBee\\(false\\)|SetColonyBeeCount\\(|ReduceAllCombTargetBeeCountsByConfiguredRatio|NotifySwarmingStartFailed|ReceiveSwarmingStarted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
 ```
 
 Build:
@@ -298,34 +363,42 @@ Build:
 
 If the engine path is missing, do not guess another engine version. Report that build could not be run.
 
-## Manual Editor/PIE checks
+## Manual PIE checks
 
-1. Open the swarm cluster Blueprint.
-2. Remove existing BP `SphereCollision`, or set it to `NoCollision`.
-3. Compile and save the Blueprint.
-4. Start a manual swarming route and wait for cluster spawn.
-5. Confirm the inherited native `FocusCollision` exists.
-6. Confirm preview focus can hit the swarm cluster through `FocusCollision`.
-7. During intro growth, confirm prompt can show but FocusEngaged cannot begin.
-8. After intro growth, confirm FocusEngaged can begin.
-9. On FocusEngaged start, confirm `FocusCollision` collision becomes disabled.
-10. In FocusEngaged, select BeeCarrier and confirm BeeCarrier use-area can be hit/used.
-11. In FocusEngaged, select QueenCage and confirm queen use-area can be hit/used.
-12. Cancel/exit FocusEngaged before final capture and confirm `FocusCollision` is restored.
-13. Capture bees and confirm `FocusCollision` radius follows `AliveRadius + 5`.
-14. With bees fully captured and queen still present, confirm radius is `5`.
-15. Capture queen and confirm final captured actor removal still works without the old BP collision.
+Test API:
+
+1. Call existing `BeginSwarmingAtTransform`.
+2. Confirm route/cluster presentation still works.
+3. Confirm hive queen remains.
+4. Confirm `ColonyBeeCount` is unchanged.
+5. Confirm active comb spawn/target state is not affected except by existing presentation-only behavior.
+
+Colony API:
+
+1. Set `ColonyBeeCount` to a known value and `bHasQueenBee=true`.
+2. Set `ColonySwarmingBeeLossRatioMin` and `Max` to the same known value, e.g. `0.5`.
+3. Call `BeginColonySwarmingAtTransform`.
+4. Confirm route starts.
+5. Confirm hive queen is removed after route start succeeds.
+6. Confirm `ColonyBeeCount` decreases by the expected percentage.
+7. Confirm route emission duration uses removed bee count divided by route spawn amount.
+8. Confirm spawned cluster `SpawnAmount` equals removed bee count.
+9. Confirm active comb spawn amounts update through `SetColonyBeeCount()` behavior.
+10. Confirm calling colony API without a queen fails and does not mutate bee count.
+11. Confirm calling colony API with zero colony bees fails and does not remove queen.
+12. Confirm existing final swarm cluster capture behavior still works.
 
 ## Final report requirements
 
 - Changed files
-- Whether `FocusCollision` was added as native `USphereComponent`
-- Exact collision profile/responses used
-- Exact radius formula used
-- Where radius sync is called
-- Where FocusEngaged disables/restores the collision
-- Confirmation that no Blueprint API was deleted or renamed
-- Confirmation that no Core Redirect was needed
+- New API names
+- New settings and default values
+- Exact real swarming bee-loss formula
+- Confirmation that existing test APIs remain state-neutral
+- Confirmation that real colony API removes queen and reduces `ColonyBeeCount`
+- Confirmation that route emission duration and cluster spawn amount use removed bee count for colony mode
+- Whether queen state transfer to cluster was implemented or deferred
+- Blueprint/API/Core Redirect impact
 - Architecture document updates
 - Build/diff validation results
-- Manual BP migration and PIE checks still required
+- Manual PIE checks still required
