@@ -1,454 +1,293 @@
-# Swarming route-arrival cluster spawn implementation prompt
+# Swarm cluster native FocusCollision implementation prompt
 
 ## Goal
 
-Change manual swarming test presentation so the route swarm appears first, and the swarm cluster is created only when the route swarm reaches the target.
+Move the swarm cluster FocusEngaged hit proxy from Blueprint-authored `SphereCollision` to a native C++ component owned by `ABeeSwarmClusterActor`.
 
-Current behavior creates the route actor and the cluster actor immediately. The new behavior must be:
+Decision confirmed by user:
 
-1. `ABeehive::BeginSwarmingAtTransform` starts only the route actor.
-2. The route actor spline runs from `SwarmExitPoint` to the requested target transform location.
-3. The cluster actor is spawned at the target only after the route travel delay expires.
-4. Cluster bees and the separate swarm queen are created together by `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(...)`.
-5. Route new-spawn/emission lasts only `SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount` seconds.
-6. The route actor remains alive until the last emitted route bees can reach the target: `RouteArrivalDelaySeconds + RouteEmissionDurationSeconds`.
-7. After cluster spawn, the cluster `AliveRadius` grows from `0` to the target radius over `RouteEmissionDurationSeconds`.
-8. The swarm cluster host cannot enter FocusEngaged until intro growth is complete.
+- Remove or disable the existing Blueprint `SphereCollision`.
+- Use only the new C++ `FocusCollision` for swarm cluster preview focus hit testing.
 
-The user confirmed policy option 1:
+The native focus collision must:
 
-- `RouteEmissionDurationSeconds` controls how long the route keeps emitting/new-spawning bees.
-- Route actor lifetime is longer, so already-emitted particles can finish traveling after emission stops.
+1. Exist on every `ABeeSwarmClusterActor` instance.
+2. Block the focus trace while the actor is available for preview focus.
+3. Be disabled while the swarm cluster is FocusEngaged.
+4. Track cluster visual radius as `AliveRadius + 5.0f`.
 
 ## Required reading
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/CoreSystem.md`
+- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_IMPLEMENTATION.md`
 
+## Relevant source files
+
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
+- `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
+- `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
+- `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
+- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
+
 ## Current code premises
 
-- Relevant source files:
-  - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-  - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-  - `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
-  - `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
-  - `Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h`
-  - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
-  - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
-  - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- `ABeehive::BeginSwarmingAtTransform` currently spawns and initializes `ABeeSwarmClusterActor` immediately.
-- `ABeehiveSwarmRouteActor::ConfigureRoute(...)` builds the route spline and `ABeeSplineSwarmActor::GetSplineLength()` returns route length in Unreal centimeters.
-- `FBeeSplineSwarmAppliedParameters` contains:
-  - `SpawnAmount`
-  - `SpeedMin`
-  - `SpeedMax`
-- `ABeeSplineSwarmActor::ApplyExternalSwarmParameters(...)` applies route Niagara parameters.
-- `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(int32, float)` already owns cluster initialization, density-derived radius, queen child creation/random rotation, capture use-area activation, and Niagara parameter application.
-- `ABeeSwarmClusterActor` capture progression uses bee amount as source of truth and derives `AliveRadius` from volume ratio. The intro growth must not replace `CapturedBeeAmount` as capture state.
-- `UFocusTargetComponent` does not currently expose an enabled flag. FocusEngaged availability should be gated through the cluster's focus action `CanBeginFocusAction(...)`, not by assuming component activation disables focus.
+- `UBeekeeperFocusComponent::FindFocusTargetFromTrace()` line-traces on `FocusTraceChannel`, currently `ECC_Visibility`, then returns `HitActor->FindComponentByClass<UFocusTargetComponent>()`.
+- `ABeeSwarmClusterActor` has `UFocusTargetComponent` and `USwarmClusterFocusActionComponent`.
+- `USwarmClusterFocusActionComponent` derives from `UAnchoredFocusCursorActionComponent`.
+- `UAnchoredFocusCursorActionComponent::OnFocusEngagedStarted(...)` activates item-use-area and part-focus scopes.
+- FocusEngaged item-use-area cursor traces also use `ECC_Visibility`.
+- Therefore, the swarm cluster focus hit proxy must not keep blocking visibility while FocusEngaged is active, otherwise it can prevent BeeCarrier/QueenCage use-area hits.
+- `ABeeSwarmClusterActor::AliveRadius` changes through:
+  - density initialization
+  - intro growth
+  - `SetAliveRadius`
+  - BeeCarrier capture amount updates
+  - bees captured / final captured state
+- `ABeeSwarmClusterActor::ApplyClusterNiagaraParameters()` is the central current point for pushing `AliveRadius` to Niagara.
 
-## Timing rules
+## Implementation requirements
 
-Use two distinct route timing concepts.
+### 1. Add native component
+
+Add a native sphere component to `ABeeSwarmClusterActor`.
+
+Header:
 
 ```cpp
-const float RouteSpawnAmount = FMath::Max(0.0f, SwarmRouteParameters.SpawnAmount);
-const float RouteSpeedMin = FMath::Max(0.0f, SwarmRouteParameters.SpeedMin);
-const float RouteSpeedMax = FMath::Max(0.0f, SwarmRouteParameters.SpeedMax);
-const float AverageRouteSpeed = (RouteSpeedMin + RouteSpeedMax) * 0.5f;
-const float SplineLength = RouteActor->GetSplineLength();
-
-RouteArrivalDelaySeconds = SplineLength / AverageRouteSpeed;
-RouteEmissionDurationSeconds = float(FMath::Max(0, SwarmClusterSpawnAmount)) / RouteSpawnAmount;
-RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds;
+class USphereComponent;
 ```
 
-Important:
-
-- `SplineLength / AverageRouteSpeed` is the correct seconds formula.
-- Do not use `AverageRouteSpeed / SplineLength`.
-- `SplineLength` is in cm and route speed is assumed to be cm/s.
-- If `RouteSpawnAmount <= 0`, fail swarming start and call `ReceiveSwarmingStartFailed()`.
-- If `AverageRouteSpeed <= 0`, fail swarming start and call `ReceiveSwarmingStartFailed()`.
-- If `SplineLength <= 0`, allow immediate arrival with `RouteArrivalDelaySeconds = 0.0f`.
-- `SpeedMin > SpeedMax` does not matter for average speed because the sum is unchanged, but still clamp each to `>= 0`.
-
-## Required behavior
-
-### Start flow
-
-Update `ABeehive::BeginSwarmingAtTransform` to:
-
-1. Resolve `World`, `SwarmRouteActorClass`, and `SwarmClusterActorClass`.
-2. Clear any pending swarming timers/session state. If `bDestroyPreviousTestSwarmOnStart` is true, destroy previous active route/cluster actors.
-3. Spawn only `ABeehiveSwarmRouteActor` at `SwarmExitPoint` transform.
-4. Configure route from `SwarmExitPoint` location to `TargetTransform.GetLocation()`.
-5. Apply `SwarmRouteParameters`.
-6. Compute `RouteArrivalDelaySeconds`, `RouteEmissionDurationSeconds`, and `RouteDestroyDelaySeconds`.
-7. Store the target transform as pending cluster spawn data.
-8. Store the active route actor.
-9. Start timers for:
-   - route arrival / cluster spawn
-   - route emission stop
-   - route actor cleanup
-10. Return true after route start succeeds.
-
-Do not spawn or initialize the cluster during the start call.
-
-### Arrival flow
-
-Add a private helper on `ABeehive`, e.g.
+Protected component property:
 
 ```cpp
-void HandleActiveSwarmRouteArrived();
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+TObjectPtr<USphereComponent> FocusCollision;
 ```
 
-On arrival:
-
-1. If the active route/session is no longer valid, do nothing.
-2. Spawn `ABeeSwarmClusterActor` at the pending target transform.
-3. Call:
+Constructor:
 
 ```cpp
-ClusterActor->InitializeSwarmClusterFromDensity(
-    SwarmClusterSpawnAmount,
-    SwarmClusterBeeDensityPerCubicMeter);
+FocusCollision = CreateDefaultSubobject<USphereComponent>(TEXT("FocusCollision"));
+FocusCollision->SetupAttachment(ClusterCenter);
 ```
 
-4. Set `ActiveSwarmClusterActor`.
-5. Start cluster intro growth for `RouteEmissionDurationSeconds`.
-6. Call the existing `ReceiveSwarmingStarted(ClusterActor, ActiveSwarmRouteActor)`.
+Collision defaults:
 
-Keep `ReceiveSwarmingStarted` as the cluster-created event. This preserves the expectation that its `ClusterActor` parameter is non-null.
+- `QueryOnly`
+- all channels ignore
+- `ECC_Visibility` block
+- overlap events disabled
+- navigation disabled if available for the component
+- no physics
+- no visual rendering dependency
 
-### Cluster intro growth
+Use local helper functions rather than scattering collision setup through the class.
 
-Add an explicit intro-growth path on `ABeeSwarmClusterActor`, e.g.
+Suggested private helpers:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
-void BeginAliveRadiusIntroGrowth(float DurationSeconds);
-
-UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
-void FinishAliveRadiusIntroGrowth();
-
-UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
-bool IsAliveRadiusIntroGrowthActive() const;
+void RefreshFocusCollisionState();
+void SetFocusCollisionEnabled(bool bEnabled);
+float GetFocusCollisionRadius() const;
 ```
 
-The arrival handler should call:
+Suggested private state:
 
 ```cpp
-ClusterActor->InitializeSwarmClusterFromDensity(
-    SwarmClusterSpawnAmount,
-    SwarmClusterBeeDensityPerCubicMeter);
-ClusterActor->BeginAliveRadiusIntroGrowth(ActiveSwarmRouteEmissionDurationSeconds);
+UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Focus", meta = (AllowPrivateAccess = "true"))
+bool bFocusCollisionSuppressedForFocusEngaged = false;
 ```
 
-Required intro behavior:
+If you do not need a stored bool because action state can be queried reliably, keep the implementation simpler. The key invariant is that radius updates must not accidentally re-enable collision during FocusEngaged.
 
-1. `SpawnAmount` is the final target bee amount immediately.
-2. `InitialAliveRadius` is the final target full radius immediately.
-3. `SphereRadius` is the final target radius immediately.
-4. Niagara `User.SpawnAmount` is set to the final target amount immediately.
-5. Niagara `User.SphereRadius` is set to the final target radius immediately.
-6. Only `AliveRadius` starts at `0.0f` and grows over time.
+### 2. Radius synchronization
 
-The growth is linear in bee count, not linear in radius.
+The focus sphere radius must always follow:
 
 ```cpp
-const float GrowthAlpha = FMath::Clamp(ElapsedSeconds / DurationSeconds, 0.0f, 1.0f);
-const float VisualBeeAmount = static_cast<float>(FMath::Max(0, SpawnAmount)) * GrowthAlpha;
-const float VisualBeeRatio = SpawnAmount > 0
-    ? FMath::Clamp(VisualBeeAmount / static_cast<float>(SpawnAmount), 0.0f, 1.0f)
-    : 0.0f;
-AliveRadius = InitialAliveRadius * FMath::Pow(VisualBeeRatio, 1.0f / 3.0f);
+FocusCollisionRadius = FMath::Max(0.0f, AliveRadius) + 5.0f;
 ```
 
-At `GrowthAlpha=1`, `AliveRadius` must equal `InitialAliveRadius` and the intro growth is complete.
-
-Suggested cluster state:
+Add an editable padding only if needed:
 
 ```cpp
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
-bool bAliveRadiusIntroGrowthActive = false;
-
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
-float AliveRadiusIntroGrowthDurationSeconds = 0.0f;
-
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
-float AliveRadiusIntroGrowthElapsedSeconds = 0.0f;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster|Focus", meta = (ClampMin = "0.0"))
+float FocusCollisionRadiusPadding = 5.0f;
 ```
 
-Tick policy:
+Otherwise hard-code `5.0f` to match the user request.
 
-- `ABeeSwarmClusterActor` currently does not tick.
-- Enable tick only while intro growth is active, then disable it again when growth finishes.
-- Do not add permanent per-frame tick cost.
+Call `RefreshFocusCollisionState()` from every path that can change `AliveRadius` or captured/focus state. At minimum:
 
-Capture policy during intro:
+- constructor or post component setup for initial radius
+- `OnConstruction`
+- `BeginPlay`
+- `ApplyClusterNiagaraParameters`
+- `SetAliveRadius`
+- `ApplyIntroAliveRadiusVisual`
+- `FinishAliveRadiusIntroGrowth`
+- `HandleBeesCapturedIfNeeded`
+- `HandleSwarmCapturedIfNeeded`
 
-- Keep the swarm cluster FocusEngaged unavailable while intro growth is active.
-- Do not add separate BeeCarrier or QueenCage intro gates unless the implementation discovers a direct non-FocusEngaged use path. Those use-areas only matter inside the FocusEngaged item-use-area scope, so host-level FocusEngaged gating is the source of truth.
-- BeeCarrier and QueenCage use-area active rules should remain tied to their domain state after FocusEngaged is available: BeeCarrier depends on `!bBeesCaptured`, QueenCage depends on queen capture state.
-- `CaptureBees`, `SetCapturedBeeAmount`, and `RefreshAliveRadiusFromBeeAmounts` should finish/cancel intro growth before applying capture math if they are called unexpectedly during intro. Capture math must remain based on `CapturedBeeAmount` and target `SpawnAmount`, not visual intro bee amount.
+Preferred consolidation:
 
-Zero-duration behavior:
-
-- If `DurationSeconds <= 0`, immediately finish growth and set `AliveRadius = InitialAliveRadius`.
-- If `SpawnAmount <= 0`, keep `AliveRadius = 0`, finish growth immediately, and preserve existing zero-bee completion behavior.
-
-Events:
-
-- Keep `ReceiveSwarmClusterInitialized()` as the cluster initialization event.
-- Keep `ReceiveAliveRadiusChanged(float)` for each meaningful `AliveRadius` update, including intro growth updates.
-- Optional low-risk event:
-
-```cpp
-UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster|Intro")
-void ReceiveAliveRadiusIntroGrowthFinished();
-```
-
-Do not make intro growth a separate source of truth for final captured/completion state.
-
-### Cluster FocusEngaged availability
-
-FocusEngaged for the swarm cluster must become available only after intro growth finishes.
-
-Do not rely on `UActorComponent::SetActive(false)` unless you verify the Focus system checks component active state. The current focus action path calls `CanBeginFocusAction(...)`, so use an explicit action-level gate.
-
-Recommended implementation:
-
-- Add a small swarm-cluster-specific focus action component, e.g. `USwarmClusterFocusActionComponent : public UAnchoredFocusCursorActionComponent`.
-- Use it as `ABeeSwarmClusterActor::FocusAction` instead of the generic `UAnchoredFocusCursorActionComponent`.
-- Override `CanBeginFocusAction(ABeekeeperCharacter*) const`.
-- Return false while the owning `ABeeSwarmClusterActor` reports intro growth active or FocusEngaged unavailable.
+- Put radius sync at the end of `ApplyClusterNiagaraParameters()`.
+- Ensure `ApplyClusterNiagaraParameters()` no longer returns before focus collision refresh. If `ClusterNiagara` is null, focus collision still needs to update.
 
 Example shape:
 
 ```cpp
-bool USwarmClusterFocusActionComponent::CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const
+void ABeeSwarmClusterActor::ApplyClusterNiagaraParameters()
 {
-    const ABeeSwarmClusterActor* ClusterOwner = Cast<ABeeSwarmClusterActor>(GetOwner());
-    return Super::CanBeginFocusAction(InteractingCharacter)
-        && ClusterOwner
-        && ClusterOwner->IsSwarmClusterFocusEngagedAvailable();
+    if (ClusterNiagara)
+    {
+        // existing Niagara parameter writes
+    }
+
+    RefreshFocusCollisionState();
 }
 ```
 
-Add cluster query/setter APIs:
+### 3. Collision enabled rules
+
+`FocusCollision` should be enabled only when all are true:
+
+- component exists
+- actor is not final captured
+- actor is not pending kill/destroy
+- focus collision is not suppressed for active FocusEngaged
+
+`FocusCollision` should be disabled when any are true:
+
+- FocusEngaged starts on the swarm cluster
+- focus action aborts
+- final captured state is reached
+- actor is being destroyed
+
+During intro growth:
+
+- Keep `FocusCollision` enabled.
+- `USwarmClusterFocusActionComponent::CanBeginFocusAction(...)` already returns false while intro growth is active.
+- This allows hover/prompt to exist but FocusEngaged entry to remain unavailable until intro completes.
+
+When bees are fully captured but queen remains:
+
+- `AliveRadius` becomes `0.0f`, so `FocusCollision` becomes radius `5.0f`.
+- This follows the strict user request `AliveRadius + 5`.
+- Do not add a minimum focus radius unless the user explicitly asks later.
+
+### 4. FocusEngaged lifecycle integration
+
+Use the swarm-cluster-specific action component.
+
+In `USwarmClusterFocusActionComponent`, override:
 
 ```cpp
-UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
-bool IsSwarmClusterFocusEngagedAvailable() const;
+virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
+virtual void OnFocusReturnCompleted(ABeekeeperCharacter* InteractingCharacter) override;
+virtual void OnFocusActionAborted(ABeekeeperCharacter* InteractingCharacter) override;
 ```
 
-Rules:
+Implementation behavior:
 
-- After `InitializeSwarmClusterFromDensity(...)`, FocusEngaged availability is false if intro growth will run.
-- `BeginAliveRadiusIntroGrowth(DurationSeconds)` sets FocusEngaged unavailable until growth finishes.
-- `FinishAliveRadiusIntroGrowth()` sets FocusEngaged available, unless the actor is already being destroyed or captured in a state that should block focus.
-- If `DurationSeconds <= 0`, FocusEngaged becomes available immediately after the radius is set to target.
-- Preview focus can still show a disabled prompt during intro if the Focus system naturally displays disabled entries from `CanBeginFocusAction=false`. Do not add a new prompt system just for this.
+- Call `Super` first unless there is a concrete reason not to.
+- On engaged start:
+  - mark focus collision suppressed
+  - disable `FocusCollision`
+- On return completed:
+  - clear suppression
+  - refresh focus collision state
+- On abort:
+  - clear suppression
+  - refresh focus collision state
 
-### Route emission stop
-
-Add a private helper on `ABeehive`, e.g.
+Add public or private `ABeeSwarmClusterActor` methods as needed, for example:
 
 ```cpp
-void StopActiveSwarmRouteEmission();
+void SetFocusCollisionSuppressedForFocusEngaged(bool bSuppressed);
 ```
 
-The route should stop new-spawning after `RouteEmissionDurationSeconds`, but the actor must not be destroyed yet.
+Keep this API non-Blueprint unless Blueprint needs it. Do not expose new Blueprint surface unnecessarily.
 
-Recommended minimal implementation:
+### 5. Blueprint migration requirement
 
-- Add an API on `ABeeSplineSwarmActor` or `ABeehiveSwarmRouteActor` to stop emission by applying the same external parameters with `SpawnAmount = 0.0f`.
-- Do not call `Destroy()` or `DeactivateImmediate()` at emission-stop time, because existing route particles should be allowed to finish.
+Existing swarm cluster Blueprint must remove or disable its authored `SphereCollision`.
 
-Example helper shape:
+Manual asset action:
 
-```cpp
-void ABeeSplineSwarmActor::StopExternalSwarmEmission()
-{
-    FBeeSplineSwarmAppliedParameters Parameters = LastAppliedExternalParameters;
-    Parameters.SpawnAmount = 0.0f;
-    ApplyExternalSwarmParameters(Parameters);
-}
-```
+- Open the swarm cluster Blueprint currently using `ABeeSwarmClusterActor`.
+- Remove the Blueprint `SphereCollision`, or set it to `NoCollision`.
+- Compile and save the Blueprint.
 
-If you add `LastAppliedExternalParameters`, keep it internal/transient. Do not expose a new authoring source unless needed.
+Important:
 
-If the Niagara system does not react to runtime `User.SpawnAmount = 0`, still implement the C++ contract and report that the Niagara asset must consume live `User.SpawnAmount` for emission-stop behavior.
+- If the BP `SphereCollision` remains with `Visibility` blocking, it can still intercept FocusEngaged internal item-use-area cursor traces even after native `FocusCollision` is disabled.
+- The implementation should not try to discover and mutate arbitrary Blueprint sphere components by name. The contract is native `FocusCollision` only, and BP duplicate collision must be removed/disabled manually.
 
-### Route cleanup
+### 6. Blueprint/API/Core Redirect impact
 
-Add a private helper on `ABeehive`, e.g.
+Expected C++ API impact:
 
-```cpp
-void DestroyActiveSwarmRouteAfterTravel();
-```
-
-At `RouteDestroyDelaySeconds`:
-
-- Destroy only the active route actor.
-- Set `ActiveSwarmRouteActor = nullptr`.
-- Do not destroy `ActiveSwarmClusterActor`.
-
-Rationale: route actor lifetime represents all emitted route bees reaching the target. Cluster capture gameplay continues separately.
-
-### Clear/end play
-
-Update `ABeehive::ClearActiveTestSwarm(bool bDestroyActors)`:
-
-- Clear all active route timers.
-- Clear pending target transform/session state.
-- If `bDestroyActors` is true, destroy active route and active cluster.
-- Set `ActiveSwarmRouteActor = nullptr`.
-- Set `ActiveSwarmClusterActor = nullptr`.
-
-Update `EndPlay` to rely on this cleanup and ensure timers are cleared before actor teardown.
-
-## Suggested state additions
-
-In `ABeehive.h`, add transient/private state similar to:
-
-```cpp
-UPROPERTY(Transient)
-FTransform PendingSwarmClusterTransform;
-
-UPROPERTY(Transient)
-bool bHasPendingSwarmClusterTransform = false;
-
-FTimerHandle ActiveSwarmRouteArrivalTimerHandle;
-FTimerHandle ActiveSwarmRouteEmissionStopTimerHandle;
-FTimerHandle ActiveSwarmRouteDestroyTimerHandle;
-
-float ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
-float ActiveSwarmRouteEmissionDurationSeconds = 0.0f;
-```
-
-Timer handles do not need `UPROPERTY`.
-
-## Optional Blueprint events
-
-Do not remove or rename existing Blueprint events.
-
-Keep:
-
-```cpp
-ReceiveSwarmingStarted(ABeeSwarmClusterActor* ClusterActor, ABeehiveSwarmRouteActor* RouteActor)
-ReceiveSwarmingStartFailed()
-```
-
-Add only if useful and low-risk:
-
-```cpp
-UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
-void ReceiveSwarmingRouteStarted(ABeehiveSwarmRouteActor* RouteActor, float ArrivalDelaySeconds, float EmissionDurationSeconds);
-
-UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
-void ReceiveSwarmingRouteEmissionStopped(ABeehiveSwarmRouteActor* RouteActor);
-
-UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
-void ReceiveSwarmingRouteFinished(ABeehiveSwarmRouteActor* RouteActor);
-```
-
-If these are added:
-
-- Call `ReceiveSwarmingRouteStarted` after route timers are scheduled.
-- Call `ReceiveSwarmingRouteEmissionStopped` after setting route spawn amount to 0.
-- Call `ReceiveSwarmingRouteFinished` immediately before or after route actor destroy. If called after destroy, pass the pointer only if still safe/valid; otherwise prefer before destroy.
-
-## Blueprint/API/Core Redirect impact
-
-Expected Blueprint-facing behavior change:
-
-- `BeginSwarmingAtTransform` returns true when route start succeeds, not when cluster creation succeeds.
-- `GetActiveSwarmClusterActor()` returns null until route arrival.
-- `ReceiveSwarmingStarted(...)` fires later, when the cluster is actually spawned.
-
-Expected Blueprint-facing additions if optional events are implemented:
-
-- Route started/emission stopped/finished Blueprint events on `ABeehive`.
-
-Do not delete or rename UCLASS/USTRUCT/UENUM/UFUNCTION/UPROPERTY symbols for this task.
+- Add `USphereComponent* FocusCollision` native component property to `ABeeSwarmClusterActor`.
+- No class rename.
+- No USTRUCT/UENUM rename.
+- No function/property deletion.
 
 Core Redirect:
 
-- No Core Redirect should be needed.
+- Not required.
 - Do not edit `Config/DefaultEngine.ini`.
+
+Blueprint impact:
+
+- Existing Blueprint may gain a new inherited `FocusCollision` component.
+- Existing BP-authored `SphereCollision` must be removed or disabled manually.
+- Blueprint compile/save is required after migration.
 
 ## Documentation updates
 
 Update `.md/0_ARCHITECTURE.md`:
 
-- Replace wording that says swarming start immediately spawns cluster and route.
-- Document delayed cluster spawn at route arrival.
-- Document arrival delay formula:
-
-```text
-RouteArrivalDelaySeconds = RouteSplineLength / Avg(SwarmRouteParameters.SpeedMin, SwarmRouteParameters.SpeedMax)
-```
-
-- Document route emission duration:
-
-```text
-RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount
-```
-
-- Document route actor cleanup delay:
-
-```text
-RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds
-```
-
-- Document cluster intro growth:
-
-```text
-ClusterIntroGrowthDurationSeconds = RouteEmissionDurationSeconds
-IntroVisualBeeAmount = SwarmClusterSpawnAmount * Clamp(Elapsed / ClusterIntroGrowthDurationSeconds, 0..1)
-AliveRadius = InitialAliveRadius * cbrt(IntroVisualBeeAmount / SwarmClusterSpawnAmount)
-```
-
-- Document that `SpawnAmount` and `SphereRadius` are applied at target values immediately when the cluster actor is spawned, while `AliveRadius` alone grows from `0`.
+- Mention that `ABeeSwarmClusterActor` owns native `FocusCollision` for preview focus hit testing.
+- Mention that the focus collision radius follows `AliveRadius + 5`.
+- Mention that FocusEngaged disables the focus collision so internal BeeCarrier/QueenCage item-use-area traces are not blocked.
 
 Update `.md/Architecture/WorldActorsSystem.md`:
 
-- `ABeehive` composition/state list:
-  - active route timer/session state
-  - pending cluster transform
-- Swarming test success flow.
-- `ABeehiveSwarmRouteActor` section:
-  - route actor remains alive after emission stop until last emitted route bees can reach target
-  - route does not own cluster creation
-- `ABeeSwarmClusterActor` section:
-  - cluster is spawned only from `ABeehive` route-arrival handling
-  - initialization still creates cluster bees and swarm queen together
-  - intro growth keeps target `SpawnAmount`/`SphereRadius` immediately applied and grows only `AliveRadius`
-  - intro growth uses linear visual bee amount with cube-root radius scaling
-  - host FocusEngaged is unavailable until intro growth finishes
-  - BeeCarrier/QueenCage use-areas do not need separate intro gates because they are only usable inside FocusEngaged
-- Add an `Update 2026-06-15` note for route-arrival cluster spawn.
+- Add `USphereComponent FocusCollision` to `ABeeSwarmClusterActor` composition.
+- Document collision policy:
+  - preview focus hit proxy
+  - visibility block while not FocusEngaged/final captured
+  - disabled during FocusEngaged
+  - radius sync from `AliveRadius + 5`
+- Add migration note: BP `SphereCollision` must be removed or set to `NoCollision`.
+
+Update `.md/Architecture/FocusSystem.md` only if needed:
+
+- If documenting cross-system trace behavior, add a short note that FocusEngaged hosts may disable their preview focus hit proxy during engaged mode so cursor item-use traces can hit internal use-area components.
 
 Do not update unrelated systems.
 
-## Validation
+## Validation commands
 
-Run diff checks:
+Run diff check:
 
 ```powershell
 git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
-Run searches:
+Run focused searches:
 
 ```powershell
-rg -n "BeginSwarmingAtTransform|ReceiveSwarmingStarted|GetActiveSwarmClusterActor|ActiveSwarmRoute|PendingSwarmCluster|RouteArrivalDelay|RouteEmissionDuration|AliveRadiusIntroGrowth|SwarmClusterFocus" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
-rg -n "SwarmClusterSpawnAmount / SwarmRouteParameters\.SpawnAmount|SplineLength / AverageRouteSpeed|AverageRouteSpeed / SplineLength|IntroVisualBeeAmount|VisualBeeAmount|Pow\(.*1\.0f / 3\.0f" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
+rg -n "FocusCollision|SphereCollision|SetFocusCollision|RefreshFocusCollision|AliveRadius \\+ 5|OnFocusEngagedStarted|OnFocusReturnCompleted|OnFocusActionAborted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+```
+
+```powershell
+rg -n "FindFocusTargetFromTrace|FocusTraceChannel|CursorTraceChannel|ECC_Visibility|ItemUseArea" Source/BeekeepingSim/Private/Focus Source/BeekeepingSim/Public/Focus
 ```
 
 Build:
@@ -459,37 +298,34 @@ Build:
 
 If the engine path is missing, do not guess another engine version. Report that build could not be run.
 
-## Manual PIE checks
+## Manual Editor/PIE checks
 
-1. Start swarming from a beehive.
-2. Confirm route actor appears immediately.
-3. Confirm no cluster actor exists before route arrival delay.
-4. Confirm cluster actor appears after `SplineLength / Avg(SpeedMin, SpeedMax)` seconds.
-5. Confirm cluster initialization creates both cluster bees and the separate swarm queen at the same time.
-6. At cluster spawn, confirm `User.SpawnAmount` and `User.SphereRadius` are already at target values.
-7. At cluster spawn, confirm `User.AliveRadius` starts at `0`.
-8. Confirm `AliveRadius` grows for `RouteEmissionDurationSeconds`.
-9. Confirm `AliveRadius` follows cube-root volume scaling. For example, at half intro time it should be about `InitialAliveRadius * cbrt(0.5)`, not `InitialAliveRadius * 0.5`.
-10. Confirm the swarm cluster cannot enter FocusEngaged during intro growth.
-11. Confirm the swarm cluster can enter FocusEngaged after intro growth finishes.
-12. Confirm BeeCarrier and QueenCage use-areas work after FocusEngaged becomes available, using their existing captured-state rules.
-13. Confirm route new-spawning stops after `SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount` seconds.
-14. Confirm route actor is destroyed after `ArrivalDelay + EmissionDuration`.
-15. Confirm cluster remains after route actor cleanup and BeeCarrier/QueenCage capture still works.
-16. Confirm `GetActiveSwarmClusterActor()` is null before arrival and valid after arrival.
-17. Test invalid route `SpawnAmount=0` and invalid route speed `0/0`; both should fail cleanly via `ReceiveSwarmingStartFailed()`.
+1. Open the swarm cluster Blueprint.
+2. Remove existing BP `SphereCollision`, or set it to `NoCollision`.
+3. Compile and save the Blueprint.
+4. Start a manual swarming route and wait for cluster spawn.
+5. Confirm the inherited native `FocusCollision` exists.
+6. Confirm preview focus can hit the swarm cluster through `FocusCollision`.
+7. During intro growth, confirm prompt can show but FocusEngaged cannot begin.
+8. After intro growth, confirm FocusEngaged can begin.
+9. On FocusEngaged start, confirm `FocusCollision` collision becomes disabled.
+10. In FocusEngaged, select BeeCarrier and confirm BeeCarrier use-area can be hit/used.
+11. In FocusEngaged, select QueenCage and confirm queen use-area can be hit/used.
+12. Cancel/exit FocusEngaged before final capture and confirm `FocusCollision` is restored.
+13. Capture bees and confirm `FocusCollision` radius follows `AliveRadius + 5`.
+14. With bees fully captured and queen still present, confirm radius is `5`.
+15. Capture queen and confirm final captured actor removal still works without the old BP collision.
 
 ## Final report requirements
 
 - Changed files
-- Exact arrival/emission/destroy timing formulas
-- Exact cluster intro growth formula
-- Whether optional route Blueprint events were added
-- Whether optional cluster intro Blueprint events were added
-- Whether route emission stop is implemented by `User.SpawnAmount=0`
-- Whether cluster FocusEngaged is disabled during intro growth
-- Confirmation that BeeCarrier/QueenCage use-areas were not separately gated unless a non-FocusEngaged use path was found
-- Blueprint behavior change notes
+- Whether `FocusCollision` was added as native `USphereComponent`
+- Exact collision profile/responses used
+- Exact radius formula used
+- Where radius sync is called
+- Where FocusEngaged disables/restores the collision
+- Confirmation that no Blueprint API was deleted or renamed
+- Confirmation that no Core Redirect was needed
 - Architecture document updates
-- Validation commands and results
-- Manual PIE checks still required
+- Build/diff validation results
+- Manual BP migration and PIE checks still required

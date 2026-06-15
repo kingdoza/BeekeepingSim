@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm")
 	void ApplyExternalSwarmParameters(const FBeeSplineSwarmAppliedParameters& Parameters);
 
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm")
+	void StopExternalSwarmEmission();
+
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Bee Swarm")
 	void ApplySplineLengthParameter();
 
@@ -71,4 +74,8 @@ private:
 #endif
 
 	bool bWarnedMissingExternalParameters = false;
+
+	bool bHasLastAppliedExternalParameters = false;
+
+	FBeeSplineSwarmAppliedParameters LastAppliedExternalParameters;
 };

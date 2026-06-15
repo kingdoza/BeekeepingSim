@@ -112,6 +112,8 @@ protected:
 
 	void BroadcastPreviewPromptState();
 
+	void BroadcastPreviewPromptStateIfChanged();
+
 	void BroadcastEngagedFocusRule();
 
 	void UpdateCrosshairVisibility(bool bNewShouldHideCrosshair);
@@ -152,6 +154,9 @@ private:
 
 	UPROPERTY(Transient)
 	FFocusPromptData EngagedPromptOverride;
+
+	UPROPERTY(Transient)
+	FFocusPromptData LastBroadcastPromptData;
 
 	UPROPERTY(Transient)
 	bool bHasEngagedPromptOverride = false;

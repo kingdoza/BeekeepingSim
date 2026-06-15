@@ -67,6 +67,11 @@ void UCursorItemUseAreaScopeComponent::TickComponent(float DeltaTime, ELevelTick
 			}
 		}
 
+		if (!bIsScopeActive || !bIsUseInProgress || !CachedHoldAction)
+		{
+			return;
+		}
+
 		Result.DurabilityDelta += CachedHoldAction->ResolveActiveUseDurabilityDelta(
 			DurabilityContext,
 			Result,

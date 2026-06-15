@@ -277,9 +277,28 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 		return false;
 	}
 
-	if (bDestroyPreviousTestSwarmOnStart)
+	if (!bDestroyPreviousTestSwarmOnStart && HasActiveSwarmRouteSession())
 	{
-		ClearActiveTestSwarm(true);
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	ClearActiveTestSwarm(bDestroyPreviousTestSwarmOnStart);
+
+	const float RouteSpawnAmount = FMath::Max(0.0f, SwarmRouteParameters.SpawnAmount);
+	if (RouteSpawnAmount <= KINDA_SMALL_NUMBER)
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	const float RouteSpeedMin = FMath::Max(0.0f, SwarmRouteParameters.SpeedMin);
+	const float RouteSpeedMax = FMath::Max(0.0f, SwarmRouteParameters.SpeedMax);
+	const float AverageRouteSpeed = (RouteSpeedMin + RouteSpeedMax) * 0.5f;
+	if (AverageRouteSpeed <= KINDA_SMALL_NUMBER)
+	{
+		NotifySwarmingStartFailed();
+		return false;
 	}
 
 	FActorSpawnParameters SpawnParameters;
@@ -287,24 +306,9 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 	SpawnParameters.Instigator = GetInstigator();
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	ABeeSwarmClusterActor* ClusterActor = World->SpawnActor<ABeeSwarmClusterActor>(
-		SwarmClusterActorClass,
-		TargetTransform,
-		SpawnParameters);
-	if (!ClusterActor)
-	{
-		NotifySwarmingStartFailed();
-		return false;
-	}
-
-	ClusterActor->InitializeSwarmClusterFromDensity(
-		SwarmClusterSpawnAmount,
-		SwarmClusterBeeDensityPerCubicMeter);
-
 	const FTransform RouteStartTransform = SwarmExitPoint ? SwarmExitPoint->GetComponentTransform() : GetActorTransform();
 	const FVector RouteStartLocation = RouteStartTransform.GetLocation();
-	const USceneComponent* ClusterCenter = ClusterActor->GetClusterCenterComponent();
-	const FVector RouteEndLocation = ClusterCenter ? ClusterCenter->GetComponentLocation() : ClusterActor->GetActorLocation();
+	const FVector RouteEndLocation = TargetTransform.GetLocation();
 	const FTransform RouteSpawnTransform(RouteStartTransform.GetRotation(), RouteStartLocation);
 
 	ABeehiveSwarmRouteActor* RouteActor = World->SpawnActor<ABeehiveSwarmRouteActor>(
@@ -313,7 +317,6 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 		SpawnParameters);
 	if (!RouteActor)
 	{
-		ClusterActor->Destroy();
 		NotifySwarmingStartFailed();
 		return false;
 	}
@@ -321,9 +324,47 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 	RouteActor->ConfigureRoute(RouteStartLocation, RouteEndLocation);
 	RouteActor->ApplyExternalSwarmParameters(SwarmRouteParameters);
 
-	ActiveSwarmClusterActor = ClusterActor;
+	const float SplineLength = FMath::Max(0.0f, RouteActor->GetSplineLength());
+	const float RouteArrivalDelaySeconds = SplineLength > KINDA_SMALL_NUMBER
+		? SplineLength / AverageRouteSpeed
+		: 0.0f;
+	const float RouteEmissionDurationSeconds = static_cast<float>(FMath::Max(0, SwarmClusterSpawnAmount)) / RouteSpawnAmount;
+	const float RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds;
+
+	PendingSwarmClusterTransform = TargetTransform;
+	bHasPendingSwarmClusterTransform = true;
 	ActiveSwarmRouteActor = RouteActor;
-	ReceiveSwarmingStarted(ClusterActor, RouteActor);
+	ActiveSwarmRouteArrivalDelaySeconds = RouteArrivalDelaySeconds;
+	ActiveSwarmRouteEmissionDurationSeconds = RouteEmissionDurationSeconds;
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	if (RouteArrivalDelaySeconds <= KINDA_SMALL_NUMBER)
+	{
+		HandleActiveSwarmRouteArrived();
+	}
+	else
+	{
+		TimerManager.SetTimer(ActiveSwarmRouteArrivalTimerHandle, this, &ABeehive::HandleActiveSwarmRouteArrived, RouteArrivalDelaySeconds, false);
+	}
+
+	if (RouteEmissionDurationSeconds <= KINDA_SMALL_NUMBER)
+	{
+		StopActiveSwarmRouteEmission();
+	}
+	else
+	{
+		TimerManager.SetTimer(ActiveSwarmRouteEmissionStopTimerHandle, this, &ABeehive::StopActiveSwarmRouteEmission, RouteEmissionDurationSeconds, false);
+	}
+
+	if (RouteDestroyDelaySeconds <= KINDA_SMALL_NUMBER)
+	{
+		DestroyActiveSwarmRouteAfterTravel();
+	}
+	else
+	{
+		TimerManager.SetTimer(ActiveSwarmRouteDestroyTimerHandle, this, &ABeehive::DestroyActiveSwarmRouteAfterTravel, RouteDestroyDelaySeconds, false);
+	}
+
 	return true;
 }
 
@@ -340,6 +381,11 @@ bool ABeehive::BeginSwarmingAtActor(AActor* TargetActor)
 
 void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
 {
+	ClearActiveSwarmRouteTimers();
+	ClearPendingSwarmClusterSpawn();
+	ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
+	ActiveSwarmRouteEmissionDurationSeconds = 0.0f;
+
 	if (bDestroyActors)
 	{
 		if (IsValid(ActiveSwarmRouteActor))
@@ -1788,6 +1834,85 @@ void ABeehive::RebuildItemUseAreaDescriptorsIfAvailable()
 FVector ABeehive::ResolveSwarmExitWorldLocation() const
 {
 	return SwarmExitPoint ? SwarmExitPoint->GetComponentLocation() : GetActorLocation();
+}
+
+bool ABeehive::HasActiveSwarmRouteSession() const
+{
+	return bHasPendingSwarmClusterTransform || IsValid(ActiveSwarmRouteActor);
+}
+
+void ABeehive::ClearActiveSwarmRouteTimers()
+{
+	if (UWorld* World = GetWorld())
+	{
+		FTimerManager& TimerManager = World->GetTimerManager();
+		TimerManager.ClearTimer(ActiveSwarmRouteArrivalTimerHandle);
+		TimerManager.ClearTimer(ActiveSwarmRouteEmissionStopTimerHandle);
+		TimerManager.ClearTimer(ActiveSwarmRouteDestroyTimerHandle);
+	}
+}
+
+void ABeehive::ClearPendingSwarmClusterSpawn()
+{
+	PendingSwarmClusterTransform = FTransform::Identity;
+	bHasPendingSwarmClusterTransform = false;
+}
+
+void ABeehive::HandleActiveSwarmRouteArrived()
+{
+	if (!bHasPendingSwarmClusterTransform || !IsValid(ActiveSwarmRouteActor) || !SwarmClusterActorClass)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.Instigator = GetInstigator();
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	ABeeSwarmClusterActor* ClusterActor = World->SpawnActor<ABeeSwarmClusterActor>(
+		SwarmClusterActorClass,
+		PendingSwarmClusterTransform,
+		SpawnParameters);
+	ClearPendingSwarmClusterSpawn();
+
+	if (!ClusterActor)
+	{
+		NotifySwarmingStartFailed();
+		return;
+	}
+
+	ClusterActor->InitializeSwarmClusterFromDensityWithIntroGrowth(
+		SwarmClusterSpawnAmount,
+		SwarmClusterBeeDensityPerCubicMeter,
+		ActiveSwarmRouteEmissionDurationSeconds);
+
+	ActiveSwarmClusterActor = ClusterActor;
+	ReceiveSwarmingStarted(ClusterActor, ActiveSwarmRouteActor);
+}
+
+void ABeehive::StopActiveSwarmRouteEmission()
+{
+	if (IsValid(ActiveSwarmRouteActor))
+	{
+		ActiveSwarmRouteActor->StopExternalSwarmEmission();
+	}
+}
+
+void ABeehive::DestroyActiveSwarmRouteAfterTravel()
+{
+	if (IsValid(ActiveSwarmRouteActor))
+	{
+		ActiveSwarmRouteActor->Destroy();
+	}
+
+	ActiveSwarmRouteActor = nullptr;
 }
 
 void ABeehive::NotifySwarmingStartFailed()

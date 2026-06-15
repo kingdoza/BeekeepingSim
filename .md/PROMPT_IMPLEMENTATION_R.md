@@ -1,28 +1,45 @@
-# 구현 수정 프롬프트: 왕롱 포획/분봉 최종 완료 조건 리뷰 Finding
+# 구현 수정 프롬프트: swarm cluster native FocusCollision 리뷰 Finding
 
 ## 우선순위
 
-1. Minor: `WorldActorsSystem.md` 본문에 남은 이전 captured 조건 문구 정리
+1. Important: 이번 C++ FocusCollision 변경 범위에 포함되지 않아야 하는 `Content/` asset 변경 제거
 
 ## 발견 문제
 
-### 1. 분봉 본진 본문 설명이 최신 최종 완료 조건과 충돌
+### 1. `Content/` asset 변경이 working tree에 남아 있음
 
-- 대상 파일: `.md/Architecture/WorldActorsSystem.md`
-- 문제: `ABeeSwarmClusterActor` 본문 설명에 `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수 0이면 captured로 전환된다는 이전 조건이 남아 있다. 현재 설계/구현은 이 시점에 `bBeesCaptured`만 true가 되고, `AliveRadius=0`, BeeCarrier use-area 비활성화, descriptor rebuild만 수행한다. 최종 `bCaptured` 및 `ReceiveSwarmCaptured`는 `bBeesCaptured && bQueenCaptured`일 때만 1회 발생해야 한다.
-- 영향: 같은 정본 문서 안에서 본문 설명과 2026-06-14 업데이트 설명이 충돌해 후속 구현/리뷰가 오래된 완료 조건을 따를 수 있다.
-- 수정 방향: 해당 본문을 벌 포획 완료(`bBeesCaptured`)와 최종 분봉 완료(`bCaptured`)의 분리된 조건으로 정리한다.
+- 대상 파일:
+  - `Content/Niagaras/NS_Part.uasset`
+  - `Content/BeeSwarmCluster/BP_SwarmTest.uasset`
+  - `Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/C/BF/`
+- 문제: 리뷰 프롬프트의 금지 변경 조건은 `Content/` 수정 금지인데, 현재 working tree에 modified/untracked asset 변경이 남아 있다.
+- 영향: native `FocusCollision` 전환은 C++ component와 문서/수동 migration note로 처리해야 하며, binary asset 변경이 섞이면 Blueprint/level/Niagara serialized state가 의도치 않게 commit될 수 있다.
+- 수정 방향: 이번 구현 changelist에서 `Content/` 변경을 제거한다. 기존 swarm cluster Blueprint의 legacy `SphereCollision` 제거 또는 `NoCollision` 변경은 수동 PIE/Blueprint migration 항목으로 보고하고, 이 코드 변경 PR/patch에는 포함하지 않는다.
 
 ## 검증 방법
 
 ```powershell
-rg -n "CapturedBeeAmount >= SpawnAmount|bBeesCaptured|bQueenCaptured|ReceiveSwarmCaptured" .md/Architecture/WorldActorsSystem.md .md/0_ARCHITECTURE.md
+git status --short -- Content Config/DefaultEngine.ini
+```
+
+기대 결과:
+
+- `Config/DefaultEngine.ini` 변경 없음
+- `Content/` 변경 없음
+
+```powershell
+git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
 ```powershell
-git diff --check -- .md/Architecture/WorldActorsSystem.md .md/PROMPT_IMPLEMENTATION_R.md
+rg -n "FocusCollision|SphereCollision|SetFocusCollision|RefreshFocusCollision|AliveRadius \+ 5|OnFocusEngagedStarted|OnFocusReturnCompleted|OnFocusActionAborted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
-## 문서 반영 필요 여부
+```powershell
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
+```
 
-- 필요: `.md/Architecture/WorldActorsSystem.md`
+## 문서/수동 migration
+
+- `.md/Architecture/WorldActorsSystem.md`의 migration note처럼 기존 swarm cluster Blueprint의 authored `SphereCollision`은 수동으로 제거하거나 `NoCollision`으로 변경한다.
+- 수동 migration 과정에서 asset을 저장해야 한다면 별도 change로 분리한다.

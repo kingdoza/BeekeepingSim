@@ -67,7 +67,18 @@ void ABeeSplineSwarmActor::SetControlMode(EBeeSplineSwarmControlMode NewMode)
 void ABeeSplineSwarmActor::ApplyExternalSwarmParameters(const FBeeSplineSwarmAppliedParameters& Parameters)
 {
 	SetControlMode(EBeeSplineSwarmControlMode::ExternalControlled);
+	LastAppliedExternalParameters = Parameters;
+	bHasLastAppliedExternalParameters = true;
 	ApplyExternalSwarmParametersInternal(Parameters);
+}
+
+void ABeeSplineSwarmActor::StopExternalSwarmEmission()
+{
+	FBeeSplineSwarmAppliedParameters Parameters = bHasLastAppliedExternalParameters
+		? LastAppliedExternalParameters
+		: FBeeSplineSwarmAppliedParameters();
+	Parameters.SpawnAmount = 0.0f;
+	ApplyExternalSwarmParameters(Parameters);
 }
 
 void ABeeSplineSwarmActor::ApplySplineLengthParameter()

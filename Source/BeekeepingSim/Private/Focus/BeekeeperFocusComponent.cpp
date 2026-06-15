@@ -12,6 +12,46 @@
 #include "Focus/FocusActionComponent.h"
 #include "Focus/FocusTargetComponent.h"
 
+namespace
+{
+bool AreFocusTextsEqual(const FText& A, const FText& B)
+{
+	return A.EqualTo(B);
+}
+
+bool AreFocusPromptEntriesEqual(const FFocusPromptEntry& A, const FFocusPromptEntry& B)
+{
+	return A.EntryId == B.EntryId
+		&& AreFocusTextsEqual(A.KeyText, B.KeyText)
+		&& AreFocusTextsEqual(A.ActionText, B.ActionText)
+		&& A.bEnabled == B.bEnabled
+		&& AreFocusTextsEqual(A.DisabledReason, B.DisabledReason)
+		&& A.SortPriority == B.SortPriority;
+}
+
+bool AreFocusPromptDataEqual(const FFocusPromptData& A, const FFocusPromptData& B)
+{
+	if (A.bIsValid != B.bIsValid
+		|| !AreFocusTextsEqual(A.DisplayName, B.DisplayName)
+		|| !AreFocusTextsEqual(A.InteractionKeyText, B.InteractionKeyText)
+		|| A.AnchorMode != B.AnchorMode
+		|| A.Entries.Num() != B.Entries.Num())
+	{
+		return false;
+	}
+
+	for (int32 EntryIndex = 0; EntryIndex < A.Entries.Num(); ++EntryIndex)
+	{
+		if (!AreFocusPromptEntriesEqual(A.Entries[EntryIndex], B.Entries[EntryIndex]))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+}
+
 UBeekeeperFocusComponent::UBeekeeperFocusComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -359,6 +399,7 @@ void UBeekeeperFocusComponent::RefreshFocusTarget()
 	UFocusTargetComponent* NewFocusTarget = FindFocusTargetFromTrace();
 	if (NewFocusTarget == CurrentFocusTarget)
 	{
+		BroadcastPreviewPromptStateIfChanged();
 		return;
 	}
 
@@ -468,7 +509,20 @@ void UBeekeeperFocusComponent::ClearEngagedFocus()
 
 void UBeekeeperFocusComponent::BroadcastPreviewPromptState()
 {
-	OnFocusPromptChanged.Broadcast(GetCurrentPromptData());
+	LastBroadcastPromptData = GetCurrentPromptData();
+	OnFocusPromptChanged.Broadcast(LastBroadcastPromptData);
+}
+
+void UBeekeeperFocusComponent::BroadcastPreviewPromptStateIfChanged()
+{
+	const FFocusPromptData CurrentPromptData = GetCurrentPromptData();
+	if (AreFocusPromptDataEqual(CurrentPromptData, LastBroadcastPromptData))
+	{
+		return;
+	}
+
+	LastBroadcastPromptData = CurrentPromptData;
+	OnFocusPromptChanged.Broadcast(LastBroadcastPromptData);
 }
 
 void UBeekeeperFocusComponent::BroadcastEngagedFocusRule()

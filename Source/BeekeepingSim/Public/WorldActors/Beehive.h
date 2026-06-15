@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "Focus/FocusInteractable.h"
 #include "GameplayTagContainer.h"
+#include "TimerManager.h"
 #include "WorldActors/BeeSwarmTypes.h"
 #include "WorldActors/QueenBeeCaptureSource.h"
 #include "Beehive.generated.h"
@@ -456,6 +457,22 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<ABeehiveSwarmRouteActor> ActiveSwarmRouteActor;
 
+	UPROPERTY(Transient)
+	FTransform PendingSwarmClusterTransform;
+
+	UPROPERTY(Transient)
+	bool bHasPendingSwarmClusterTransform = false;
+
+	UPROPERTY(Transient)
+	float ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
+
+	UPROPERTY(Transient)
+	float ActiveSwarmRouteEmissionDurationSeconds = 0.0f;
+
+	FTimerHandle ActiveSwarmRouteArrivalTimerHandle;
+	FTimerHandle ActiveSwarmRouteEmissionStopTimerHandle;
+	FTimerHandle ActiveSwarmRouteDestroyTimerHandle;
+
 private:
 	static float NormalizeHour24(float Hour24);
 	static float EvaluateActivity(const FBeehiveDirectionalSwarmSettings& Settings, float Hour24);
@@ -480,6 +497,12 @@ private:
 	void RegisterCombPartsToScope();
 	void RebuildItemUseAreaDescriptorsIfAvailable();
 	FVector ResolveSwarmExitWorldLocation() const;
+	bool HasActiveSwarmRouteSession() const;
+	void ClearActiveSwarmRouteTimers();
+	void ClearPendingSwarmClusterSpawn();
+	void HandleActiveSwarmRouteArrived();
+	void StopActiveSwarmRouteEmission();
+	void DestroyActiveSwarmRouteAfterTravel();
 	void NotifySwarmingStartFailed();
 	void RefreshHiveDiseaseVisuals();
 	void ApplyDiseaseToCombActors(float DiseaseRatio);

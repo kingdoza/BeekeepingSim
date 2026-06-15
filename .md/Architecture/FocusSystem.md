@@ -80,6 +80,7 @@
 - `PreviewFocus`
   - 매 Tick 카메라 전방 trace로 갱신한다.
   - outline과 prompt만 활성화한다.
+  - 같은 focus target이 유지되더라도 prompt data/entry availability가 바뀌면 `OnFocusPromptChanged`를 다시 브로드캐스트한다.
   - hotbar item rule은 적용하지 않는다.
 - `EngagedFocus`
   - confirm 성공 후 target/action을 고정한다.
@@ -142,6 +143,7 @@
 - item-use area 활성 중에는 PartFocus outline보다 item-use area 표시를 우선하며, 결정된 정책 기준으로 선택 아이템이 있을 때 PartFocus outline은 숨긴다.
 - 커서 trace는 기존 visibility trace를 사용하되 active `FItemUseAreaDescriptor`에 등록된 component인지 추가 검증한다.
 - 여러 사용영역이 겹치면 trace hit result에서 가장 가까운 active area component 1개를 hover/effect 대상으로 사용한다.
+- FocusEngaged host가 preview focus용 Visibility hit proxy를 별도로 가진 경우, engaged 중에는 해당 proxy를 disable할 수 있다. 그렇지 않으면 같은 Visibility 기반 cursor item-use trace가 host proxy에 막혀 내부 item-use-area component를 hit하지 못할 수 있다.
 
 ## Part Action Policy
 

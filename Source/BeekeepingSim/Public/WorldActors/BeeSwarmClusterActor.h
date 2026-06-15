@@ -1,13 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Focus/AnchoredFocusCursorActionComponent.h"
 #include "Focus/ItemUseAreaActivationProvider.h"
 #include "GameFramework/Actor.h"
 #include "WorldActors/QueenBeeCaptureSource.h"
 #include "BeeSwarmClusterActor.generated.h"
 
+class ABeekeeperCharacter;
 class AQueenBeeActor;
-class UAnchoredFocusCursorActionComponent;
 class UChildActorComponent;
 class UCursorItemUseAreaScopeComponent;
 class UFocusTargetComponent;
@@ -15,6 +16,21 @@ class UItemUseAreaMeshComponent;
 class UItemUseAreaMeshProviderComponent;
 class UNiagaraComponent;
 class USceneComponent;
+class USphereComponent;
+
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class BEEKEEPINGSIM_API USwarmClusterFocusActionComponent : public UAnchoredFocusCursorActionComponent
+{
+	GENERATED_BODY()
+
+public:
+	virtual bool CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const override;
+
+protected:
+	virtual void OnFocusEngagedStarted(ABeekeeperCharacter* InteractingCharacter) override;
+	virtual void OnFocusReturnCompleted(ABeekeeperCharacter* InteractingCharacter) override;
+	virtual void OnFocusActionAborted(ABeekeeperCharacter* InteractingCharacter) override;
+};
 
 UCLASS(Blueprintable)
 class BEEKEEPINGSIM_API ABeeSwarmClusterActor : public AActor, public IItemUseAreaActivationProvider, public IQueenBeeCaptureSource
@@ -26,9 +42,14 @@ public:
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster")
 	void InitializeSwarmClusterFromDensity(int32 InSpawnAmount, float InBeeDensityPerCubicMeter);
+
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
+	void InitializeSwarmClusterFromDensityWithIntroGrowth(int32 InSpawnAmount, float InBeeDensityPerCubicMeter, float IntroGrowthDurationSeconds);
 
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Niagara")
 	void ApplyClusterNiagaraParameters();
@@ -78,6 +99,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Capture")
 	void RefreshAliveRadiusFromBeeAmounts();
 
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
+	void BeginAliveRadiusIntroGrowth(float DurationSeconds);
+
+	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
+	void FinishAliveRadiusIntroGrowth();
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
+	bool IsAliveRadiusIntroGrowthActive() const { return bAliveRadiusIntroGrowthActive; }
+
+	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
+	bool IsSwarmClusterFocusEngagedAvailable() const;
+
 	UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster")
 	bool IsCaptured() const { return bCaptured; }
 
@@ -96,6 +129,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Item Use Area")
 	void RebuildItemUseAreaDescriptors();
 
+	void SetFocusCollisionSuppressedForFocusEngaged(bool bSuppressed);
+
 	virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
 	virtual bool CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const override;
 	virtual bool CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState) override;
@@ -109,6 +144,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNiagaraComponent> ClusterNiagara;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USphereComponent> FocusCollision;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UChildActorComponent> QueenBeeChildActor;
@@ -126,7 +164,7 @@ protected:
 	TObjectPtr<UFocusTargetComponent> FocusTarget;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UAnchoredFocusCursorActionComponent> FocusAction;
+	TObjectPtr<USwarmClusterFocusActionComponent> FocusAction;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UCursorItemUseAreaScopeComponent> ItemUseAreaScope;
@@ -176,6 +214,18 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Queen Bee")
 	bool bQueenCaptured = false;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+	bool bAliveRadiusIntroGrowthActive = false;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+	float AliveRadiusIntroGrowthDurationSeconds = 0.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+	float AliveRadiusIntroGrowthElapsedSeconds = 0.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Focus")
+	bool bFocusCollisionSuppressedForFocusEngaged = false;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster")
 	void ReceiveSwarmClusterInitialized();
 
@@ -185,15 +235,24 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster")
 	void ReceiveSwarmCaptured();
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster|Intro")
+	void ReceiveAliveRadiusIntroGrowthFinished();
+
 private:
 	static float SanitizeBeeDensityPerCubicMeter(float InDensity);
 	static float CalculateRadiusCmFromBeeDensity(int32 InSpawnAmount, float InDensityPerCubicMeter);
+	void InitializeSwarmClusterFromDensityInternal(int32 InSpawnAmount, float InBeeDensityPerCubicMeter, float IntroGrowthDurationSeconds, bool bStartIntroGrowth);
+	void ApplyIntroAliveRadiusVisual(float GrowthAlpha, bool bNotifyRadiusChanged = true);
 	void RecalculateInitialRadiusFromDensity();
 	void EnsureQueenBeeChildActorClass();
 	void ApplyQueenBeeTransform();
 	void RandomizeSwarmQueenRotation();
 	void ApplyCaptureUseAreaVisualIdleState();
 	void SetCaptureUseAreaActive(bool bActive);
+	void ConfigureFocusCollisionDefaults();
+	void RefreshFocusCollisionState();
+	void SetFocusCollisionEnabled(bool bEnabled);
+	float GetFocusCollisionRadius() const;
 	void HandleBeesCapturedIfNeeded();
 	void HandleSwarmCapturedIfNeeded();
 	void HandleCapturedIfNeeded();
