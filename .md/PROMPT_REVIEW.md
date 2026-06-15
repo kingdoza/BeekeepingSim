@@ -1,169 +1,190 @@
-# 왕롱 여왕벌 포획과 분봉 본진 최종 완료 조건 리뷰 프롬프트
+# SwarmCluster density-based radius 리뷰 프롬프트
 
 ## 리뷰 목표
 
-이미 구현된 분봉/BeeCarrier 포획 구조 위에 왕롱 여왕벌 포획 기능과 분봉 본진 최종 완료 조건 분리가 정확히 반영됐는지 C++/문서 기준으로 리뷰한다.
+분봉 본진 생성 시 디자이너가 radius 값을 직접 authoring하지 않고, `SpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`만으로 `InitialAliveRadius`, `AliveRadius`, `SphereRadius`가 내부 파생되는지 리뷰한다.
 
-핵심 기대는 왕롱 포획 결과가 `UItemInstance` optional runtime state로 저장되고, 벌통 여왕벌과 분봉 본진 여왕벌이 모두 `AQueenBeeActor` use-area + `IQueenBeeCaptureSource` host 경로로 포획되는 것이다. 분봉 본진은 벌 전량 포획과 여왕벌 포획이 모두 완료되어야 최종 `ReceiveSwarmCaptured`를 호출해야 한다.
+핵심 기대는 `ABeehive`의 분봉 테스트 입력 surface에서 radius authoring 변수가 제거되고, `ABeeSwarmClusterActor`는 runtime radius state를 유지하되 bee count와 density를 source of truth로 삼는 것이다. BeeCarrier capture rate, queen cage/queen capture, route spline generation, Niagara parameter 이름은 변경되면 안 된다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_REVIEW.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/CoreSystem.md`
+- `.md/Architecture/WorldActorsSystem.md`
+- `.md/QNA_IMPLEMENTATION.md`
 
 ## 리뷰 대상 파일
 
-- `Source/BeekeepingSim/Public/Inventory/QueenCageItemDefinition.h`
-- `Source/BeekeepingSim/Public/Inventory/QueenCageUseAction.h`
-- `Source/BeekeepingSim/Private/Inventory/QueenCageUseAction.cpp`
-- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
-- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
-- `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeCaptureSource.h`
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- `Source/BeekeepingSim/Private/Inventory/BeeCarrierUseAction.cpp`
-- `Config/DefaultGameplayTags.ini`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/FocusSystem.md`
+- `.md/USER_UNREAL.md`
+
+참고: `.md/PROMPT_IMPLEMENTATION.md`는 작업 시작 전부터 dirty였고 이번 구현 대상이 아니다.
 
 ## 기대 구현 요약
 
-### Inventory
+### `ABeehive`
 
-- `UQueenCageItemDefinition : UItemDefinition`이 추가되어야 한다.
-- 왕롱은 항상 여왕벌 1마리 capacity이며 `MaxStack=1` invariant를 가진다.
-- `FQueenCageItemState`는 `UItemInstance` optional runtime state여야 한다.
-- 저장 필드는 최소 `bHasState`, `bHasQueen`, `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`여야 한다.
-- 왕롱 state에는 world actor reference가 저장되면 안 된다.
-- `UItemInstance`는 QueenCage state API를 제공해야 한다.
-  - `SetQueenCageEmptyState`
-  - `SetQueenCageState`
-  - `SetCapturedQueenBeeState`
-  - `ClearQueenCageState`
-  - `HasQueenCageState`
-  - `GetQueenCageState`
-  - `HasCapturedQueen`
-  - `CanAcceptQueenBee`
-- `InitializeFromDefinition()`은 `UQueenCageItemDefinition`이면 empty state로 초기화해야 한다.
-- `CopyRuntimeStateFrom()`은 QueenCage state를 복사해야 한다.
-- `SetStackCount()`와 `ItemStackMoveUtils::ResolveMaxStack()`은 QueenCage를 `MaxStack=1`로 다뤄야 한다.
-- runtime state compatibility 비교에 QueenCage state가 포함되어야 한다.
+- `SwarmClusterInitialAliveRadius`와 `SwarmClusterSphereRadius`가 `UPROPERTY` authoring 입력에서 제거되어야 한다.
+- `SwarmClusterSpawnAmount`는 유지되어야 한다.
+- `SwarmClusterBeeDensityPerCubicMeter`가 추가되어야 한다.
+  - `UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0001"))`
+  - 기본값 `8000.0f`
+- `BeginSwarmingAtTransform`은 cluster spawn 후 explicit radius를 넘기지 않아야 한다.
+- expected call shape:
 
-### Queen Bee Actor
+```cpp
+ClusterActor->InitializeSwarmClusterFromDensity(
+    SwarmClusterSpawnAmount,
+    SwarmClusterBeeDensityPerCubicMeter);
+```
 
-- `AQueenBeeActor`가 `IItemUseAreaActivationProvider`를 구현해야 한다.
-- `QueenCageUseAreaMesh`는 `UItemUseAreaMeshComponent`이고 `QueenBeeMesh` 하위에 attach되어야 한다.
-- area tag는 `Item.UseArea.QueenBee.QueenCage`여야 한다.
-- effect target policy는 `ComponentOwner`여야 하며, item action context target이 `AQueenBeeActor`가 되어야 한다.
-- captured queen은 use-area가 inactive이고 collision/hit 대상에서 빠져야 한다.
-- `MakeQueenCageItemState()` 또는 동등 API가 queen class, 산란력, 질병값을 export해야 한다.
-- `AQueenBeeActor`가 자신의 owner를 cast해서 벌통/분봉 본진 상태를 직접 바꾸면 안 된다.
+### `ABeeSwarmClusterActor`
 
-### Capture Source
+- 기존 radius 기반 BlueprintCallable initializer `InitializeSwarmCluster(float, int32, float)`는 제거되어야 한다.
+- 새 initializer가 BlueprintCallable이어야 한다.
 
-- `IQueenBeeCaptureSource` interface가 추가되어야 한다.
-- `CanCaptureQueenBee(AQueenBeeActor*)`와 `CaptureQueenBee(AQueenBeeActor*, FQueenCageItemState&)`가 BlueprintNativeEvent/Callable surface로 제공되어야 한다.
-- `ABeehive`와 `ABeeSwarmClusterActor`가 interface를 구현해야 한다.
-- 실제 포획 가능성 판단, queen child 제거/재생성 차단, descriptor rebuild는 host 구현체가 담당해야 한다.
+```cpp
+void InitializeSwarmClusterFromDensity(int32 InSpawnAmount, float InBeeDensityPerCubicMeter);
+```
 
-### QueenCage Use Action
+- `AliveRadius`와 `SphereRadius`는 `EditAnywhere`가 아니어야 한다.
+- `InitialAliveRadius`, `AliveRadius`, `SphereRadius`는 runtime state로 유지될 수 있다.
+- `BeeDensityPerCubicMeter` runtime state가 있어야 하며 기본값은 `8000.0f`다.
+- density sanitize는 `0.0001f` 같은 작은 양수 clamp를 사용해야 한다.
+- `SpawnAmount <= 0`이면 radius는 `0.0f`여야 한다.
+- radius 계산은 meter 단위 부피에서 산출 후 cm로 변환해야 한다.
 
-- `UQueenCageUseAction : UHoldItemUseAction`이 추가되어야 한다.
-- use-area query tag는 `Item.UseArea.QueenBee.QueenCage`여야 한다.
-- 시작/적용 조건은 source item이 `UQueenCageItemDefinition` 기반이고 `CanAcceptQueenBee()`가 true여야 한다.
-- target은 `Context.ItemUseEffectTargetObject`의 `AQueenBeeActor`여야 한다.
-- host는 `Context.FocusEngagedHostActor`의 `IQueenBeeCaptureSource`여야 한다.
-- action 내부에서 drag speed, progress, mouse deproject/trace를 사용하면 안 된다.
-- 성공 시 `CaptureQueenBee` 반환 state를 source item instance에 저장하고 `Result.bSucceeded=true`여야 한다.
-- item stack/durability는 변경하면 안 된다.
-- 이미 여왕벌이 든 왕롱은 추가 포획을 시작/적용할 수 없어야 한다.
+```cpp
+VolumeM3 = SpawnAmount / BeeDensityPerCubicMeter
+RadiusM = cbrt((3 * VolumeM3) / (4 * PI))
+RadiusCm = RadiusM * 100
+```
 
-### Beehive
+- `InitializeSwarmClusterFromDensity`는 최소 다음 상태를 reset/set 해야 한다.
+  - `bCaptured=false`
+  - `bBeesCaptured=false`
+  - `bQueenCaptured=false`
+  - `SpawnAmount=max(0, InSpawnAmount)`
+  - `CapturedBeeAmount=0.0f`
+  - sanitized density 저장
+  - `InitialAliveRadius=CalculateRadiusCmFromBeeDensity(...)`
+  - `AliveRadius=InitialAliveRadius`
+  - `SphereRadius=InitialAliveRadius`
+- queen setup, capture use-area activation, Niagara parameter application, events, captured-state handling은 기존 의미가 유지되어야 한다.
+- `OnConstruction`/`BeginPlay`는 manually authored `AliveRadius`를 source로 쓰면 안 된다.
+- `BeginPlay`가 runtime initializer 이후 capture progress를 깨면 finding이다.
 
-- `ABeehive`는 `bHasQueenBee`를 보유해야 한다.
-- `GetQueenBeeActor()`는 `bHasQueenBee=false`이면 null을 반환해야 한다.
-- `EnsureQueenBeeChildActorClass()`는 `bHasQueenBee=false`에서 queen child를 재생성하면 안 된다.
-- queen location update, `IsQueenBeeAttachedToComb`, `TryBrushQueenBeeFromCombVisibleFace`는 queen 없음 상태에서 no-op/false여야 한다.
-- `CalculateBeeIncreaseAmount()`는 queen 없음 상태에서 0이어야 한다.
-- 벌통 queen capture 성공 시 `bHasQueenBee=false`, queen child 제거/비활성화, item-use-area descriptor rebuild가 수행되어야 한다.
-- queen capture가 `ColonyBeeCount`, active comb bee count/target count, honey state를 즉시 변경하면 안 된다.
+### Capture Math
 
-### Swarm Cluster
+- Bee count가 계속 source of truth여야 한다.
+- `CaptureBees`, `SetCapturedBeeAmount`, `RefreshAliveRadiusFromBeeAmounts`, `CalculateAliveRadiusFromRemainingBees`는 `SpawnAmount`, `CapturedBeeAmount`, `InitialAliveRadius`를 기준으로 동작해야 한다.
+- `AliveRadius = InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)` 공식은 유지되어야 한다.
+- `SetAliveRadius`/`DecreaseAliveRadius`는 legacy/manual visual adjustment API로 남아도 된다.
+- `SetAliveRadius`/`DecreaseAliveRadius`가 bee count 없이 bees captured 상태를 완료 처리하면 finding이다.
+- BeeCarrier capture gameplay가 `SetAliveRadius`/`DecreaseAliveRadius`를 사용하면 finding이다.
 
-- `ABeeSwarmClusterActor`는 `bBeesCaptured`, `bQueenCaptured`, 기존 `bCaptured`를 분리해야 한다.
-- `bBeesCaptured`: BeeCarrier로 벌이 모두 포획되었거나 총 벌 수가 0인 상태
-- `bQueenCaptured`: 왕롱으로 분봉 본진 여왕벌이 포획된 상태
-- `bCaptured`: 최종 완료이며 반드시 `bBeesCaptured && bQueenCaptured`
-- `CaptureBees()`는 `bCaptured`가 아니라 `bBeesCaptured`를 기준으로 포획 가능성을 판단해야 한다.
-- 벌만 모두 포획되면 `AliveRadius=0`, Niagara parameter 적용, BeeCarrier use-area 비활성화, descriptor rebuild만 수행해야 한다.
-- 벌만 모두 포획된 시점에 `ReceiveSwarmCaptured`를 호출하면 finding이다.
-- 분봉 queen capture 성공 시 `bQueenCaptured=true`, queen child 제거/재생성 차단, descriptor rebuild를 수행해야 한다.
-- `ReceiveSwarmCaptured`는 `bBeesCaptured && bQueenCaptured && !bCaptured` 조건에서 1회만 호출되어야 한다.
-- 기존 `DecreaseAliveRadius` API는 삭제/rename하면 안 되며, BeeCarrier 벌 포획량/부피 공식은 변경하면 안 된다.
+### Niagara Contract
 
-### Tags and Docs
+다음 parameter 이름은 변경되면 안 된다.
 
-- `Config/DefaultGameplayTags.ini`에 `Item.UseArea.QueenBee.QueenCage`가 추가되어야 한다.
-- 선택적으로 `Item.QueenCage`가 추가될 수 있다.
-- 아키텍처 문서에는 QueenCage item state, `AQueenBeeActor` use-area, `IQueenBeeCaptureSource`, 벌통 queen capture 영향 범위, 분봉 final captured 조건이 반영되어야 한다.
+- `User.AliveRadius`
+- `User.SpawnAmount`
+- `User.SphereRadius`
+
+`User.AliveRadius`와 `User.SphereRadius` 값은 density-derived runtime radius에서 와야 한다.
+
+### Blueprint/API/Core Redirect
+
+- expected Blueprint-facing removals:
+  - `ABeehive::SwarmClusterInitialAliveRadius`
+  - `ABeehive::SwarmClusterSphereRadius`
+  - `ABeeSwarmClusterActor::InitializeSwarmCluster(float, int32, float)`
+- expected Blueprint-facing additions:
+  - `ABeehive::SwarmClusterBeeDensityPerCubicMeter`
+  - `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(int32, float)`
+- `Config/DefaultEngine.ini` Core Redirect 추가는 없어야 한다.
+- radius-to-density property redirect는 units/semantics가 다르므로 추가하면 finding이다.
+- 기존 Blueprint asset의 old properties/nodes는 수동 migration 대상으로 보고해야 하며, `Content/`를 수정하면 finding이다.
+
+### 문서
+
+- `.md/0_ARCHITECTURE.md`는 direct radius start configuration 대신 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter` 생성 입력을 설명해야 한다.
+- `.md/Architecture/WorldActorsSystem.md`는 `ABeehive` composition, swarming test success flow, `ABeeSwarmClusterActor` source-of-truth, Niagara contract를 density 기반 설명으로 갱신해야 한다.
+- `.md/USER_UNREAL.md`의 수동 설정 안내에서 old radius fields가 남아 있으면 finding이다.
 
 ## 반드시 확인할 불변조건
 
-- 기존 UCLASS/USTRUCT/UENUM rename/delete는 없어야 한다.
-- 기존 BlueprintCallable API 삭제/rename은 없어야 한다.
-- 새 Focus 시스템/입력 경로가 추가되면 안 된다.
-- `Content/` asset 수정/저장은 없어야 한다.
-- Core Redirect 추가는 없어야 한다.
-- 왕롱 포획 시 `ColonyBeeCount`, active comb bee count/target count를 즉시 변경하면 안 된다.
-- 자동 분봉 발생 조건, 여왕벌 방출/재배치/왕롱 교체 기능이 추가되면 안 된다.
+- BeeCarrier capture rate logic 변경 없음.
+- Queen cage / queen capture logic 변경 없음.
+- Route actor spline generation logic 변경 없음.
+- Existing Niagara parameter names 변경 없음.
+- `Content/` 수정 없음.
+- `Config/DefaultEngine.ini` 수정 없음.
+- UCLASS/USTRUCT/UENUM rename 없음.
+- `#include "Public/..."` 신규 추가 없음.
 
-## 검증 명령
+## 구현자가 수행한 검증
+
+- `git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
+  - 통과. Git line-ending warning만 출력.
+- `rg -n "SwarmClusterInitialAliveRadius|SwarmClusterSphereRadius|InitializeSwarmCluster\\(" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
+  - Source에는 old symbol 없음.
+  - `.md/PROMPT_IMPLEMENTATION.md`와 변경 기록 문구에는 old symbol이 남을 수 있다.
+- `rg -n "SwarmClusterBeeDensityPerCubicMeter|BeeDensityPerCubicMeter|InitializeSwarmClusterFromDensity|CalculateRadiusCmFromBeeDensity" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md`
+  - expected matches 확인.
+- `rg -n "EditAnywhere.*AliveRadius|EditAnywhere.*SphereRadius|bLegacyRadiusDepleted|AliveRadius <= KINDA_SMALL_NUMBER" Source/BeekeepingSim/Public Source/BeekeepingSim/Private`
+  - match 없음.
+- `BeekeepingSimEditor Win64 Development`
+  - 실패. 열린 `UnrealEditor.exe`가 `Binaries/Win64/UnrealEditor-BeekeepingSim.dll`을 lock해서 link 단계 `LNK1104`.
+- `BeekeepingSim Win64 Development`
+  - 성공.
+
+## 리뷰어 검증 명령
 
 ```powershell
-git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
+git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+```
+
+```powershell
+rg -n "SwarmClusterInitialAliveRadius|SwarmClusterSphereRadius|InitializeSwarmCluster\\(" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+rg -n "SwarmClusterBeeDensityPerCubicMeter|BeeDensityPerCubicMeter|InitializeSwarmClusterFromDensity|CalculateRadiusCmFromBeeDensity" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
+rg -n "AliveRadius|SphereRadius" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md
+rg -n "EditAnywhere.*AliveRadius|EditAnywhere.*SphereRadius|bLegacyRadiusDepleted|AliveRadius <= KINDA_SMALL_NUMBER" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
 ```
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
+Editor target link가 DLL lock으로 실패하면 Unreal Editor를 종료한 뒤 재시도한다. 코드 컴파일 대체 확인은 아래 game target으로 한다.
+
 ```powershell
-rg -n "FQueenCageItemState|UQueenCageItemDefinition|UQueenCageUseAction|IQueenBeeCaptureSource|QueenCageUseAreaMesh|Item.UseArea.QueenBee.QueenCage|bHasQueenBee|bBeesCaptured|bQueenCaptured" Source/BeekeepingSim/Public Source/BeekeepingSim/Private Config .md
-rg -n "ReceiveSwarmCaptured|HandleCapturedIfNeeded|IsCaptured\(|SetCaptureUseAreaActive|CaptureBees" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
-rg -n "ColonyBeeCount.*Queen|SetColonyBeeCount\(|TotalTargetBeeCount.*Queen|DetachFromActor" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSim Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
-
-두 번째 검색은 분봉 본진의 벌 포획 완료와 최종 완료 조건이 분리되었는지 확인하기 위한 것이다.
-
-세 번째 검색은 왕롱 포획 경로가 벌통 colony/comb 상태를 즉시 바꾸거나 queen actor를 기존 방식으로 detach하지 않는지 확인하기 위한 것이다. 무관한 기존 API 선언/문서 결과는 허용되지만, 새 왕롱 capture implementation에서 population/comb count를 변경하면 finding으로 보고한다.
 
 ## 수동 PIE 리뷰 포인트
 
-1. 왕롱 DataAsset parent를 `UQueenCageItemDefinition`으로 설정하고 `UQueenCageUseAction`을 action spec에 추가한다.
-2. 왕롱에 필요한 gameplay tag가 있으면 `Item.QueenCage`를 부여한다.
-3. `AQueenBeeActor` BP child에서 `QueenCageUseAreaMesh` mesh/material/relative transform이 여왕벌 주변을 덮는지 확인한다.
-4. 벌통 FocusEngaged 상태에서 왕롱으로 벌통 여왕벌을 포획하면 왕롱 `bHasQueen=true`가 되고 벌통 `bHasQueenBee=false`가 되는지 확인한다.
-5. 벌통 여왕벌 포획 후 colony population 증가량이 0이 되는지 확인한다.
-6. 벌통 여왕벌 포획 후 queen location bucket/update가 여왕벌을 재생성하지 않는지 확인한다.
-7. 이미 여왕벌이 든 왕롱으로 다른 여왕벌을 포획할 수 없는지 확인한다.
-8. 분봉 본진에서 BeeCarrier로 벌을 모두 포획해도 `ReceiveSwarmCaptured`가 아직 호출되지 않는지 확인한다.
-9. 분봉 본진에서 벌이 모두 포획된 뒤 왕롱으로 여왕벌을 포획하면 그때 `ReceiveSwarmCaptured`가 1회만 호출되는지 확인한다.
-10. 분봉 본진에서 여왕벌을 먼저 포획하고 나중에 벌을 모두 포획해도 최종 완료가 1회만 발생하는지 확인한다.
-11. hotbar/storage 이동 후 왕롱의 `FQueenCageItemState`가 유지되는지 확인한다.
+1. Beehive instance Details의 Swarming Test에서 `SwarmClusterInitialAliveRadius`와 `SwarmClusterSphereRadius`가 사라졌는지 확인한다.
+2. `SwarmClusterBeeDensityPerCubicMeter`가 보이고 기본값이 `8000.0`인지 확인한다.
+3. `SpawnAmount=500`, density `8000.0`으로 분봉을 시작하면 cluster radius가 약 `24.63cm`인지 확인한다.
+4. Niagara가 다음 값을 받는지 확인한다.
+   - `User.SpawnAmount = 500`
+   - `User.AliveRadius ~= 24.63`
+   - `User.SphereRadius ~= 24.63`
+5. 벌 절반 포획 시 `AliveRadius`가 선형이 아니라 cube-root volume scaling을 따르는지 확인한다.
+6. 벌 전량 포획 시 `AliveRadius=0`, BeeCarrier use-area 비활성화, 최종 완료는 queen capture까지 대기하는지 확인한다.
+7. 여왕벌 포획까지 끝났을 때 `ReceiveSwarmCaptured`가 1회만 호출되는지 확인한다.
+8. route generation end가 여전히 `ClusterCenter`인지 확인한다.
+9. `Content/` asset이 수정되지 않았는지 확인한다.
 
 ## 리뷰 출력 형식
 
 - Findings first. 심각도 순으로 파일/라인을 포함한다.
 - 합당한 finding이 없으면 "중요 finding 없음"이라고 명시한다.
-- 이후 테스트/검증 결과, 남은 수동 BP/Content 확인 항목을 짧게 정리한다.
+- 이후 검증 결과와 남은 수동 PIE/Blueprint migration 항목을 짧게 정리한다.

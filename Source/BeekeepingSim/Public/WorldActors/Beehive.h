@@ -288,14 +288,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
 	TSubclassOf<ABeehiveSwarmRouteActor> SwarmRouteActorClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0"))
-	float SwarmClusterInitialAliveRadius = 200.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0"))
 	int32 SwarmClusterSpawnAmount = 300;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0"))
-	float SwarmClusterSphereRadius = 200.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test", meta = (ClampMin = "0.0001"))
+	float SwarmClusterBeeDensityPerCubicMeter = 8000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
 	FBeeSplineSwarmAppliedParameters SwarmRouteParameters;

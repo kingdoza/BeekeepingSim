@@ -297,10 +297,9 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 		return false;
 	}
 
-	ClusterActor->InitializeSwarmCluster(
-		SwarmClusterInitialAliveRadius,
+	ClusterActor->InitializeSwarmClusterFromDensity(
 		SwarmClusterSpawnAmount,
-		SwarmClusterSphereRadius);
+		SwarmClusterBeeDensityPerCubicMeter);
 
 	const FTransform RouteStartTransform = SwarmExitPoint ? SwarmExitPoint->GetComponentTransform() : GetActorTransform();
 	const FVector RouteStartLocation = RouteStartTransform.GetLocation();

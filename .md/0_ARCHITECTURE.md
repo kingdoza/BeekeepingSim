@@ -80,8 +80,8 @@ Source/BeekeepingSim/
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
-- `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeeSwarmClusterActor`와 `ABeehiveSwarmRouteActor`만 spawn한다.
-- `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` Niagara parameter, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유하며, 최종 완료는 벌 전량 포획과 여왕벌 포획이 모두 끝난 뒤 발생한다.
+- `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeeSwarmClusterActor`와 `ABeehiveSwarmRouteActor`만 spawn한다. 분봉 본진 생성 입력은 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)다.
+- `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, `SpawnAmount`와 `BeeDensityPerCubicMeter`에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` Niagara parameter, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유하며, 최종 완료는 벌 전량 포획과 여왕벌 포획이 모두 끝난 뒤 발생한다.
 - `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor` 기반 runtime route를 거리 기반 홀수 자동 중간점 spline으로 구성하고 기존 spline swarm Niagara parameter 계약을 유지한다.
 - `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
 - `ABeehive`는 `QueenBeeChildActor`를 소유하고 시간 bucket 구독(`QueenBeeLocation`)을 통해 기본 60분마다 여왕벌 위치를 자동 갱신한다. 왕롱 포획으로 `bHasQueenBee=false`가 되면 여왕벌 child 재생성, 위치 갱신, 산란 증가량 계산은 비활성화된다.
@@ -370,8 +370,9 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 
 - 외부 Blueprint가 `ABeehive::BeginSwarmingAtTransform` 또는 `BeginSwarmingAtActor`를 호출해 분봉 테스트를 수동 시작한다.
 - 시작 시 `ABeehive`는 `SwarmExitPoint` world location/rotation으로 `ABeehiveSwarmRouteActor`를 spawn하고, 분봉 본진 center까지 거리 기반 자동 중간점 route spline을 구성한 뒤 `SwarmRouteParameters`를 `ApplyExternalSwarmParameters`로 주입한다.
-- `ABeeSwarmClusterActor`는 `InitialAliveRadius`, `SpawnAmount`, `CapturedBeeAmount`, `SphereRadius`를 소유하고, `AliveRadius = InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`를 Niagara user parameter `User.AliveRadius`에 적용한다.
-- 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 두며, `InitializeSwarmCluster()` 시점에 pitch/yaw/roll 세 축을 1회 랜덤 회전한다.
+- `ABeehive`는 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)로 분봉 본진을 시작한다. `ABeeSwarmClusterActor`의 `InitialAliveRadius`, `AliveRadius`, `SphereRadius`는 `RadiusCm = cbrt((3 * (SpawnAmount / BeeDensityPerCubicMeter)) / (4 * PI)) * 100`으로 파생되는 runtime 값이다.
+- `ABeeSwarmClusterActor`는 `SpawnAmount`, `CapturedBeeAmount`, `InitialAliveRadius`를 기준으로 `AliveRadius = InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`를 Niagara user parameter `User.AliveRadius`에 적용한다.
+- 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 두며, `InitializeSwarmClusterFromDensity()` 시점에 pitch/yaw/roll 세 축을 1회 랜덤 회전한다.
 - `UBeeCarrierUseAction`은 `Item.UseArea.SwarmCluster.BeeCarrier` hit context의 impact point 이동 속도로 bees/sec bonus rate를 계산하고, 본진 잔여 벌 수와 BeeCarrier 남은 수용량으로 clamp한 실제 포획량을 `FBeeCarrierItemState`에 저장한다.
 - `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수가 0이면 `bBeesCaptured`로 전환하고 BeeCarrier capture use-area와 `AliveRadius`만 완료 처리한다.
 - `ABeehive`와 `ABeeSwarmClusterActor`는 `IQueenBeeCaptureSource`를 구현해 왕롱 포획 가능 여부와 host 상태 변경을 담당한다.

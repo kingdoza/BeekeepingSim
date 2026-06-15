@@ -1,556 +1,495 @@
-# 왕롱 여왕벌 포획과 분봉 본진 최종 완료 조건 구현 프롬프트
+# Swarming route-arrival cluster spawn implementation prompt
 
-## 목표
+## Goal
 
-현재 구현된 분봉/BeeCarrier 포획 구조 위에 `왕롱` 아이템으로 모든 `AQueenBeeActor`를 포획하는 기능을 추가한다.
+Change manual swarming test presentation so the route swarm appears first, and the swarm cluster is created only when the route swarm reaches the target.
 
-왕롱은 무조건 여왕벌 1마리만 담을 수 있다. 포획 결과는 world actor reference가 아니라 `UItemInstance` optional runtime state로 저장한다. 벌통 여왕벌과 분봉 본진 여왕벌은 모두 같은 `AQueenBeeActor` 경로로 포획 대상이 되어야 한다.
+Current behavior creates the route actor and the cluster actor immediately. The new behavior must be:
 
-추가로 분봉 본진의 최종 완료 조건을 수정한다. 기존에는 벌 수가 모두 포획되면 `ABeeSwarmClusterActor`가 captured로 전환했지만, 이제 분봉 본진은 BeeCarrier로 벌을 모두 포획하고 왕롱으로 여왕벌까지 포획해야 최종 완료된다.
+1. `ABeehive::BeginSwarmingAtTransform` starts only the route actor.
+2. The route actor spline runs from `SwarmExitPoint` to the requested target transform location.
+3. The cluster actor is spawned at the target only after the route travel delay expires.
+4. Cluster bees and the separate swarm queen are created together by `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(...)`.
+5. Route new-spawn/emission lasts only `SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount` seconds.
+6. The route actor remains alive until the last emitted route bees can reach the target: `RouteArrivalDelaySeconds + RouteEmissionDurationSeconds`.
+7. After cluster spawn, the cluster `AliveRadius` grows from `0` to the target radius over `RouteEmissionDurationSeconds`.
+8. The swarm cluster host cannot enter FocusEngaged until intro growth is complete.
 
-## 반드시 읽을 문서
+The user confirmed policy option 1:
+
+- `RouteEmissionDurationSeconds` controls how long the route keeps emitting/new-spawning bees.
+- Route actor lifetime is longer, so already-emitted particles can finish traveling after emission stops.
+
+## Required reading
 
 - `.md/AGENT_IMPLEMENTATION.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/QNA_ARCHITECTURE.md`
 - `.md/Architecture/CoreSystem.md`
-- `.md/Architecture/InventorySystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
-- `.md/Architecture/FocusSystem.md`
+- `.md/QNA_IMPLEMENTATION.md`
 
-## 현재 코드 전제
+## Current code premises
 
-- `AQueenBeeActor`는 `QueenBeeMesh`, `BaseEggLayingPower`, `DiseaseValue`를 가진다.
-- `ABeehive`는 `QueenBeeChildActor` child actor component를 소유하고 `GetQueenBeeActor()`, `IsQueenBeeAttachedToComb()`, `TryBrushQueenBeeFromCombVisibleFace()`를 제공한다.
-- `ABeeSwarmClusterActor`는 `QueenBeeChildActor` child actor component를 소유하고, 벌 포획 source of truth로 `CapturedBeeAmount`와 `SpawnAmount`를 사용한다.
-- `ABeeSwarmClusterActor::IsCaptured()`와 `bCaptured`는 현재 벌만 모두 포획되어도 true가 된다.
-- `UItemInstance`에는 `FBeehiveCombItemState`, `FHoneyContainerItemState`, `FBeeCarrierItemState` optional runtime state 패턴이 있다.
-- `ItemStackMoveUtils`는 runtime state compatibility와 `MaxStack=1` 특수 definition 처리를 담당한다.
-- `UCursorItemUseAreaScopeComponent`는 `Context.FocusEngagedHostActor`, `Context.ItemUseEffectTargetObject`, item-use-area hit context를 item action에 전달한다.
-- `UItemUseAreaMeshProviderComponent`는 host actor의 direct child actor 안에 있는 `UItemUseAreaMeshComponent`도 descriptor로 수집한다. 따라서 `ABeehive`의 `QueenBeeChildActor`와 `ABeeSwarmClusterActor`의 `QueenBeeChildActor` 안에 있는 여왕벌 use-area를 같은 방식으로 노출할 수 있다.
+- Relevant source files:
+  - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+  - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+  - `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
+  - `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
+  - `Source/BeekeepingSim/Public/WorldActors/BeeSplineSwarmActor.h`
+  - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
+  - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
+  - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
+- `ABeehive::BeginSwarmingAtTransform` currently spawns and initializes `ABeeSwarmClusterActor` immediately.
+- `ABeehiveSwarmRouteActor::ConfigureRoute(...)` builds the route spline and `ABeeSplineSwarmActor::GetSplineLength()` returns route length in Unreal centimeters.
+- `FBeeSplineSwarmAppliedParameters` contains:
+  - `SpawnAmount`
+  - `SpeedMin`
+  - `SpeedMax`
+- `ABeeSplineSwarmActor::ApplyExternalSwarmParameters(...)` applies route Niagara parameters.
+- `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(int32, float)` already owns cluster initialization, density-derived radius, queen child creation/random rotation, capture use-area activation, and Niagara parameter application.
+- `ABeeSwarmClusterActor` capture progression uses bee amount as source of truth and derives `AliveRadius` from volume ratio. The intro growth must not replace `CapturedBeeAmount` as capture state.
+- `UFocusTargetComponent` does not currently expose an enabled flag. FocusEngaged availability should be gated through the cluster's focus action `CanBeginFocusAction(...)`, not by assuming component activation disables focus.
 
-## 핵심 확정 사항
+## Timing rules
 
-- 왕롱 포획 결과는 `UItemInstance` optional `FQueenCageItemState`에 저장한다.
-- 왕롱 item은 `UQueenCageItemDefinition` 기반이며 `MaxStack=1` invariant를 가진다.
-- 왕롱은 `bHasQueen=false/true`만으로 비어 있음/가득 참을 표현하고, 2마리 이상 포획할 수 없다.
-- 왕롱에 world actor reference는 저장하지 않는다.
-- 왕롱에 저장할 최소 state:
-  - `bHasState`
-  - `bHasQueen`
-  - `CapturedQueenBeeClass`
-  - `BaseEggLayingPower`
-  - `DiseaseValue`
-- 모든 여왕벌 포획용 item-use-area는 `AQueenBeeActor`가 소유한다.
-- `QueenCageUseAreaMesh`는 `AQueenBeeActor::QueenBeeMesh` 하위에 attach한다.
-- area tag는 `Item.UseArea.QueenBee.QueenCage`다.
-- effect target은 `ComponentOwner`로 두어 `Context.ItemUseEffectTargetObject`가 `AQueenBeeActor`가 되게 한다.
-- 실제 포획 가능 여부, 여왕벌 제거/비활성화, host 상태 변경은 `IQueenBeeCaptureSource` 구현체가 담당한다.
-- `ABeehive`와 `ABeeSwarmClusterActor`가 `IQueenBeeCaptureSource`를 구현한다.
-- 왕롱 사용은 drag/rate/progress 없이 유효 여왕벌 영역 위에서 즉시 1회 포획한다.
-- 이미 여왕벌이 든 왕롱은 추가 포획을 시작/적용할 수 없다.
-- 벌통 여왕벌 포획 시 기존 `ColonyBeeCount`, active comb bee count/target count는 즉시 변경하지 않는다.
-- 분봉 본진 여왕벌은 분봉 본진 생성/초기화 시 1회, pitch/yaw/roll 세 축 모두 랜덤 회전된 상태로 배치한다.
-- 분봉 본진 최종 완료 조건은 `AllBeesCaptured && bQueenCaptured`다.
-- 벌만 전부 포획되면 BeeCarrier use-area와 `AliveRadius`만 완료 처리한다. `bCaptured`/`ReceiveSwarmCaptured` 같은 최종 완료는 여왕벌까지 포획된 뒤 발생한다.
-- `Content/` asset은 수정하지 않는다.
-
-## 구현 대상
-
-### 새 파일
-
-- `Source/BeekeepingSim/Public/Inventory/QueenCageItemDefinition.h`
-- `Source/BeekeepingSim/Public/Inventory/QueenCageUseAction.h`
-- `Source/BeekeepingSim/Private/Inventory/QueenCageUseAction.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeCaptureSource.h`
-
-### 수정 파일
-
-- `Source/BeekeepingSim/Public/Inventory/ItemInstance.h`
-- `Source/BeekeepingSim/Private/Inventory/ItemInstance.cpp`
-- `Source/BeekeepingSim/Private/Inventory/ItemStackMoveUtils.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
-- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-
-### 구현 후 문서 갱신
-
-- `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/InventorySystem.md`
-- `.md/Architecture/WorldActorsSystem.md`
-- 필요 시 `.md/Architecture/FocusSystem.md`
-
-## `UQueenCageItemDefinition`
-
-`UItemDefinition` subclass를 추가한다.
-
-권장:
+Use two distinct route timing concepts.
 
 ```cpp
-UCLASS(BlueprintType)
-class BEEKEEPINGSIM_API UQueenCageItemDefinition : public UItemDefinition
+const float RouteSpawnAmount = FMath::Max(0.0f, SwarmRouteParameters.SpawnAmount);
+const float RouteSpeedMin = FMath::Max(0.0f, SwarmRouteParameters.SpeedMin);
+const float RouteSpeedMax = FMath::Max(0.0f, SwarmRouteParameters.SpeedMax);
+const float AverageRouteSpeed = (RouteSpeedMin + RouteSpeedMax) * 0.5f;
+const float SplineLength = RouteActor->GetSplineLength();
+
+RouteArrivalDelaySeconds = SplineLength / AverageRouteSpeed;
+RouteEmissionDurationSeconds = float(FMath::Max(0, SwarmClusterSpawnAmount)) / RouteSpawnAmount;
+RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds;
+```
+
+Important:
+
+- `SplineLength / AverageRouteSpeed` is the correct seconds formula.
+- Do not use `AverageRouteSpeed / SplineLength`.
+- `SplineLength` is in cm and route speed is assumed to be cm/s.
+- If `RouteSpawnAmount <= 0`, fail swarming start and call `ReceiveSwarmingStartFailed()`.
+- If `AverageRouteSpeed <= 0`, fail swarming start and call `ReceiveSwarmingStartFailed()`.
+- If `SplineLength <= 0`, allow immediate arrival with `RouteArrivalDelaySeconds = 0.0f`.
+- `SpeedMin > SpeedMax` does not matter for average speed because the sum is unchanged, but still clamp each to `>= 0`.
+
+## Required behavior
+
+### Start flow
+
+Update `ABeehive::BeginSwarmingAtTransform` to:
+
+1. Resolve `World`, `SwarmRouteActorClass`, and `SwarmClusterActorClass`.
+2. Clear any pending swarming timers/session state. If `bDestroyPreviousTestSwarmOnStart` is true, destroy previous active route/cluster actors.
+3. Spawn only `ABeehiveSwarmRouteActor` at `SwarmExitPoint` transform.
+4. Configure route from `SwarmExitPoint` location to `TargetTransform.GetLocation()`.
+5. Apply `SwarmRouteParameters`.
+6. Compute `RouteArrivalDelaySeconds`, `RouteEmissionDurationSeconds`, and `RouteDestroyDelaySeconds`.
+7. Store the target transform as pending cluster spawn data.
+8. Store the active route actor.
+9. Start timers for:
+   - route arrival / cluster spawn
+   - route emission stop
+   - route actor cleanup
+10. Return true after route start succeeds.
+
+Do not spawn or initialize the cluster during the start call.
+
+### Arrival flow
+
+Add a private helper on `ABeehive`, e.g.
+
+```cpp
+void HandleActiveSwarmRouteArrived();
+```
+
+On arrival:
+
+1. If the active route/session is no longer valid, do nothing.
+2. Spawn `ABeeSwarmClusterActor` at the pending target transform.
+3. Call:
+
+```cpp
+ClusterActor->InitializeSwarmClusterFromDensity(
+    SwarmClusterSpawnAmount,
+    SwarmClusterBeeDensityPerCubicMeter);
+```
+
+4. Set `ActiveSwarmClusterActor`.
+5. Start cluster intro growth for `RouteEmissionDurationSeconds`.
+6. Call the existing `ReceiveSwarmingStarted(ClusterActor, ActiveSwarmRouteActor)`.
+
+Keep `ReceiveSwarmingStarted` as the cluster-created event. This preserves the expectation that its `ClusterActor` parameter is non-null.
+
+### Cluster intro growth
+
+Add an explicit intro-growth path on `ABeeSwarmClusterActor`, e.g.
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
+void BeginAliveRadiusIntroGrowth(float DurationSeconds);
+
+UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Intro")
+void FinishAliveRadiusIntroGrowth();
+
+UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
+bool IsAliveRadiusIntroGrowthActive() const;
+```
+
+The arrival handler should call:
+
+```cpp
+ClusterActor->InitializeSwarmClusterFromDensity(
+    SwarmClusterSpawnAmount,
+    SwarmClusterBeeDensityPerCubicMeter);
+ClusterActor->BeginAliveRadiusIntroGrowth(ActiveSwarmRouteEmissionDurationSeconds);
+```
+
+Required intro behavior:
+
+1. `SpawnAmount` is the final target bee amount immediately.
+2. `InitialAliveRadius` is the final target full radius immediately.
+3. `SphereRadius` is the final target radius immediately.
+4. Niagara `User.SpawnAmount` is set to the final target amount immediately.
+5. Niagara `User.SphereRadius` is set to the final target radius immediately.
+6. Only `AliveRadius` starts at `0.0f` and grows over time.
+
+The growth is linear in bee count, not linear in radius.
+
+```cpp
+const float GrowthAlpha = FMath::Clamp(ElapsedSeconds / DurationSeconds, 0.0f, 1.0f);
+const float VisualBeeAmount = static_cast<float>(FMath::Max(0, SpawnAmount)) * GrowthAlpha;
+const float VisualBeeRatio = SpawnAmount > 0
+    ? FMath::Clamp(VisualBeeAmount / static_cast<float>(SpawnAmount), 0.0f, 1.0f)
+    : 0.0f;
+AliveRadius = InitialAliveRadius * FMath::Pow(VisualBeeRatio, 1.0f / 3.0f);
+```
+
+At `GrowthAlpha=1`, `AliveRadius` must equal `InitialAliveRadius` and the intro growth is complete.
+
+Suggested cluster state:
+
+```cpp
+UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+bool bAliveRadiusIntroGrowthActive = false;
+
+UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+float AliveRadiusIntroGrowthDurationSeconds = 0.0f;
+
+UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Intro")
+float AliveRadiusIntroGrowthElapsedSeconds = 0.0f;
+```
+
+Tick policy:
+
+- `ABeeSwarmClusterActor` currently does not tick.
+- Enable tick only while intro growth is active, then disable it again when growth finishes.
+- Do not add permanent per-frame tick cost.
+
+Capture policy during intro:
+
+- Keep the swarm cluster FocusEngaged unavailable while intro growth is active.
+- Do not add separate BeeCarrier or QueenCage intro gates unless the implementation discovers a direct non-FocusEngaged use path. Those use-areas only matter inside the FocusEngaged item-use-area scope, so host-level FocusEngaged gating is the source of truth.
+- BeeCarrier and QueenCage use-area active rules should remain tied to their domain state after FocusEngaged is available: BeeCarrier depends on `!bBeesCaptured`, QueenCage depends on queen capture state.
+- `CaptureBees`, `SetCapturedBeeAmount`, and `RefreshAliveRadiusFromBeeAmounts` should finish/cancel intro growth before applying capture math if they are called unexpectedly during intro. Capture math must remain based on `CapturedBeeAmount` and target `SpawnAmount`, not visual intro bee amount.
+
+Zero-duration behavior:
+
+- If `DurationSeconds <= 0`, immediately finish growth and set `AliveRadius = InitialAliveRadius`.
+- If `SpawnAmount <= 0`, keep `AliveRadius = 0`, finish growth immediately, and preserve existing zero-bee completion behavior.
+
+Events:
+
+- Keep `ReceiveSwarmClusterInitialized()` as the cluster initialization event.
+- Keep `ReceiveAliveRadiusChanged(float)` for each meaningful `AliveRadius` update, including intro growth updates.
+- Optional low-risk event:
+
+```cpp
+UFUNCTION(BlueprintImplementableEvent, Category = "Bee Swarm Cluster|Intro")
+void ReceiveAliveRadiusIntroGrowthFinished();
+```
+
+Do not make intro growth a separate source of truth for final captured/completion state.
+
+### Cluster FocusEngaged availability
+
+FocusEngaged for the swarm cluster must become available only after intro growth finishes.
+
+Do not rely on `UActorComponent::SetActive(false)` unless you verify the Focus system checks component active state. The current focus action path calls `CanBeginFocusAction(...)`, so use an explicit action-level gate.
+
+Recommended implementation:
+
+- Add a small swarm-cluster-specific focus action component, e.g. `USwarmClusterFocusActionComponent : public UAnchoredFocusCursorActionComponent`.
+- Use it as `ABeeSwarmClusterActor::FocusAction` instead of the generic `UAnchoredFocusCursorActionComponent`.
+- Override `CanBeginFocusAction(ABeekeeperCharacter*) const`.
+- Return false while the owning `ABeeSwarmClusterActor` reports intro growth active or FocusEngaged unavailable.
+
+Example shape:
+
+```cpp
+bool USwarmClusterFocusActionComponent::CanBeginFocusAction(ABeekeeperCharacter* InteractingCharacter) const
 {
-    GENERATED_BODY()
-
-public:
-    UQueenCageItemDefinition()
-    {
-        MaxStack = 1;
-    }
-};
+    const ABeeSwarmClusterActor* ClusterOwner = Cast<ABeeSwarmClusterActor>(GetOwner());
+    return Super::CanBeginFocusAction(InteractingCharacter)
+        && ClusterOwner
+        && ClusterOwner->IsSwarmClusterFocusEngagedAvailable();
+}
 ```
 
-추가 정적 용량 값은 필요 없다. 왕롱 capacity는 항상 여왕벌 1마리다.
-
-## `FQueenCageItemState`
-
-`UItemInstance`에 optional runtime state를 추가한다.
-
-권장 구조:
+Add cluster query/setter APIs:
 
 ```cpp
-USTRUCT(BlueprintType)
-struct FQueenCageItemState
+UFUNCTION(BlueprintPure, Category = "Bee Swarm Cluster|Intro")
+bool IsSwarmClusterFocusEngagedAvailable() const;
+```
+
+Rules:
+
+- After `InitializeSwarmClusterFromDensity(...)`, FocusEngaged availability is false if intro growth will run.
+- `BeginAliveRadiusIntroGrowth(DurationSeconds)` sets FocusEngaged unavailable until growth finishes.
+- `FinishAliveRadiusIntroGrowth()` sets FocusEngaged available, unless the actor is already being destroyed or captured in a state that should block focus.
+- If `DurationSeconds <= 0`, FocusEngaged becomes available immediately after the radius is set to target.
+- Preview focus can still show a disabled prompt during intro if the Focus system naturally displays disabled entries from `CanBeginFocusAction=false`. Do not add a new prompt system just for this.
+
+### Route emission stop
+
+Add a private helper on `ABeehive`, e.g.
+
+```cpp
+void StopActiveSwarmRouteEmission();
+```
+
+The route should stop new-spawning after `RouteEmissionDurationSeconds`, but the actor must not be destroyed yet.
+
+Recommended minimal implementation:
+
+- Add an API on `ABeeSplineSwarmActor` or `ABeehiveSwarmRouteActor` to stop emission by applying the same external parameters with `SpawnAmount = 0.0f`.
+- Do not call `Destroy()` or `DeactivateImmediate()` at emission-stop time, because existing route particles should be allowed to finish.
+
+Example helper shape:
+
+```cpp
+void ABeeSplineSwarmActor::StopExternalSwarmEmission()
 {
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
-    bool bHasState = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
-    bool bHasQueen = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage")
-    TSubclassOf<AQueenBeeActor> CapturedQueenBeeClass = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage", meta = (ClampMin = "0.0"))
-    float BaseEggLayingPower = 0.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Queen Cage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float DiseaseValue = 0.0f;
-};
+    FBeeSplineSwarmAppliedParameters Parameters = LastAppliedExternalParameters;
+    Parameters.SpawnAmount = 0.0f;
+    ApplyExternalSwarmParameters(Parameters);
+}
 ```
 
-필요 include/forward declaration:
+If you add `LastAppliedExternalParameters`, keep it internal/transient. Do not expose a new authoring source unless needed.
 
-- `class AQueenBeeActor;` forward declaration을 우선 사용한다.
-- UHT/compile 문제 발생 시 `ItemInstance.h`에서 `WorldActors/QueenBeeActor.h` include로 전환한다.
+If the Niagara system does not react to runtime `User.SpawnAmount = 0`, still implement the C++ contract and report that the Niagara asset must consume live `User.SpawnAmount` for emission-stop behavior.
 
-`UItemInstance` 권장 API:
+### Route cleanup
 
-- `SetQueenCageEmptyState()`
-- `SetQueenCageState(const FQueenCageItemState& NewState)`
-- `SetCapturedQueenBeeState(TSubclassOf<AQueenBeeActor> QueenClass, float BaseEggLayingPower, float DiseaseValue)`
-- `ClearQueenCageState()`
-- `HasQueenCageState() const`
-- `GetQueenCageState() const`
-- `HasCapturedQueen() const`
-- `CanAcceptQueenBee() const`
-
-구현 규칙:
-
-- definition이 `UQueenCageItemDefinition`이 아니면 queen cage state를 clear한다.
-- `InitializeFromDefinition()`에서 definition이 `UQueenCageItemDefinition`이면 `SetQueenCageEmptyState()`를 호출한다.
-- `SetQueenCageEmptyState()`는 `bHasState=true`, `bHasQueen=false`, class null, 수치 0으로 설정한다.
-- `SetQueenCageState()`는 `bHasQueen=false`이면 class null, 수치 0으로 sanitize한다.
-- `bHasQueen=true`이면 `CapturedQueenBeeClass`는 null이 아니어야 한다. null이면 empty state로 sanitize한다.
-- `BaseEggLayingPower`는 `>=0`, `DiseaseValue`는 `0..1`로 clamp한다.
-- `CanAcceptQueenBee()`는 definition이 `UQueenCageItemDefinition`이고 state가 있으며 `bHasQueen=false`일 때 true다.
-- `CopyRuntimeStateFrom()`은 queen cage state도 복사한다.
-- source가 queen cage state를 가지지 않으면 target queen cage state를 clear한다.
-- `SetStackCount()`에서 `UQueenCageItemDefinition`도 꿀 용기/BeeCarrier처럼 `MaxStack=1`로 강제한다.
-
-## `ItemStackMoveUtils`
-
-수정 규칙:
-
-- `QueenCageItemDefinition.h` include 추가
-- `ResolveMaxStack()`에서 `UQueenCageItemDefinition`은 `1` 반환
-- runtime state comparison에 `FQueenCageItemState` 포함
-- `HasRuntimeState()`에 `HasQueenCageState()` 포함
-- `HasEquivalentRuntimeState()`에 queen cage state equality 포함
-
-권장 equality:
+Add a private helper on `ABeehive`, e.g.
 
 ```cpp
-return A.bHasState == B.bHasState
-    && A.bHasQueen == B.bHasQueen
-    && A.CapturedQueenBeeClass == B.CapturedQueenBeeClass
-    && FMath::IsNearlyEqual(A.BaseEggLayingPower, B.BaseEggLayingPower, DurabilityStackTolerance)
-    && FMath::IsNearlyEqual(A.DiseaseValue, B.DiseaseValue, DurabilityStackTolerance);
+void DestroyActiveSwarmRouteAfterTravel();
 ```
 
-## `AQueenBeeActor` 변경
+At `RouteDestroyDelaySeconds`:
 
-`AQueenBeeActor`에 포획용 use-area mesh를 추가한다.
+- Destroy only the active route actor.
+- Set `ActiveSwarmRouteActor = nullptr`.
+- Do not destroy `ActiveSwarmClusterActor`.
 
-상속:
+Rationale: route actor lifetime represents all emitted route bees reaching the target. Cluster capture gameplay continues separately.
+
+### Clear/end play
+
+Update `ABeehive::ClearActiveTestSwarm(bool bDestroyActors)`:
+
+- Clear all active route timers.
+- Clear pending target transform/session state.
+- If `bDestroyActors` is true, destroy active route and active cluster.
+- Set `ActiveSwarmRouteActor = nullptr`.
+- Set `ActiveSwarmClusterActor = nullptr`.
+
+Update `EndPlay` to rely on this cleanup and ensure timers are cleared before actor teardown.
+
+## Suggested state additions
+
+In `ABeehive.h`, add transient/private state similar to:
 
 ```cpp
-class BEEKEEPINGSIM_API AQueenBeeActor : public AActor, public IItemUseAreaActivationProvider
+UPROPERTY(Transient)
+FTransform PendingSwarmClusterTransform;
+
+UPROPERTY(Transient)
+bool bHasPendingSwarmClusterTransform = false;
+
+FTimerHandle ActiveSwarmRouteArrivalTimerHandle;
+FTimerHandle ActiveSwarmRouteEmissionStopTimerHandle;
+FTimerHandle ActiveSwarmRouteDestroyTimerHandle;
+
+float ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
+float ActiveSwarmRouteEmissionDurationSeconds = 0.0f;
 ```
 
-컴포넌트:
+Timer handles do not need `UPROPERTY`.
+
+## Optional Blueprint events
+
+Do not remove or rename existing Blueprint events.
+
+Keep:
 
 ```cpp
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-TObjectPtr<UItemUseAreaMeshComponent> QueenCageUseAreaMesh;
+ReceiveSwarmingStarted(ABeeSwarmClusterActor* ClusterActor, ABeehiveSwarmRouteActor* RouteActor)
+ReceiveSwarmingStartFailed()
 ```
 
-constructor 규칙:
-
-- `QueenCageUseAreaMesh = CreateDefaultSubobject<UItemUseAreaMeshComponent>(TEXT("QueenCageUseAreaMesh"))`
-- `QueenCageUseAreaMesh->SetupAttachment(QueenBeeMesh)`
-- `QueenCageUseAreaMesh->SetAreaId(TEXT("QueenBee.QueenCage"))`
-- tag `Item.UseArea.QueenBee.QueenCage`를 resolve해서 `SetAreaTags`
-- `QueenCageUseAreaMesh->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner)`
-- collision은 기존 item-use-area mesh 패턴과 맞춘다.
-  - 기본값은 `NoCollision`이어도 된다. `UCursorItemUseAreaScopeComponent`가 active hit component를 `QueryOnly`와 trace block으로 전환한다.
-  - mesh asset, material, relative transform은 BP child/details에서 authoring한다.
-
-activation:
-
-- `AQueenBeeActor`에 `bCaptured` 또는 `bQueenCaptured`를 추가한다.
-- `IsCaptured() const`, `SetCaptured(bool bNewCaptured)` 같은 Blueprint API를 추가한다.
-- `IsItemUseAreaMeshActive_Implementation()`은 `QueenCageUseAreaMesh`에 대해 `!IsCaptured()`일 때만 true를 반환한다.
-
-state export:
-
-- `FQueenCageItemState MakeQueenCageItemState() const` 또는 유사 API를 추가한다.
-- export 값:
-  - `bHasState=true`
-  - `bHasQueen=true`
-  - `CapturedQueenBeeClass=GetClass()`
-  - `BaseEggLayingPower=GetBaseEggLayingPower()`
-  - `DiseaseValue=GetDiseaseValue()`
-
-주의:
-
-- `AQueenBeeActor`는 자신의 owner를 cast해서 벌통/분봉 본진 상태를 직접 바꾸지 않는다.
-- 포획 가능성의 최종 판단과 host state mutation은 `IQueenBeeCaptureSource`가 한다.
-
-## `IQueenBeeCaptureSource`
-
-새 interface 파일 `WorldActors/QueenBeeCaptureSource.h`를 추가한다.
-
-권장:
+Add only if useful and low-risk:
 
 ```cpp
-UINTERFACE(BlueprintType)
-class BEEKEEPINGSIM_API UQueenBeeCaptureSource : public UInterface
-{
-    GENERATED_BODY()
-};
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
+void ReceiveSwarmingRouteStarted(ABeehiveSwarmRouteActor* RouteActor, float ArrivalDelaySeconds, float EmissionDurationSeconds);
 
-class BEEKEEPINGSIM_API IQueenBeeCaptureSource
-{
-    GENERATED_BODY()
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
+void ReceiveSwarmingRouteEmissionStopped(ABeehiveSwarmRouteActor* RouteActor);
 
-public:
-    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Queen Bee|Capture")
-    bool CanCaptureQueenBee(AQueenBeeActor* QueenBee) const;
-
-    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Queen Bee|Capture")
-    bool CaptureQueenBee(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState);
-};
+UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Swarming Test")
+void ReceiveSwarmingRouteFinished(ABeehiveSwarmRouteActor* RouteActor);
 ```
 
-include 의존성:
+If these are added:
 
-- interface가 `FQueenCageItemState`를 파라미터로 쓰므로 `Inventory/ItemInstance.h` include가 필요할 수 있다.
-- 순환 include가 생기면 `FQueenCageItemState`만 별도 header로 분리하는 대안을 사용한다. 단, 1차 구현은 기존 `ItemInstance.h` optional state 패턴을 유지한다.
+- Call `ReceiveSwarmingRouteStarted` after route timers are scheduled.
+- Call `ReceiveSwarmingRouteEmissionStopped` after setting route spawn amount to 0.
+- Call `ReceiveSwarmingRouteFinished` immediately before or after route actor destroy. If called after destroy, pass the pointer only if still safe/valid; otherwise prefer before destroy.
 
-## `UQueenCageUseAction`
+## Blueprint/API/Core Redirect impact
 
-`UHoldItemUseAction` subclass를 추가한다.
+Expected Blueprint-facing behavior change:
 
-constructor:
+- `BeginSwarmingAtTransform` returns true when route start succeeds, not when cluster creation succeeds.
+- `GetActiveSwarmClusterActor()` returns null until route arrival.
+- `ReceiveSwarmingStarted(...)` fires later, when the cluster is actually spawned.
 
-- tag query는 `Item.UseArea.QueenBee.QueenCage` all-tags-match
+Expected Blueprint-facing additions if optional events are implemented:
 
-조건:
+- Route started/emission stopped/finished Blueprint events on `ABeehive`.
 
-- `Super::CanBeginUse(Context)` true
-- source item instance가 `UQueenCageItemDefinition` 기반
-- source item instance `CanAcceptQueenBee() == true`
-- target queen은 `Cast<AQueenBeeActor>(Context.ItemUseEffectTargetObject)`
-- target queen이 유효하고 captured 아님
-- `Context.FocusEngagedHostActor`가 `IQueenBeeCaptureSource` 구현체
-- source host의 `CanCaptureQueenBee(QueenBee)` true
-- `Context.bHasItemUseAreaHit && Context.ItemUseAreaHitComponent`
+Do not delete or rename UCLASS/USTRUCT/UENUM/UFUNCTION/UPROPERTY symbols for this task.
 
-`ApplyUseEffect`:
+Core Redirect:
 
-1. source 왕롱 item instance resolve
-2. target `AQueenBeeActor` resolve
-3. capture source host resolve
-4. `CaptureSource->CaptureQueenBee(QueenBee, CapturedState)` 호출
-5. 성공하면 `SourceItemInstance->SetQueenCageState(CapturedState)`
-6. `Result.bSucceeded=true`
-7. item stack/durability는 변경하지 않는다
+- No Core Redirect should be needed.
+- Do not edit `Config/DefaultEngine.ini`.
 
-주의:
+## Documentation updates
 
-- 이 action은 즉시 1회 성공 action이다. `DeltaTime`, drag speed, progress를 사용하지 않는다.
-- 첫 tick 성공 후 왕롱이 가득 차므로 같은 hold session에서 재적용되어도 `CanApplyUseEffect()`가 false가 되어야 한다.
-- `Result.bConsumedItem=false`, `StackDelta=0`, `DurabilityDelta=0` 유지.
+Update `.md/0_ARCHITECTURE.md`:
 
-## `ABeehive` 변경
+- Replace wording that says swarming start immediately spawns cluster and route.
+- Document delayed cluster spawn at route arrival.
+- Document arrival delay formula:
 
-상속:
-
-```cpp
-class ABeehive : public AActor, ..., public IQueenBeeCaptureSource
+```text
+RouteArrivalDelaySeconds = RouteSplineLength / Avg(SwarmRouteParameters.SpeedMin, SwarmRouteParameters.SpeedMax)
 ```
 
-state:
+- Document route emission duration:
 
-```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Bee")
-bool bHasQueenBee = true;
+```text
+RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount
 ```
 
-권장 API:
+- Document route actor cleanup delay:
 
-- `HasQueenBee() const`
-- `SetHasQueenBee(bool bNewHasQueenBee)`
-- `CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const`
-- `CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState)`
-
-구현 규칙:
-
-- `EnsureQueenBeeChildActorClass()`는 `bHasQueenBee=false`이면 child class를 null로 만들거나 child actor를 destroy하고 재생성하지 않는다.
-- `GetQueenBeeActor()`는 `bHasQueenBee=false`이면 null을 반환한다.
-- `UpdateQueenBeeLocation()`은 `bHasQueenBee=false`이면 no-op.
-- `CalculateBeeIncreaseAmount()`는 `bHasQueenBee=false`이면 0.
-- `IsQueenBeeAttachedToComb()`은 `bHasQueenBee=false`이면 false.
-- `TryBrushQueenBeeFromCombVisibleFace()`는 `bHasQueenBee=false`이면 false.
-- `CanCaptureQueenBee()`는 전달된 queen이 현재 `QueenBeeChildActor->GetChildActor()`와 같고 `bHasQueenBee=true`일 때만 true.
-- `CaptureQueenBee()`는 queen state를 export하고 `bHasQueenBee=false`로 전환한다.
-- 포획 성공 후 `QueenBeeChildActor` child actor는 제거/숨김 처리한다.
-- 포획 성공 후 `RebuildItemUseAreaDescriptorsIfAvailable()`를 호출해 여왕벌 use-area가 즉시 사라지게 한다.
-- 포획 성공 후 `ColonyBeeCount`, active comb bee count/target count, honey state는 변경하지 않는다.
-
-주의:
-
-- `SetHasQueenBee(true)`는 후속 여왕벌 방출/삽입 기능 범위가 아니다. 이번 구현에서 public setter를 만들더라도 true 전환은 최소 동작만 하거나 BP/후속 기능 영역으로 남긴다.
-
-## `ABeeSwarmClusterActor` 변경
-
-현재 `bCaptured` 의미를 바꿔야 한다.
-
-새 state:
-
-```cpp
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
-bool bBeesCaptured = false;
-
-UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Queen Bee")
-bool bQueenCaptured = false;
+```text
+RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds
 ```
 
-의미:
+- Document cluster intro growth:
 
-- `bBeesCaptured`: BeeCarrier로 벌이 모두 포획되었거나 `SpawnAmount <= 0`인 상태
-- `bQueenCaptured`: 왕롱으로 분봉 본진 여왕벌이 포획된 상태
-- `bCaptured`: 분봉 본진 최종 완료. 반드시 `bBeesCaptured && bQueenCaptured`
-
-권장 API:
-
-- `IsBeesCaptured() const`
-- `IsQueenCaptured() const`
-- `CanCaptureQueenBee_Implementation(AQueenBeeActor* QueenBee) const`
-- `CaptureQueenBee_Implementation(AQueenBeeActor* QueenBee, FQueenCageItemState& OutCapturedState)`
-- `HandleBeesCapturedIfNeeded()`
-- `HandleSwarmCapturedIfNeeded()`
-
-기존 `HandleCapturedIfNeeded()`는 rename하지 않아도 된다. 단, 내부 의미를 최종 완료 전용으로 명확히 분리한다.
-
-벌 포획 경로 변경:
-
-- `CaptureBees()`는 `bCaptured`가 아니라 `bBeesCaptured`를 기준으로 벌 포획 가능 여부를 판단한다.
-- `SetCapturedBeeAmount()` 후 벌이 모두 포획되면:
-  - `bBeesCaptured=true`
-  - `CapturedBeeAmount=TotalBeeAmount`
-  - `AliveRadius=0`
-  - cluster Niagara parameter 적용
-  - BeeCarrier `CaptureUseAreaMesh` 비활성화
-  - item-use-area descriptor rebuild
-  - `ReceiveSwarmCaptured()`는 아직 호출하지 않는다
-- 이후 `HandleSwarmCapturedIfNeeded()`에서 `bBeesCaptured && bQueenCaptured && !bCaptured`일 때만:
-  - `bCaptured=true`
-  - `ReceiveSwarmCaptured()` 호출
-
-여왕벌 포획 경로:
-
-- `CanCaptureQueenBee()`는 전달된 queen이 현재 `GetQueenBeeActor()`와 같고 `bQueenCaptured=false`일 때 true.
-- `CaptureQueenBee()`는 queen state export 후 `bQueenCaptured=true`로 설정한다.
-- 포획 성공 후 queen child actor 제거/숨김 처리.
-- 포획 성공 후 item-use-area descriptor rebuild.
-- 포획 성공 후 `HandleSwarmCapturedIfNeeded()` 호출.
-
-초기화:
-
-- `InitializeSwarmCluster()`:
-  - `bCaptured=false`
-  - `bBeesCaptured=false`
-  - `bQueenCaptured=false`
-  - queen child actor 생성/transform 적용
-  - 분봉 본진 여왕벌 child actor relative rotation을 pitch/yaw/roll 세 축 모두 랜덤화한다.
-- `OnConstruction()`/`BeginPlay()`도 sanitize:
-  - `bCaptured = bBeesCaptured && bQueenCaptured`처럼 강제하지 말고, 입력값을 해치지 않되 invalid state를 최소 보정한다.
-  - `bQueenCaptured=true`이면 queen child를 재생성하지 않는다.
-  - `bBeesCaptured=true` 또는 `bCaptured=true`이면 BeeCarrier use-area 비활성.
-
-분봉 본진 여왕벌 랜덤 회전:
-
-- 적용 대상은 `ABeeSwarmClusterActor`가 소유한 분봉 본진 `QueenBeeChildActor`만이다.
-- 벌통의 일반 `ABeehive::QueenBeeChildActor` 회전/위치 갱신 규칙에는 적용하지 않는다.
-- 랜덤 회전은 spawn/`InitializeSwarmCluster()` 시점에 1회 적용한다.
-- `ApplyQueenBeeTransform()`이 location 보정 때문에 여러 번 호출될 수 있으므로, 그때마다 rotation을 다시 랜덤화하지 않는다.
-- yaw만 랜덤화하지 말고 pitch, yaw, roll 모두 랜덤화한다.
-
-권장 구현:
-
-```cpp
-const FRotator RandomQueenRotation(
-    FMath::FRandRange(0.0f, 360.0f),
-    FMath::FRandRange(0.0f, 360.0f),
-    FMath::FRandRange(0.0f, 360.0f));
-QueenBeeChildActor->SetRelativeRotation(RandomQueenRotation);
+```text
+ClusterIntroGrowthDurationSeconds = RouteEmissionDurationSeconds
+IntroVisualBeeAmount = SwarmClusterSpawnAmount * Clamp(Elapsed / ClusterIntroGrowthDurationSeconds, 0..1)
+AliveRadius = InitialAliveRadius * cbrt(IntroVisualBeeAmount / SwarmClusterSpawnAmount)
 ```
 
-`FRotator` 인자 순서는 `Pitch, Yaw, Roll`이다. 구현자가 helper를 만든다면 `RandomizeSwarmQueenRotation()` 같은 private 함수로 분리하고, `InitializeSwarmCluster()`에서 queen child actor class/attach/location 적용 후 호출한다.
+- Document that `SpawnAmount` and `SphereRadius` are applied at target values immediately when the cluster actor is spawned, while `AliveRadius` alone grows from `0`.
 
-`IsItemUseAreaMeshActive_Implementation()`:
+Update `.md/Architecture/WorldActorsSystem.md`:
 
-- BeeCarrier `CaptureUseAreaMesh`는 `!bBeesCaptured`일 때만 active.
-- 기존처럼 `!IsCaptured()`를 쓰면 벌만 남았는지/여왕벌만 남았는지 상태를 구분하지 못한다.
+- `ABeehive` composition/state list:
+  - active route timer/session state
+  - pending cluster transform
+- Swarming test success flow.
+- `ABeehiveSwarmRouteActor` section:
+  - route actor remains alive after emission stop until last emitted route bees can reach target
+  - route does not own cluster creation
+- `ABeeSwarmClusterActor` section:
+  - cluster is spawned only from `ABeehive` route-arrival handling
+  - initialization still creates cluster bees and swarm queen together
+  - intro growth keeps target `SpawnAmount`/`SphereRadius` immediately applied and grows only `AliveRadius`
+  - intro growth uses linear visual bee amount with cube-root radius scaling
+  - host FocusEngaged is unavailable until intro growth finishes
+  - BeeCarrier/QueenCage use-areas do not need separate intro gates because they are only usable inside FocusEngaged
+- Add an `Update 2026-06-15` note for route-arrival cluster spawn.
 
-주의:
+Do not update unrelated systems.
 
-- `ReceiveSwarmCaptured`는 최종 완료 이벤트로 유지한다.
-- 벌만 완료된 이벤트가 필요하면 `ReceiveSwarmBeesCaptured` BlueprintImplementableEvent를 새로 추가해도 된다. 필수는 아니다.
-- `DecreaseAliveRadius` legacy/manual visual API는 삭제/rename하지 않는다. 단, 이 API가 최종 완료를 강제로 발생시키면 안 된다. 필요한 경우 벌 완료 처리까지만 연결하거나 legacy visual adjustment로 유지한다.
+## Validation
 
-## `QueenBeeChildActor` 제거/숨김 방식
-
-권장 우선순위:
-
-1. `UChildActorComponent::SetChildActorClass(nullptr)` 또는 child actor destroy 방식으로 실제 child actor를 제거한다.
-2. `bHasQueenBee=false` 또는 `bQueenCaptured=true` 상태에서 `EnsureQueenBeeChildActorClass()`가 다시 class를 세팅하지 않게 한다.
-3. 단순 `SetHiddenInGame(true)`만 사용하지 않는다. use-area collision/descriptor가 남을 수 있기 때문이다.
-
-구현 편의상 child actor 제거 API가 까다로우면:
-
-- child actor를 `SetActorHiddenInGame(true)`, `SetActorEnableCollision(false)`, `SetActorTickEnabled(false)` 처리하고,
-- `AQueenBeeActor::SetCaptured(true)`로 `QueenCageUseAreaMesh` inactive 처리,
-- host descriptor rebuild를 반드시 호출한다.
-
-하지만 최종적으로는 재생성 차단 state가 source of truth여야 한다.
-
-## 문서 반영
-
-구현 후 다음 내용을 문서에 반영한다.
-
-### `.md/0_ARCHITECTURE.md`
-
-- Inventory가 `FQueenCageItemState`를 optional runtime state로 보존한다.
-- `UQueenCageItemDefinition`, `UQueenCageUseAction` 추가.
-- `AQueenBeeActor`가 `QueenBeeMesh` 하위 `QueenCageUseAreaMesh`로 왕롱 use-area를 제공한다.
-- `ABeehive`와 `ABeeSwarmClusterActor`가 `IQueenBeeCaptureSource`로 여왕벌 포획 host mutation을 처리한다.
-- 분봉 본진 최종 완료 조건이 벌 전량 포획 + 여왕벌 포획이다.
-
-### `.md/Architecture/InventorySystem.md`
-
-- `FQueenCageItemState`
-- `UQueenCageItemDefinition`
-- `UQueenCageUseAction`
-- `UItemInstance` queen cage state API
-- runtime state copy/move compatibility
-- 왕롱 `MaxStack=1`
-
-### `.md/Architecture/WorldActorsSystem.md`
-
-- `AQueenBeeActor::QueenCageUseAreaMesh`
-- `IQueenBeeCaptureSource`
-- `ABeehive`의 `bHasQueenBee`와 여왕벌 포획 후 산란/위치 갱신 비활성
-- `ABeeSwarmClusterActor`의 `bBeesCaptured`, `bQueenCaptured`, 최종 `bCaptured`
-- 분봉 본진 여왕벌은 초기화 시 pitch/yaw/roll 세 축 랜덤 회전으로 배치된다는 점
-- `ReceiveSwarmCaptured`가 최종 완료 이벤트라는 점
-
-### `.md/Architecture/FocusSystem.md`
-
-- 새 Focus 시스템은 추가하지 않는다.
-- 기존 item-use-area provider/scope 경로로 queen cage use-area가 수집된다.
-
-## 수정하면 안 되는 것
-
-- 기존 UCLASS/USTRUCT/UENUM rename 금지
-- 기존 BlueprintCallable API 삭제/rename 금지
-- `ABeeSwarmClusterActor::DecreaseAliveRadius` 삭제/rename 금지
-- 새 Focus 시스템/입력 경로 추가 금지
-- `Content/` asset 저장 금지
-- 왕롱 포획 시 `ColonyBeeCount`, active comb bee count/target count 즉시 변경 금지
-- BeeCarrier 벌 포획량/부피 기반 `AliveRadius` 공식 변경 금지
-- 자동 분봉 발생 조건 추가 금지
-- 여왕벌 방출/재배치/왕롱 교체 기능 추가 금지
-
-## 검증
-
-공백/패치 검증:
+Run diff checks:
 
 ```powershell
 git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
-UBT 빌드:
+Run searches:
+
+```powershell
+rg -n "BeginSwarmingAtTransform|ReceiveSwarmingStarted|GetActiveSwarmClusterActor|ActiveSwarmRoute|PendingSwarmCluster|RouteArrivalDelay|RouteEmissionDuration|AliveRadiusIntroGrowth|SwarmClusterFocus" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+rg -n "SwarmClusterSpawnAmount / SwarmRouteParameters\.SpawnAmount|SplineLength / AverageRouteSpeed|AverageRouteSpeed / SplineLength|IntroVisualBeeAmount|VisualBeeAmount|Pow\(.*1\.0f / 3\.0f" Source/BeekeepingSim/Public Source/BeekeepingSim/Private
+```
+
+Build:
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-검색 검증:
+If the engine path is missing, do not guess another engine version. Report that build could not be run.
 
-```powershell
-rg -n "FQueenCageItemState|UQueenCageItemDefinition|UQueenCageUseAction|IQueenBeeCaptureSource|QueenCageUseAreaMesh|Item.UseArea.QueenBee.QueenCage|bHasQueenBee|bBeesCaptured|bQueenCaptured" Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
-rg -n "ReceiveSwarmCaptured|HandleCapturedIfNeeded|IsCaptured\\(|SetCaptureUseAreaActive|CaptureBees" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
-```
+## Manual PIE checks
 
-두 번째 검색은 분봉 본진의 벌 포획 완료와 최종 완료 조건이 분리되었는지 확인하기 위한 것이다.
+1. Start swarming from a beehive.
+2. Confirm route actor appears immediately.
+3. Confirm no cluster actor exists before route arrival delay.
+4. Confirm cluster actor appears after `SplineLength / Avg(SpeedMin, SpeedMax)` seconds.
+5. Confirm cluster initialization creates both cluster bees and the separate swarm queen at the same time.
+6. At cluster spawn, confirm `User.SpawnAmount` and `User.SphereRadius` are already at target values.
+7. At cluster spawn, confirm `User.AliveRadius` starts at `0`.
+8. Confirm `AliveRadius` grows for `RouteEmissionDurationSeconds`.
+9. Confirm `AliveRadius` follows cube-root volume scaling. For example, at half intro time it should be about `InitialAliveRadius * cbrt(0.5)`, not `InitialAliveRadius * 0.5`.
+10. Confirm the swarm cluster cannot enter FocusEngaged during intro growth.
+11. Confirm the swarm cluster can enter FocusEngaged after intro growth finishes.
+12. Confirm BeeCarrier and QueenCage use-areas work after FocusEngaged becomes available, using their existing captured-state rules.
+13. Confirm route new-spawning stops after `SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount` seconds.
+14. Confirm route actor is destroyed after `ArrivalDelay + EmissionDuration`.
+15. Confirm cluster remains after route actor cleanup and BeeCarrier/QueenCage capture still works.
+16. Confirm `GetActiveSwarmClusterActor()` is null before arrival and valid after arrival.
+17. Test invalid route `SpawnAmount=0` and invalid route speed `0/0`; both should fail cleanly via `ReceiveSwarmingStartFailed()`.
 
-## 수동 PIE 확인
+## Final report requirements
 
-1. 왕롱 DataAsset parent를 `UQueenCageItemDefinition`으로 만들고 `UQueenCageUseAction`을 action spec에 추가한다.
-2. 왕롱 DataAsset에 gameplay tag가 필요하면 `Item.QueenCage`를 부여한다.
-3. `AQueenBeeActor` BP child에서 `QueenCageUseAreaMesh` mesh/material/relative transform이 `QueenBeeMesh` 하위에서 여왕벌 주변을 덮는지 확인한다.
-4. 벌통 FocusEngaged 상태에서 왕롱으로 벌통 여왕벌을 포획하면 왕롱 `bHasQueen=true`가 되고 벌통 `bHasQueenBee=false`가 되는지 확인한다.
-5. 벌통 여왕벌 포획 후 colony population 증가량이 0이 되는지 확인한다.
-6. 벌통 여왕벌 포획 후 queen location bucket/update가 여왕벌을 재생성하지 않는지 확인한다.
-7. 이미 여왕벌이 든 왕롱으로 다른 여왕벌을 포획할 수 없는지 확인한다.
-8. 분봉 본진에서 BeeCarrier로 벌을 모두 포획해도 `ReceiveSwarmCaptured`가 아직 호출되지 않는지 확인한다.
-9. 분봉 본진에서 벌이 모두 포획된 뒤 왕롱으로 여왕벌을 포획하면 그때 `ReceiveSwarmCaptured`가 1회만 호출되는지 확인한다.
-10. 분봉 본진에서 여왕벌을 먼저 포획하고 나중에 벌을 모두 포획해도 최종 완료가 1회만 발생하는지 확인한다.
-11. 분봉 본진을 여러 번 생성해 여왕벌 child actor가 pitch/yaw/roll 세 축 모두 매번 다른 랜덤 회전으로 시작하는지 확인한다.
-12. 분봉 본진 생성 후 단순 transform 보정/descriptor rebuild 때문에 여왕벌 rotation이 계속 바뀌지 않는지 확인한다.
-13. hotbar/storage 이동 후 왕롱의 `FQueenCageItemState`가 유지되는지 확인한다.
-14. `Content/` asset은 필요한 BP/DataAsset 수동 authoring 외에는 C++ 구현 중 저장하지 않는다.
-
-## 최종 보고 요구사항
-
-- 변경 파일
-- 새 USTRUCT/UCLASS/interface 목록
-- 추가/변경 Blueprint API
-- 왕롱 item state 저장/복사 경로
-- `AQueenBeeActor` item-use-area 구성
-- `IQueenBeeCaptureSource` 구현 방식
-- 벌통 여왕벌 포획 후 `bHasQueenBee` 영향 범위
-- 분봉 본진 `bBeesCaptured`, `bQueenCaptured`, `bCaptured` 상태 전이
-- 분봉 본진 여왕벌 초기 pitch/yaw/roll 랜덤 회전 적용 위치
-- `ReceiveSwarmCaptured` 발생 조건
-- 아키텍처 문서 반영 내용
-- 빌드 결과 또는 미수행 사유
-- 필요한 수동 BP/Content 작업 목록
+- Changed files
+- Exact arrival/emission/destroy timing formulas
+- Exact cluster intro growth formula
+- Whether optional route Blueprint events were added
+- Whether optional cluster intro Blueprint events were added
+- Whether route emission stop is implemented by `User.SpawnAmount=0`
+- Whether cluster FocusEngaged is disabled during intro growth
+- Confirmation that BeeCarrier/QueenCage use-areas were not separately gated unless a non-FocusEngaged use path was found
+- Blueprint behavior change notes
+- Architecture document updates
+- Validation commands and results
+- Manual PIE checks still required

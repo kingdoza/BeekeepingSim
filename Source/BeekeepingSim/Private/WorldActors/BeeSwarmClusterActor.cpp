@@ -82,11 +82,9 @@ ABeeSwarmClusterActor::ABeeSwarmClusterActor()
 void ABeeSwarmClusterActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	AliveRadius = FMath::Max(0.0f, AliveRadius);
-	InitialAliveRadius = AliveRadius;
 	SpawnAmount = FMath::Max(0, SpawnAmount);
+	BeeDensityPerCubicMeter = SanitizeBeeDensityPerCubicMeter(BeeDensityPerCubicMeter);
 	CapturedBeeAmount = FMath::Clamp(CapturedBeeAmount, 0.0f, GetTotalBeeAmount());
-	SphereRadius = FMath::Max(0.0f, SphereRadius);
 	if (bCaptured)
 	{
 		bBeesCaptured = true;
@@ -95,8 +93,8 @@ void ABeeSwarmClusterActor::OnConstruction(const FTransform& Transform)
 	if (bBeesCaptured)
 	{
 		CapturedBeeAmount = GetTotalBeeAmount();
-		AliveRadius = 0.0f;
 	}
+	RecalculateInitialRadiusFromDensity();
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
 	ApplyClusterNiagaraParameters();
@@ -107,7 +105,8 @@ void ABeeSwarmClusterActor::OnConstruction(const FTransform& Transform)
 void ABeeSwarmClusterActor::BeginPlay()
 {
 	Super::BeginPlay();
-	InitialAliveRadius = FMath::Max(0.0f, InitialAliveRadius);
+	SpawnAmount = FMath::Max(0, SpawnAmount);
+	BeeDensityPerCubicMeter = SanitizeBeeDensityPerCubicMeter(BeeDensityPerCubicMeter);
 	CapturedBeeAmount = FMath::Clamp(CapturedBeeAmount, 0.0f, GetTotalBeeAmount());
 	if (bCaptured)
 	{
@@ -117,8 +116,8 @@ void ABeeSwarmClusterActor::BeginPlay()
 	if (bBeesCaptured)
 	{
 		CapturedBeeAmount = GetTotalBeeAmount();
-		AliveRadius = 0.0f;
 	}
+	RecalculateInitialRadiusFromDensity();
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
 	ApplyClusterNiagaraParameters();
@@ -127,16 +126,15 @@ void ABeeSwarmClusterActor::BeginPlay()
 	HandleCapturedIfNeeded();
 }
 
-void ABeeSwarmClusterActor::InitializeSwarmCluster(float InAliveRadius, int32 InSpawnAmount, float InSphereRadius)
+void ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity(int32 InSpawnAmount, float InBeeDensityPerCubicMeter)
 {
 	bCaptured = false;
 	bBeesCaptured = false;
 	bQueenCaptured = false;
-	InitialAliveRadius = FMath::Max(0.0f, InAliveRadius);
-	AliveRadius = InitialAliveRadius;
 	SpawnAmount = FMath::Max(0, InSpawnAmount);
 	CapturedBeeAmount = 0.0f;
-	SphereRadius = FMath::Max(0.0f, InSphereRadius);
+	BeeDensityPerCubicMeter = SanitizeBeeDensityPerCubicMeter(InBeeDensityPerCubicMeter);
+	RecalculateInitialRadiusFromDensity();
 
 	EnsureQueenBeeChildActorClass();
 	ApplyQueenBeeTransform();
@@ -282,6 +280,37 @@ float ABeeSwarmClusterActor::CalculateAliveRadiusFromRemainingBees() const
 void ABeeSwarmClusterActor::RefreshAliveRadiusFromBeeAmounts()
 {
 	AliveRadius = CalculateAliveRadiusFromRemainingBees();
+}
+
+float ABeeSwarmClusterActor::SanitizeBeeDensityPerCubicMeter(float InDensity)
+{
+	return FMath::Max(0.0001f, InDensity);
+}
+
+float ABeeSwarmClusterActor::CalculateRadiusCmFromBeeDensity(int32 InSpawnAmount, float InDensityPerCubicMeter)
+{
+	const int32 SafeSpawnAmount = FMath::Max(0, InSpawnAmount);
+	if (SafeSpawnAmount <= 0)
+	{
+		return 0.0f;
+	}
+
+	const float SafeDensity = SanitizeBeeDensityPerCubicMeter(InDensityPerCubicMeter);
+	const float VolumeM3 = static_cast<float>(SafeSpawnAmount) / SafeDensity;
+	const float RadiusM = FMath::Pow((3.0f * VolumeM3) / (4.0f * UE_PI), 1.0f / 3.0f);
+	return FMath::Max(0.0f, RadiusM * 100.0f);
+}
+
+void ABeeSwarmClusterActor::RecalculateInitialRadiusFromDensity()
+{
+	BeeDensityPerCubicMeter = SanitizeBeeDensityPerCubicMeter(BeeDensityPerCubicMeter);
+	InitialAliveRadius = CalculateRadiusCmFromBeeDensity(SpawnAmount, BeeDensityPerCubicMeter);
+	SphereRadius = InitialAliveRadius;
+	RefreshAliveRadiusFromBeeAmounts();
+	if (bBeesCaptured)
+	{
+		AliveRadius = 0.0f;
+	}
 }
 
 AQueenBeeActor* ABeeSwarmClusterActor::GetQueenBeeActor() const
@@ -466,8 +495,7 @@ void ABeeSwarmClusterActor::HandleBeesCapturedIfNeeded()
 	const bool bNoBeesConfigured = TotalBeeAmount <= KINDA_SMALL_NUMBER;
 	const bool bAllBeesCaptured = !bNoBeesConfigured
 		&& (CapturedBeeAmount >= TotalBeeAmount || GetRemainingBeeAmount() <= KINDA_SMALL_NUMBER);
-	const bool bLegacyRadiusDepleted = AliveRadius <= KINDA_SMALL_NUMBER;
-	if (!bNoBeesConfigured && !bAllBeesCaptured && !bLegacyRadiusDepleted)
+	if (!bNoBeesConfigured && !bAllBeesCaptured)
 	{
 		return;
 	}

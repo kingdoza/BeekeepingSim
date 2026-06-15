@@ -96,9 +96,8 @@ native component 확인:
 - `SwarmExitPoint`를 벌통 입구 위치에 배치한다.
 - `SwarmClusterActorClass`에 `BP_BeeSwarmClusterActor`를 지정한다.
 - `SwarmRouteActorClass`에 route actor BP를 지정한다.
-- `SwarmClusterInitialAliveRadius`를 테스트 포획 난이도에 맞게 설정한다.
 - `SwarmClusterSpawnAmount`를 cluster Niagara 규모에 맞게 설정한다.
-- `SwarmClusterSphereRadius`를 cluster Niagara sphere 반경에 맞게 설정한다.
+- `SwarmClusterBeeDensityPerCubicMeter`를 포획 난이도/cluster 크기에 맞게 설정한다. 기본값은 `8000.0 bees/m^3`이며, `SpawnAmount=500`이면 radius는 약 `24.63cm`다.
 - `SwarmRouteParameters`를 route Niagara에 맞게 설정한다.
   - `StartShapeExtent`
   - `EndShapeExtent`

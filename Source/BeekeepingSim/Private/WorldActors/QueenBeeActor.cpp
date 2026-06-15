@@ -2,6 +2,7 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 #include "Focus/ItemUseAreaMeshComponent.h"
 #include "GameplayTagContainer.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -10,6 +11,10 @@
 namespace QueenBeeUseAreaNames
 {
 	static const FName QueenCageUseAreaTag(TEXT("Item.UseArea.QueenBee.QueenCage"));
+	static const FName UseAreaColorParameter(TEXT("UseAreaColor"));
+	static const FName UseAreaOpacityParameter(TEXT("UseAreaOpacity"));
+	static const FName PulseSpeedParameter(TEXT("PulseSpeed"));
+	static const FName HoverStrengthParameter(TEXT("HoverStrength"));
 }
 
 AQueenBeeActor::AQueenBeeActor()
@@ -48,6 +53,7 @@ void AQueenBeeActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	SetCaptured(bCaptured);
+	ApplyQueenCageUseAreaVisualIdleState();
 	// Disease is now represented by ABeehive::DiseaseVfxNiagara.
 	// ApplyDiseaseMaterialParameter();
 }
@@ -56,6 +62,7 @@ void AQueenBeeActor::BeginPlay()
 {
 	Super::BeginPlay();
 	SetCaptured(bCaptured);
+	ApplyQueenCageUseAreaVisualIdleState();
 	// Disease is now represented by ABeehive::DiseaseVfxNiagara.
 	// ApplyDiseaseMaterialParameter();
 }
@@ -89,6 +96,7 @@ void AQueenBeeActor::SetCaptured(bool bNewCaptured)
 		QueenCageUseAreaMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		QueenCageUseAreaMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	}
+	ApplyQueenCageUseAreaVisualIdleState();
 }
 
 FQueenCageItemState AQueenBeeActor::MakeQueenCageItemState() const
@@ -153,4 +161,41 @@ void AQueenBeeActor::ApplyDiseaseMaterialParameter()
 			// MaterialInstance->SetScalarParameterValue(DiseaseMaterialParameterName, DiseaseValue);
 		}
 	}
+}
+
+void AQueenBeeActor::ApplyQueenCageUseAreaVisualIdleState()
+{
+	if (!QueenCageUseAreaMesh)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld())
+	{
+		return;
+	}
+
+	UMaterialInterface* CurrentMaterial = QueenCageUseAreaMesh->GetMaterial(0);
+	if (!CurrentMaterial)
+	{
+		return;
+	}
+
+	UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(CurrentMaterial);
+	if (!DynamicMaterial)
+	{
+		DynamicMaterial = QueenCageUseAreaMesh->CreateDynamicMaterialInstance(0, CurrentMaterial);
+	}
+
+	if (!DynamicMaterial)
+	{
+		return;
+	}
+
+	const FItemUseAreaVisualSettings& VisualSettings = QueenCageUseAreaMesh->GetVisualSettings();
+	DynamicMaterial->SetVectorParameterValue(QueenBeeUseAreaNames::UseAreaColorParameter, VisualSettings.UseAreaColor);
+	DynamicMaterial->SetScalarParameterValue(QueenBeeUseAreaNames::UseAreaOpacityParameter, 0.0f);
+	DynamicMaterial->SetScalarParameterValue(QueenBeeUseAreaNames::PulseSpeedParameter, VisualSettings.PulseSpeed);
+	DynamicMaterial->SetScalarParameterValue(QueenBeeUseAreaNames::HoverStrengthParameter, 0.0f);
 }

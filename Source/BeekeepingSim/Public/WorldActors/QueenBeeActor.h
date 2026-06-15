@@ -74,4 +74,5 @@ protected:
 private:
 	void EnsureDiseaseMaterialInstances();
 	void ApplyDiseaseMaterialParameter();
+	void ApplyQueenCageUseAreaVisualIdleState();
 };

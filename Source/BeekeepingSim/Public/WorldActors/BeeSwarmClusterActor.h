@@ -28,7 +28,7 @@ public:
 	virtual void BeginPlay() override;
 
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster")
-	void InitializeSwarmCluster(float InAliveRadius, int32 InSpawnAmount, float InSphereRadius);
+	void InitializeSwarmClusterFromDensity(int32 InSpawnAmount, float InBeeDensityPerCubicMeter);
 
 	UFUNCTION(BlueprintCallable, Category = "Bee Swarm Cluster|Niagara")
 	void ApplyClusterNiagaraParameters();
@@ -134,7 +134,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UItemUseAreaMeshProviderComponent> ItemUseAreaMeshProvider;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster", meta = (ClampMin = "0.0"))
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
 	float AliveRadius = 200.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
@@ -146,8 +146,11 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
 	float CapturedBeeAmount = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster", meta = (ClampMin = "0.0"))
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
 	float SphereRadius = 200.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bee Swarm Cluster|Capture")
+	float BeeDensityPerCubicMeter = 8000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bee Swarm Cluster|Queen Bee")
 	TSubclassOf<AQueenBeeActor> SwarmQueenBeeActorClass;
@@ -183,6 +186,9 @@ protected:
 	void ReceiveSwarmCaptured();
 
 private:
+	static float SanitizeBeeDensityPerCubicMeter(float InDensity);
+	static float CalculateRadiusCmFromBeeDensity(int32 InSpawnAmount, float InDensityPerCubicMeter);
+	void RecalculateInitialRadiusFromDensity();
 	void EnsureQueenBeeChildActorClass();
 	void ApplyQueenBeeTransform();
 	void RandomizeSwarmQueenRotation();

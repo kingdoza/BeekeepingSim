@@ -84,7 +84,7 @@
 ## Key Classes
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner + 벌통 여왕벌 capture source
-- `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 부피 공식에서 파생한 `AliveRadius` cluster Niagara parameter, 별도 queen child actor, FocusEngaged bee-carrier/queen-cage use-area를 소유한다. 최종 captured는 벌 전량 포획과 여왕벌 포획이 모두 끝난 상태다.
+- `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 벌 수와 밀도에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` cluster Niagara parameter, 별도 queen child actor, FocusEngaged bee-carrier/queen-cage use-area를 소유한다. 최종 captured는 벌 전량 포획과 여왕벌 포획이 모두 끝난 상태다.
 - `ABeehiveSwarmRouteActor`: 벌통 입구에서 분봉 본진 center까지 runtime spline route를 구성하는 `ABeeSplineSwarmActor` subclass. 기존 spline swarm Niagara parameter 계약을 재사용한다.
 - `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
@@ -144,7 +144,7 @@
 - `UNiagaraComponent` 1개 (`AttractionSwarmNiagara`)
 - `UNiagaraComponent` 1개 (`DiseaseVfxNiagara`)를 직접 소유하며 Niagara System/transform은 BP/Details에서 authoring
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
-- `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterInitialAliveRadius`, `SwarmClusterSpawnAmount`, `SwarmClusterSphereRadius`, `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
+- `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterSpawnAmount`, `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`), `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
 - transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`
 - 분봉 테스트 API:
   - `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
@@ -152,7 +152,7 @@
   - `ClearActiveTestSwarm(bool bDestroyActors)`
   - `GetActiveSwarmClusterActor()`, `GetActiveSwarmRouteActor()`, `GetSwarmExitPointComponent()`
 - 분봉 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, cluster/route spawn 실패
-- 분봉 시작 성공 flow: 이전 test swarm 정리 옵션 처리 -> cluster spawn -> `InitializeSwarmCluster` -> route spawn -> `ConfigureRoute(SwarmExitPoint, ClusterCenter)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> `ReceiveSwarmingStarted`
+- 분봉 시작 성공 flow: 이전 test swarm 정리 옵션 처리 -> cluster spawn -> `InitializeSwarmClusterFromDensity(SwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter)` -> route spawn -> `ConfigureRoute(SwarmExitPoint, ClusterCenter)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> `ReceiveSwarmingStarted`
 - 분봉 테스트 시작은 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
 - 왕롱 포획 API:
   - `HasQueenBee()`
@@ -372,17 +372,19 @@
   - `UItemUseAreaMeshProviderComponent`
 - `CaptureUseAreaMesh`는 `UItemUseAreaMeshComponent`이며 area tag는 `Item.UseArea.SwarmCluster.BeeCarrier`다.
 - `CaptureUseAreaMesh` effect target은 `ComponentOwner` 정책으로 `ABeeSwarmClusterActor`를 `Context.ItemUseEffectTargetObject`에 전달한다.
-- `InitialAliveRadius`, `SpawnAmount`, `CapturedBeeAmount`가 포획 진행의 source of truth다. `AliveRadius`는 `InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`로 계산되는 Niagara 표시 반경이다.
+- `SpawnAmount`, `BeeDensityPerCubicMeter`, `CapturedBeeAmount`가 포획 진행의 source of truth다.
+- `InitialAliveRadius`와 `SphereRadius`는 `SpawnAmount / BeeDensityPerCubicMeter` 부피에서 파생되는 runtime 값이다. 계산식은 `RadiusCm = cbrt((3 * (SpawnAmount / BeeDensityPerCubicMeter)) / (4 * PI)) * 100`이며, density 단위는 `bees/m^3`, Unreal 거리 단위는 cm다.
+- `AliveRadius`는 `InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`로 계산되는 Niagara 표시 반경이다.
 - `CaptureBees(RequestedBeeAmount)`는 요청량을 잔여 벌 수로 clamp하고, 실제 포획량만 `CapturedBeeAmount`에 누적한 뒤 `AliveRadius`를 재계산한다.
 - `DecreaseAliveRadius`/`SetAliveRadius`는 삭제하지 않고 legacy/manual visual adjustment API로 유지한다. BeeCarrier 포획 gameplay는 이 API를 사용하지 않는다.
 - cluster Niagara parameter 계약:
-  - `User.AliveRadius` (Float)
+  - `User.AliveRadius` (Float, density-derived `InitialAliveRadius`와 잔여 벌 수에서 파생)
   - `User.SpawnAmount` (Int32)
-  - `User.SphereRadius` (Float)
+  - `User.SphereRadius` (Float, density-derived `InitialAliveRadius`와 동일)
 - `CapturedBeeAmount >= SpawnAmount` 또는 잔여 벌 수가 0이면 captured로 전환한다. `SpawnAmount <= 0`인 본진도 포획 불가/완료 상태로 처리한다. 전환은 1회만 발생하고, `AliveRadius=0`을 Niagara에 적용한 뒤 `CaptureUseAreaMesh`를 비활성화하고 item-use-area descriptor를 rebuild한다.
 - captured 이후 actor destroy, 여왕벌 숨김, 완료 연출은 `ReceiveSwarmCaptured` Blueprint event에서 처리한다.
 - 여왕벌은 `SwarmQueenBeeActorClass` child actor로 별도 생성하며 기존 벌통 `QueenBeeChildActor`를 이동하거나 재사용하지 않는다.
-- 여왕벌 위치는 `ClusterCenter`에 attach된 `QueenBeeChildActor` relative location `QueenCenterOffset`을 사용한다. `InitializeSwarmCluster()` 시점에 child actor relative rotation의 pitch/yaw/roll 세 축을 1회 랜덤화하며, `ApplyQueenBeeTransform()` 재호출은 위치만 보정하고 회전을 다시 뽑지 않는다.
+- 여왕벌 위치는 `ClusterCenter`에 attach된 `QueenBeeChildActor` relative location `QueenCenterOffset`을 사용한다. `InitializeSwarmClusterFromDensity()` 시점에 child actor relative rotation의 pitch/yaw/roll 세 축을 1회 랜덤화하며, `ApplyQueenBeeTransform()` 재호출은 위치만 보정하고 회전을 다시 뽑지 않는다.
 - Blueprint events:
   - `ReceiveSwarmClusterInitialized`
   - `ReceiveAliveRadiusChanged(float NewAliveRadius)`
@@ -839,7 +841,7 @@
 
 - `ABeeSwarmClusterActor`를 추가했다.
   - 분봉 본진 actor이며 FocusEngaged host다.
-  - `InitialAliveRadius`, `SpawnAmount`, `CapturedBeeAmount`가 포획 진행 source of truth이고, 파생 `AliveRadius`가 `User.AliveRadius`에 즉시 반영된다.
+  - `SpawnAmount`, `BeeDensityPerCubicMeter`, `CapturedBeeAmount`가 포획 진행 source of truth이고, 파생 `InitialAliveRadius`/`AliveRadius`/`SphereRadius`가 Niagara에 즉시 반영된다.
   - 별도 `SwarmQueenBeeActorClass` child actor를 cluster center에 유지한다.
   - `Item.UseArea.SwarmCluster.BeeCarrier` capture use-area를 generic mesh provider 경로로 제공한다.
   - child 여왕벌의 `Item.UseArea.QueenBee.QueenCage` use-area도 같은 generic mesh provider 경로로 수집된다.
@@ -883,7 +885,15 @@
   - `bBeesCaptured`: BeeCarrier로 벌이 모두 포획되었거나 총 벌 수가 0인 상태
   - `bQueenCaptured`: 왕롱으로 분봉 본진 여왕벌이 포획된 상태
   - `bCaptured`: 최종 완료. `bBeesCaptured && bQueenCaptured`일 때만 true
-- `ABeeSwarmClusterActor::InitializeSwarmCluster()`는 분봉 본진 여왕벌 child actor 배치 후 pitch/yaw/roll 세 축을 1회 랜덤 회전한다. 이후 transform 보정은 위치만 갱신하고 랜덤 회전을 다시 적용하지 않는다.
+- `ABeeSwarmClusterActor::InitializeSwarmClusterFromDensity()`는 분봉 본진 여왕벌 child actor 배치 후 pitch/yaw/roll 세 축을 1회 랜덤 회전한다. 이후 transform 보정은 위치만 갱신하고 랜덤 회전을 다시 적용하지 않는다.
 - 분봉 본진에서 벌만 모두 포획되면 `AliveRadius=0`, cluster Niagara parameter 갱신, BeeCarrier use-area 비활성화, descriptor rebuild만 수행한다.
 - 분봉 본진에서 여왕벌 포획 성공 시 queen child actor를 제거/재생성 차단하고 descriptor를 rebuild한다.
 - `ReceiveSwarmCaptured`는 최종 완료 이벤트로 유지되며, `bBeesCaptured && bQueenCaptured && !bCaptured` 조건에서 1회만 호출된다.
+
+## Update 2026-06-15 (Swarm Cluster Density Radius)
+
+- `ABeehive` 분봉 테스트 cluster radius authoring 입력(`SwarmClusterInitialAliveRadius`, `SwarmClusterSphereRadius`)을 제거했다.
+- 분봉 본진 생성 입력은 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`이며, density 기본값은 `8000.0 bees/m^3`다.
+- `ABeeSwarmClusterActor`는 `InitializeSwarmClusterFromDensity(SpawnAmount, BeeDensityPerCubicMeter)`에서 `InitialAliveRadius`와 `SphereRadius`를 밀도 공식으로 cm 단위 산출하고, `AliveRadius`는 기존 잔여 벌 수 cube-root 공식으로 갱신한다.
+- Niagara parameter 이름 `User.AliveRadius`, `User.SpawnAmount`, `User.SphereRadius`는 유지한다.
+- 기존 radius 기반 `InitializeSwarmCluster(float, int32, float)` BlueprintCallable API는 제거 대상이며, 기존 Blueprint node 사용 asset은 수동 migration이 필요하다.
