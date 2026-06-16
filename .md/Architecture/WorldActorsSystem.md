@@ -145,17 +145,25 @@
 - `UNiagaraComponent` 1개 (`DiseaseVfxNiagara`)를 직접 소유하며 Niagara System/transform은 BP/Details에서 authoring
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterSpawnAmount`, `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`), `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
-- transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`, pending cluster transform, active route arrival/emission timer state
+- colony-impact swarming 설정: `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6`
+- transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`, `ActiveSwarmClusterSpawnAmount`, pending cluster transform, active route arrival/emission timer state
 - 분봉 테스트 API:
   - `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
   - `BeginSwarmingAtActor(AActor* TargetActor)`
   - `ClearActiveTestSwarm(bool bDestroyActors)`
   - `GetActiveSwarmClusterActor()`, `GetActiveSwarmRouteActor()`, `GetSwarmExitPointComponent()`
-- 분봉 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, route `SpawnAmount <= 0`, 평균 route speed <= 0, route spawn 실패, `bDestroyPreviousTestSwarmOnStart=false` 상태의 active route session 존재
-- 분봉 시작 성공 flow: 이전 test swarm session/timer 정리 옵션 처리(`bDestroyPreviousTestSwarmOnStart=false`이면 active route session을 덮어쓰지 않고 실패) -> route spawn at `SwarmExitPoint` -> `ConfigureRoute(SwarmExitPoint, TargetTransform.Location)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> route arrival/emission stop/destroy timer 설정 -> true 반환
-- route arrival flow: pending target transform에 cluster spawn -> `InitializeSwarmClusterFromDensityWithIntroGrowth(SwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)` -> `ReceiveSwarmingStarted`
+- colony-impact 분봉 API:
+  - `BeginColonySwarmingAtTransform(const FTransform& TargetTransform)`
+  - `BeginColonySwarmingAtActor(AActor* TargetActor)`
+- 공통 route 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, route `SpawnAmount <= 0`, 평균 route speed <= 0, route spawn 실패, `bDestroyPreviousTestSwarmOnStart=false` 상태의 active route session 존재
+- colony-impact 분봉 추가 실패 조건: queen 없음, `ColonyBeeCount <= 0`, loss ratio 계산 결과 `OutgoingBeeCount <= 0`
+- 분봉 route 시작 성공 flow: 이전 test swarm session/timer 정리 옵션 처리(`bDestroyPreviousTestSwarmOnStart=false`이면 active route session을 덮어쓰지 않고 실패) -> session cluster spawn amount 결정 -> route spawn at `SwarmExitPoint` -> `ConfigureRoute(SwarmExitPoint, TargetTransform.Location)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> route arrival/emission stop/destroy timer 설정 -> true 반환
+- colony-impact commit timing: route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount(Max(0, ColonyBeeCount - OutgoingBeeCount))`와 `SetHasQueenBee(false)`를 호출한다. Commit 이후 route arrival cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.
+- route emission duration: `ActiveSwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`. 테스트 세션은 authored `SwarmClusterSpawnAmount`, colony-impact 세션은 차감된 `OutgoingBeeCount`를 사용한다.
+- route arrival flow: pending target transform에 cluster spawn -> `InitializeSwarmClusterFromDensityWithIntroGrowth(ActiveSwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)` -> `ReceiveSwarmingStarted`
 - `GetActiveSwarmClusterActor()`는 route arrival 전까지 null이며, `ReceiveSwarmingStarted`는 cluster가 실제 생성된 뒤 호출된다.
-- 분봉 테스트 시작은 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 기존 분봉 테스트 시작 API는 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- colony-impact 분봉은 `SetColonyBeeCount()`를 bee-count mutation path로 사용해 dual swarm, attraction swarm, active comb spawn amount를 갱신하고 target ratio를 보존한다. `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
 - 왕롱 포획 API:
   - `HasQueenBee()`
   - `SetHasQueenBee(bool bNewHasQueenBee)`
@@ -425,7 +433,7 @@
 - route actor cleanup은 `RouteArrivalDelaySeconds + RouteEmissionDurationSeconds` 뒤 수행해 이미 방출된 route bee가 target에 도달할 시간을 남긴다.
 - route timing 공식:
   - `RouteArrivalDelaySeconds = GetSplineLength() / ((Max(0, SpeedMin) + Max(0, SpeedMax)) * 0.5)`
-  - `RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / Max(0, SwarmRouteParameters.SpawnAmount)`
+  - `RouteEmissionDurationSeconds = SessionClusterSpawnAmount / Max(0, SwarmRouteParameters.SpawnAmount)`
   - `RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds`
 - route Niagara parameter 계약은 기존 `ABeeSplineSwarmActor::ApplyExternalSwarmParameters`와 같다.
   - `User.SwarmSpline`
@@ -932,7 +940,7 @@
 - `ABeehive::BeginSwarmingAtTransform`은 cluster를 즉시 spawn하지 않고 route actor만 시작한다.
 - route spline은 `SwarmExitPoint`에서 요청 target transform location까지 구성된다.
 - cluster actor는 `RouteArrivalDelaySeconds = RouteSplineLength / Avg(SpeedMin, SpeedMax)` 이후 pending target transform에 spawn된다.
-- route emission duration은 `SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`이고, 이 시점에 `StopExternalSwarmEmission()`이 `User.SpawnAmount=0`을 적용한다.
+- route emission duration은 `ActiveSwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`이고, 이 시점에 `StopExternalSwarmEmission()`이 `User.SpawnAmount=0`을 적용한다. 테스트 세션은 authored `SwarmClusterSpawnAmount`, colony-impact 세션은 `OutgoingBeeCount`를 사용한다.
 - route actor destroy delay는 `RouteArrivalDelaySeconds + RouteEmissionDurationSeconds`이며 cluster actor는 route cleanup 이후에도 유지된다.
 - cluster spawn 시 `InitializeSwarmClusterFromDensityWithIntroGrowth`가 cluster bees와 separate swarm queen을 함께 생성하고 intro 초기 `AliveRadius`를 적용한다. `ReceiveSwarmingStarted`는 이 시점에 호출된다.
 - cluster intro growth는 `RouteEmissionDurationSeconds` 동안 `AliveRadius`만 `0`에서 target radius로 성장시킨다. `SpawnAmount`와 `SphereRadius`는 spawn 즉시 target Niagara 값이다.
@@ -947,3 +955,13 @@
 - `USwarmClusterFocusActionComponent`는 FocusEngaged start 시 `FocusCollision`을 suppress/disable하고, return completed 또는 abort 시 suppression을 해제해 preview focus hit proxy를 복구한다.
 - FocusEngaged 중 native preview hit proxy를 꺼야 BeeCarrier/QueenCage item-use-area cursor trace가 내부 use-area component를 hit할 수 있다.
 - 기존 swarm cluster Blueprint의 authored `SphereCollision`은 제거하거나 `NoCollision`으로 변경한 뒤 compile/save해야 한다. C++ 구현은 임의의 Blueprint component를 이름으로 찾아 mutation하지 않는다.
+
+## Update 2026-06-16 (Colony Swarming API)
+
+- 기존 `ABeehive::BeginSwarmingAtTransform`/`BeginSwarmingAtActor`는 state-neutral 테스트/프레젠테이션 API로 유지한다.
+- `ABeehive::BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`를 추가했다. 이 API는 queen 보유와 양수 `ColonyBeeCount`를 요구한다.
+- 새 설정 `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6`은 `0.0..1.0` 비율이며, 계산 시 clamp/sort 후 `OutgoingBeeCount = Clamp(RoundToInt(PreSwarmBeeCount * LossRatio), 0, PreSwarmBeeCount)`를 산출한다.
+- 실제 colony swarming은 route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount()`와 `SetHasQueenBee(false)`로 source hive state를 변경한다. `SetColonyBeeCount()`가 comb spawn amount refresh를 담당하므로 `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
+- `ActiveSwarmClusterSpawnAmount`가 route timing과 arrival cluster initialization의 session bee count다. 테스트 세션은 `SwarmClusterSpawnAmount`, colony-impact 세션은 `OutgoingBeeCount`를 저장한다.
+- 이번 구현은 source hive queen state transfer를 보류한다. 실제 colony swarming으로 source queen은 제거되지만, spawned swarm queen은 기존 `SwarmQueenBeeActorClass` defaults로 생성된다.
+- Colony impact commit 이후 cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.

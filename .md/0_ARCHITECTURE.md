@@ -80,7 +80,8 @@ Source/BeekeepingSim/
 - WorldActors는 Focus/Interaction/Inventory 컴포넌트를 조합해 월드 배치 가능한 actor를 만든다.
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
-- `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeehiveSwarmRouteActor`를 먼저 spawn한 뒤 route arrival 시점에 `ABeeSwarmClusterActor`를 spawn한다. 분봉 본진 생성 입력은 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)다.
+- `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeehiveSwarmRouteActor`를 먼저 spawn한 뒤 route arrival 시점에 `ABeeSwarmClusterActor`를 spawn한다. 테스트 분봉 본진 생성 입력은 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)다.
+- `ABeehive`는 실제 colony-impact 분봉용 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`를 별도로 제공한다. 이 경로는 route start 성공 후 queen을 제거하고 `ColonyBeeCount`의 random min/max 비율만큼 벌을 차감하며, 차감된 벌 수가 route emission duration과 cluster `SpawnAmount`의 source of truth가 된다.
 - `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, `SpawnAmount`와 `BeeDensityPerCubicMeter`에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` Niagara parameter, preview focus hit proxy인 native `FocusCollision`, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유하며, 최종 완료는 벌 전량 포획과 여왕벌 포획이 모두 끝난 뒤 발생하고 완료 이벤트 후 다음 tick에 actor를 제거한다. Route arrival spawn 직후에는 `SpawnAmount`/`SphereRadius`를 target 값으로 적용하고 `AliveRadius`만 intro 동안 `0`에서 cube-root 부피 스케일로 성장시킨다.
 - `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor` 기반 runtime route를 거리 기반 홀수 자동 중간점 spline으로 구성하고 기존 spline swarm Niagara parameter 계약을 유지한다. Route emission stop은 `User.SpawnAmount=0` 재적용으로 처리하며, actor cleanup은 마지막으로 방출된 route bee가 target에 도달할 수 있는 지연 뒤 수행한다.
 - `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
@@ -372,11 +373,11 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - 시작 시 `ABeehive`는 `SwarmExitPoint` world location/rotation으로 `ABeehiveSwarmRouteActor`만 spawn하고, target transform location까지 거리 기반 자동 중간점 route spline을 구성한 뒤 `SwarmRouteParameters`를 `ApplyExternalSwarmParameters`로 주입한다.
 - route timing 공식:
   - `RouteArrivalDelaySeconds = RouteSplineLength / Avg(SwarmRouteParameters.SpeedMin, SwarmRouteParameters.SpeedMax)`
-  - `RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`
+  - `RouteEmissionDurationSeconds = SessionClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`
   - `RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds`
-- route arrival 시 `ABeehive`는 pending target transform에 cluster actor를 spawn하고, `InitializeSwarmClusterFromDensityWithIntroGrowth(SwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)`로 cluster bees와 swarm queen을 함께 생성한다. Intro growth가 필요한 경우 초기 Niagara/event 노출 전 `AliveRadius=0`을 먼저 적용하며, `ReceiveSwarmingStarted`는 이 cluster 생성 시점에 호출된다.
-- `ABeehive`는 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)로 분봉 본진을 시작한다. `ABeeSwarmClusterActor`의 `InitialAliveRadius`, `AliveRadius`, `SphereRadius`는 `RadiusCm = cbrt((3 * (SpawnAmount / BeeDensityPerCubicMeter)) / (4 * PI)) * 100`으로 파생되는 runtime 값이다.
-- cluster intro growth는 `RouteEmissionDurationSeconds` 동안 `IntroVisualBeeAmount = SwarmClusterSpawnAmount * Clamp(Elapsed / RouteEmissionDurationSeconds, 0..1)`, `AliveRadius = InitialAliveRadius * cbrt(IntroVisualBeeAmount / SwarmClusterSpawnAmount)`를 사용한다. Cluster spawn 즉시 `User.SpawnAmount`와 `User.SphereRadius`는 target 값이고, `User.AliveRadius`만 `0`에서 성장한다.
+- route arrival 시 `ABeehive`는 pending target transform에 cluster actor를 spawn하고, `InitializeSwarmClusterFromDensityWithIntroGrowth(SessionClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)`로 cluster bees와 swarm queen을 함께 생성한다. Intro growth가 필요한 경우 초기 Niagara/event 노출 전 `AliveRadius=0`을 먼저 적용하며, `ReceiveSwarmingStarted`는 이 cluster 생성 시점에 호출된다.
+- 테스트 경로의 `ABeehive`는 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)로 분봉 본진을 시작한다. 실제 colony swarming 경로는 차감된 `OutgoingBeeCount`를 cluster spawn amount로 사용한다. `ABeeSwarmClusterActor`의 `InitialAliveRadius`, `AliveRadius`, `SphereRadius`는 `RadiusCm = cbrt((3 * (SpawnAmount / BeeDensityPerCubicMeter)) / (4 * PI)) * 100`으로 파생되는 runtime 값이다.
+- cluster intro growth는 `RouteEmissionDurationSeconds` 동안 `IntroVisualBeeAmount = SessionClusterSpawnAmount * Clamp(Elapsed / RouteEmissionDurationSeconds, 0..1)`, `AliveRadius = InitialAliveRadius * cbrt(IntroVisualBeeAmount / SessionClusterSpawnAmount)`를 사용한다. Cluster spawn 즉시 `User.SpawnAmount`와 `User.SphereRadius`는 target 값이고, `User.AliveRadius`만 `0`에서 성장한다.
 - `ABeeSwarmClusterActor`는 capture 중 `SpawnAmount`, `CapturedBeeAmount`, `InitialAliveRadius`를 기준으로 `AliveRadius = InitialAliveRadius * cbrt(RemainingBeeAmount / TotalBeeAmount)`를 Niagara user parameter `User.AliveRadius`에 적용한다.
 - `ABeeSwarmClusterActor::FocusCollision`은 native `USphereComponent` preview focus hit proxy이며 radius는 `Max(0, AliveRadius) + 5`다. FocusEngaged 중에는 Visibility collision을 꺼서 BeeCarrier/QueenCage item-use-area cursor trace를 가로막지 않는다.
 - 분봉 본진 여왕벌은 기존 벌통 `QueenBeeChildActor`를 이동하지 않고 `SwarmQueenBeeActorClass` child actor로 별도 생성해 `ClusterCenter + QueenCenterOffset`에 두며, density 기반 초기화 시점에 pitch/yaw/roll 세 축을 1회 랜덤 회전한다.
@@ -385,6 +386,18 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - `ABeehive`와 `ABeeSwarmClusterActor`는 `IQueenBeeCaptureSource`를 구현해 왕롱 포획 가능 여부와 host 상태 변경을 담당한다.
 - 왕롱 포획 결과는 `FQueenCageItemState`(`bHasQueen`, `CapturedQueenBeeClass`, `BaseEggLayingPower`, `DiseaseValue`)로 저장하며 world actor reference는 저장하지 않는다.
 - 분봉 본진의 최종 `bCaptured`/`ReceiveSwarmCaptured`는 `bBeesCaptured && bQueenCaptured`일 때 1회만 발생하며, 이벤트 호출 후 다음 tick에 분봉 본진 actor를 제거한다.
-- 이번 분봉 테스트 시작 경로는 `ColonyBeeCount`, 기존 벌통 여왕벌 위치, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 기존 분봉 테스트 시작 경로는 `ColonyBeeCount`, 기존 벌통 여왕벌 위치, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 실제 colony swarming 시작 경로는 queen 보유와 `ColonyBeeCount > 0`을 요구한다. 시작 시 `OutgoingBeeCount = Clamp(RoundToInt(PreSwarmBeeCount * FRandRange(Min(Clamp01(LossMin), Clamp01(LossMax)), Max(Clamp01(LossMin), Clamp01(LossMax)))), 0, PreSwarmBeeCount)`를 계산하고 0이면 state mutation 없이 실패한다.
+- 실제 colony swarming impact commit은 route actor spawn/config/parameter/timing 계산 성공 후 수행한다. `SetColonyBeeCount(Max(0, ColonyBeeCount - OutgoingBeeCount))`와 `SetHasQueenBee(false)`가 mutation path이며, commit 이후 route arrival cluster spawn이 실패해도 rollback하지 않는다.
+- 실제 colony swarming의 route emission duration과 cluster `SpawnAmount`는 authoring `SwarmClusterSpawnAmount`가 아니라 `OutgoingBeeCount`를 사용한다.
 - 왕롱으로 벌통 여왕벌을 포획해도 `ColonyBeeCount`, active comb bee count/target count, honey state는 즉시 변경하지 않는다.
 - 새 GameplayTag: `Item.UseArea.SwarmCluster.BeeCarrier`, `Item.BeeCarrier`, `Item.UseArea.QueenBee.QueenCage`, `Item.QueenCage`.
+
+## Update 2026-06-16 (Colony Swarming API)
+
+- 기존 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`는 state-neutral 테스트/프레젠테이션 API로 유지한다.
+- 새 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`는 queen 보유와 양수 `ColonyBeeCount`를 요구하고, `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6` 범위에서 차감할 벌 수를 계산한다.
+- 실제 colony swarming은 route start 성공 후 `SetColonyBeeCount()`와 `SetHasQueenBee(false)`로 source hive 상태를 변경한다. `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
+- route emission duration과 arrival cluster `SpawnAmount`는 session별 `ActiveSwarmClusterSpawnAmount`를 사용한다. 테스트 세션에서는 authored `SwarmClusterSpawnAmount`, 실제 colony 세션에서는 차감된 `OutgoingBeeCount`다.
+- 이번 구현은 source hive queen state transfer를 보류한다. 실제 colony swarming으로 source queen은 제거되지만, spawned swarm queen은 기존 `SwarmQueenBeeActorClass` defaults로 생성된다.
+- Colony impact commit 이후 cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.

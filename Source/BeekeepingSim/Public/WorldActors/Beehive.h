@@ -46,6 +46,19 @@ enum class EPollenPattyConsumptionSide : uint8
 	Rightmost
 };
 
+enum class EBeehiveSwarmingStartMode : uint8
+{
+	TestPresentation,
+	ColonyImpact
+};
+
+struct FBeehiveSwarmingStartOptions
+{
+	EBeehiveSwarmingStartMode Mode = EBeehiveSwarmingStartMode::TestPresentation;
+	int32 ClusterSpawnAmount = 0;
+	bool bApplyColonyImpact = false;
+};
+
 UCLASS()
 class BEEKEEPINGSIM_API ABeehive : public AActor, public IFocusInteractable, public IGameTimeBucketListener, public IQueenBeeCaptureSource
 {
@@ -74,6 +87,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
 	bool BeginSwarmingAtActor(AActor* TargetActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
+	bool BeginColonySwarmingAtTransform(const FTransform& TargetTransform);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
+	bool BeginColonySwarmingAtActor(AActor* TargetActor);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
 	void ClearActiveTestSwarm(bool bDestroyActors);
@@ -301,6 +320,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Test")
 	bool bDestroyPreviousTestSwarmOnStart = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ColonySwarmingBeeLossRatioMin = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ColonySwarmingBeeLossRatioMax = 0.6f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Bee Swarm", meta = (ClampMin = "0"))
 	int32 ColonyBeeCount = 100;
 
@@ -464,6 +489,9 @@ protected:
 	bool bHasPendingSwarmClusterTransform = false;
 
 	UPROPERTY(Transient)
+	int32 ActiveSwarmClusterSpawnAmount = 0;
+
+	UPROPERTY(Transient)
 	float ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
 
 	UPROPERTY(Transient)
@@ -497,6 +525,9 @@ private:
 	void RegisterCombPartsToScope();
 	void RebuildItemUseAreaDescriptorsIfAvailable();
 	FVector ResolveSwarmExitWorldLocation() const;
+	bool BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options);
+	bool CalculateColonySwarmingOutgoingBeeCount(int32& OutOutgoingBeeCount) const;
+	void ApplyColonySwarmingImpact(int32 OutgoingBeeCount);
 	bool HasActiveSwarmRouteSession() const;
 	void ClearActiveSwarmRouteTimers();
 	void ClearPendingSwarmClusterSpawn();

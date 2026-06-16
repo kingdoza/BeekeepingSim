@@ -1,83 +1,119 @@
-# Swarm cluster native FocusCollision 리뷰 프롬프트
+# Colony swarming API 리뷰 프롬프트
 
 ## 리뷰 목표
 
-`ABeeSwarmClusterActor`의 preview focus hit proxy가 Blueprint-authored `SphereCollision` 의존에서 native C++ `FocusCollision`으로 이동했는지 검토한다.
+`ABeehive`에 추가된 실제 colony swarming API가 기존 state-neutral 수동/테스트 분봉 API를 보존하면서, 같은 route-arrival cluster presentation을 사용해 source hive state impact를 정확한 시점에 적용하는지 검토한다.
 
-핵심 기대는 swarm cluster actor가 항상 native `USphereComponent FocusCollision`을 소유하고, 이 component가 preview focus trace에서는 `ECC_Visibility`를 block하지만 FocusEngaged 중에는 BeeCarrier/QueenCage item-use-area cursor trace를 막지 않도록 disabled 되는 것이다.
+핵심 기대는 기존 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`는 queen/bee/comb state를 바꾸지 않고, 새 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`만 route start 성공 후 queen 제거와 `ColonyBeeCount` 차감을 수행하는 것이다.
 
 ## 반드시 읽을 문서
 
 - `.md/AGENT_REVIEW.md`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
+- `.md/Architecture/CoreSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 - `.md/QNA_IMPLEMENTATION.md`
 
 ## 리뷰 대상 파일
 
+- `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
+- `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- `Source/BeekeepingSim/Public/Focus/AnchoredFocusCursorActionComponent.h`
-- `Source/BeekeepingSim/Private/Focus/AnchoredFocusCursorActionComponent.cpp`
-- `Source/BeekeepingSim/Private/Focus/BeekeeperFocusComponent.cpp`
-- `Source/BeekeepingSim/Private/Focus/CursorItemUseAreaScopeComponent.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
 - `.md/0_ARCHITECTURE.md`
-- `.md/Architecture/FocusSystem.md`
 - `.md/Architecture/WorldActorsSystem.md`
 
 ## 기대 구현
 
-### Native Component
+### API 분리
 
-- `ABeeSwarmClusterActor`가 native `USphereComponent* FocusCollision`을 `VisibleAnywhere` component로 가져야 한다.
-- 생성자는 `CreateDefaultSubobject<USphereComponent>(TEXT("FocusCollision"))` 후 `ClusterCenter`에 attach해야 한다.
-- Blueprint-authored `SphereCollision`을 C++에서 이름으로 찾아 mutation하면 안 된다.
+- 기존 `ABeehive::BeginSwarmingAtTransform`와 `BeginSwarmingAtActor`가 삭제/rename되지 않아야 한다.
+- 새 BlueprintCallable API가 추가되어야 한다.
+  - `BeginColonySwarmingAtTransform(const FTransform& TargetTransform)`
+  - `BeginColonySwarmingAtActor(AActor* TargetActor)`
+- 기존 테스트 API는 `bHasQueenBee`, `ColonyBeeCount`를 검사하지 않아야 하고, `SetHasQueenBee(false)`나 `SetColonyBeeCount(...)`를 호출하지 않아야 한다.
 
-### Collision Contract
+### 새 설정
 
-- enabled 상태는 `QueryOnly`여야 한다.
-- all channels ignore 후 `ECC_Visibility`만 block해야 한다.
-- overlap events, physics, navigation 영향이 없어야 한다.
-- final captured 상태, FocusEngaged active suppression, actor destroy/end play에서는 disabled 되어야 한다.
-- intro growth 중에는 preview focus hit proxy가 enabled 상태를 유지해야 한다. FocusEngaged 시작 차단은 `CanBeginFocusAction(...)`이 담당한다.
+- `ABeehive`에 다음 설정이 추가되어야 한다.
+  - `ColonySwarmingBeeLossRatioMin = 0.3f`
+  - `ColonySwarmingBeeLossRatioMax = 0.6f`
+- 값은 `0.0..1.0` 비율로 처리되어야 하며, 계산 시 clamp 후 min/max가 뒤집혀도 sort되어야 한다.
 
-### Radius Sync
+### Bee-loss 계산
 
-정확한 공식:
+정확한 계산 계약:
 
 ```cpp
-FocusCollisionRadius = FMath::Max(0.0f, AliveRadius) + 5.0f;
+const int32 PreSwarmBeeCount = FMath::Max(0, ColonyBeeCount);
+const float ClampedMin = FMath::Clamp(ColonySwarmingBeeLossRatioMin, 0.0f, 1.0f);
+const float ClampedMax = FMath::Clamp(ColonySwarmingBeeLossRatioMax, 0.0f, 1.0f);
+const float LossRatioMin = FMath::Min(ClampedMin, ClampedMax);
+const float LossRatioMax = FMath::Max(ClampedMin, ClampedMax);
+const float LossRatio = FMath::FRandRange(LossRatioMin, LossRatioMax);
+const int32 OutgoingBeeCount = FMath::Clamp(
+    FMath::RoundToInt(static_cast<float>(PreSwarmBeeCount) * LossRatio),
+    0,
+    PreSwarmBeeCount);
 ```
 
-- `AliveRadius` 변경 경로마다 radius가 stale하지 않아야 한다.
-- 선호 구현은 `ApplyClusterNiagaraParameters()` 끝에서 `RefreshFocusCollisionState()`를 호출하는 것이다.
-- `ClusterNiagara == nullptr`이어도 focus collision refresh는 실행되어야 한다.
-- bees fully captured but queen remains 상태에서는 `AliveRadius=0`, `FocusCollision` radius `5`가 되어야 한다.
+- queen이 없거나 `ColonyBeeCount <= 0`이면 state mutation 없이 `NotifySwarmingStartFailed()` 후 false여야 한다.
+- `OutgoingBeeCount <= 0`이면 queen을 제거하지 않고 bee count도 변경하지 않아야 한다.
 
-### FocusEngaged Lifecycle
+### 공유 route-start flow
 
-- `USwarmClusterFocusActionComponent`가 다음 lifecycle을 override해야 한다.
-  - `OnFocusEngagedStarted`
-  - `OnFocusReturnCompleted`
-  - `OnFocusActionAborted`
-- `Super` 호출 후 owner cluster의 suppression state를 갱신해야 한다.
-- FocusEngaged start에서는 `FocusCollision`을 suppress/disable해야 한다.
-- return completed와 abort에서는 suppression을 해제하고 collision state를 refresh해야 한다.
-- cancel start만으로 collision을 복구하면 안 된다. Focus return이 완료되거나 abort될 때 복구되어야 한다.
+- route actor spawn/config/timing 로직이 테스트 API와 colony API에 중복 구현되지 않아야 한다.
+- session cluster spawn amount가 있어야 한다. 기대 이름:
+  - `ActiveSwarmClusterSpawnAmount`
+- route emission duration은 authored `SwarmClusterSpawnAmount`가 아니라 session amount를 사용해야 한다.
 
-### Trace 상호작용
+```cpp
+RouteEmissionDurationSeconds = static_cast<float>(SessionClusterSpawnAmount) / RouteSpawnAmount;
+```
 
-- `UBeekeeperFocusComponent::FindFocusTargetFromTrace()`는 기존 `FocusTraceChannel` line trace와 `HitActor->FindComponentByClass<UFocusTargetComponent>()` 경로를 유지해야 한다.
-- `UCursorItemUseAreaScopeComponent` cursor trace도 Visibility 기반이므로, FocusEngaged 중 `FocusCollision`이 enabled로 남아 있으면 BeeCarrier/QueenCage use-area hit를 막을 수 있다. 이 경우 finding이다.
+- route arrival cluster initialization도 session amount를 사용해야 한다.
+
+```cpp
+InitializeSwarmClusterFromDensityWithIntroGrowth(
+    ActiveSwarmClusterSpawnAmount,
+    SwarmClusterBeeDensityPerCubicMeter,
+    ActiveSwarmRouteEmissionDurationSeconds);
+```
+
+### Colony impact commit timing
+
+- colony state impact는 route actor spawn, route configure, route Niagara parameter apply, timing calculation 성공 후에만 commit되어야 한다.
+- commit은 `BeginColonySwarming...`이 true를 반환하기 전에 수행되어야 한다.
+- commit 구현은 source-of-truth mutation path를 써야 한다.
+
+```cpp
+SetColonyBeeCount(FMath::Max(0, ColonyBeeCount - FMath::Max(0, OutgoingBeeCount)));
+SetHasQueenBee(false);
+```
+
+- `ReduceAllCombTargetBeeCountsByConfiguredRatio()`를 호출하면 double-apply risk이므로 finding이다.
+- commit 이후 route arrival cluster spawn이 실패해도 queen/bee count rollback을 시도하지 않아야 한다.
+
+### 기존 route session 정책
+
+- `bDestroyPreviousTestSwarmOnStart=false`이고 active route session이 있으면 새 시작은 clean fail하고 기존 timers/pointers를 유지해야 한다.
+- colony API도 같은 shared route-start policy를 따라야 한다.
+
+### Queen state transfer
+
+- 최소 계약은 source hive queen 제거와 cluster default swarm queen 생성이다.
+- queen state transfer가 구현되지 않았다면 최종 보고와 문서에 deferred로 명시되어야 한다.
+- transfer를 구현했다면 `AQueenBeeActor::MakeQueenCageItemState()` 값(class, base egg laying power, disease)을 cluster queen에 적용하는 API가 작고 명확해야 한다.
 
 ### Blueprint/API/Core Redirect
 
-- UCLASS/USTRUCT/UENUM rename이 없어야 한다.
-- 기존 UFUNCTION/UPROPERTY 삭제가 없어야 한다.
-- Core Redirect는 필요하지 않아야 한다.
-- 기존 swarm cluster Blueprint에는 새 inherited `FocusCollision` component가 생긴다.
-- 기존 BP-authored `SphereCollision`은 수동으로 제거하거나 `NoCollision`으로 변경해야 한다. 이 migration note가 최종 보고와 문서에 있어야 한다.
+- Blueprint API addition만 있어야 한다.
+- 기존 UCLASS/USTRUCT/UENUM/UFUNCTION/UPROPERTY rename/delete가 없어야 한다.
+- Core Redirect는 필요하지 않아야 하며 `Config/DefaultEngine.ini`가 수정되지 않아야 한다.
+- 기존 Blueprint가 real colony impact를 원하면 새 `BeginColonySwarming...` API로 전환해야 한다는 migration note가 있어야 한다.
 
 ## 검증 명령
 
@@ -86,34 +122,40 @@ git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
 ```powershell
-rg -n "FocusCollision|SphereCollision|SetFocusCollision|RefreshFocusCollision|AliveRadius \+ 5|OnFocusEngagedStarted|OnFocusReturnCompleted|OnFocusActionAborted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+rg -n "BeginSwarmingAtTransform|BeginSwarmingAtActor|BeginColonySwarming|ColonySwarmingBeeLossRatio|ActiveSwarmClusterSpawnAmount|ApplyColonySwarmingImpact|SwarmClusterSpawnAmount" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
 ```powershell
-rg -n "FindFocusTargetFromTrace|FocusTraceChannel|CursorTraceChannel|ECC_Visibility|ItemUseArea" Source/BeekeepingSim/Private/Focus Source/BeekeepingSim/Public/Focus
+rg -n "SetHasQueenBee\\(false\\)|SetColonyBeeCount\\(|ReduceAllCombTargetBeeCountsByConfiguredRatio|NotifySwarmingStartFailed|ReceiveSwarmingStarted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
 ```
 
 ```powershell
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-## Manual Editor/PIE 확인
+## Manual PIE 확인
 
-1. Swarm cluster Blueprint를 연다.
-2. 기존 BP `SphereCollision`을 제거하거나 `NoCollision`으로 설정한다.
-3. Blueprint compile/save를 수행한다.
-4. 수동 분봉 route를 시작하고 cluster spawn을 기다린다.
-5. inherited native `FocusCollision`이 존재하는지 확인한다.
-6. preview focus가 `FocusCollision`으로 swarm cluster를 hit하는지 확인한다.
-7. intro growth 중 prompt는 보일 수 있지만 FocusEngaged는 시작되지 않는지 확인한다.
-8. intro 완료 후 FocusEngaged가 시작되는지 확인한다.
-9. FocusEngaged start 시 `FocusCollision` collision이 disabled 되는지 확인한다.
-10. FocusEngaged에서 BeeCarrier use-area hit/use가 가능한지 확인한다.
-11. FocusEngaged에서 QueenCage use-area hit/use가 가능한지 확인한다.
-12. FocusEngaged cancel/exit 후 final capture 전 `FocusCollision`이 복구되는지 확인한다.
-13. 벌 포획 중 `FocusCollision` radius가 `AliveRadius + 5`를 따르는지 확인한다.
-14. 벌만 모두 포획하고 queen이 남았을 때 radius가 `5`인지 확인한다.
-15. queen capture 후 final captured actor removal이 기존 BP collision 없이 정상 동작하는지 확인한다.
+### 테스트 API
+
+1. 기존 `BeginSwarmingAtTransform`을 호출한다.
+2. route/cluster presentation이 기존처럼 동작하는지 확인한다.
+3. hive queen이 유지되는지 확인한다.
+4. `ColonyBeeCount`가 변하지 않는지 확인한다.
+5. active comb spawn/target state가 기존 presentation-only 범위를 벗어나 변경되지 않는지 확인한다.
+
+### Colony API
+
+1. `ColonyBeeCount`를 known value로 설정하고 `bHasQueenBee=true`로 둔다.
+2. `ColonySwarmingBeeLossRatioMin`과 `Max`를 같은 값, 예: `0.5`로 설정한다.
+3. `BeginColonySwarmingAtTransform`을 호출한다.
+4. route start 후 hive queen이 제거되는지 확인한다.
+5. `ColonyBeeCount`가 예상 비율만큼 감소하는지 확인한다.
+6. route emission duration이 removed bee count / route spawn amount인지 확인한다.
+7. spawned cluster `SpawnAmount`가 removed bee count인지 확인한다.
+8. active comb spawn amount가 `SetColonyBeeCount()` 경로로 갱신되는지 확인한다.
+9. queen이 없는 상태에서 colony API가 실패하고 bee count를 변경하지 않는지 확인한다.
+10. zero colony bees 상태에서 colony API가 실패하고 queen을 제거하지 않는지 확인한다.
+11. 기존 swarm cluster capture flow가 계속 동작하는지 확인한다.
 
 ## 리뷰 결론 요구
 

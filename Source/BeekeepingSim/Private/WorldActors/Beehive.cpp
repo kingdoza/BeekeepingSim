@@ -270,6 +270,60 @@ void ABeehive::ApplyBeeSwarmHour24(float Hour24)
 
 bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 {
+	FBeehiveSwarmingStartOptions Options;
+	Options.Mode = EBeehiveSwarmingStartMode::TestPresentation;
+	Options.ClusterSpawnAmount = SwarmClusterSpawnAmount;
+	Options.bApplyColonyImpact = false;
+	return BeginSwarmingAtTransformInternal(TargetTransform, Options);
+}
+
+bool ABeehive::BeginSwarmingAtActor(AActor* TargetActor)
+{
+	if (!IsValid(TargetActor))
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	return BeginSwarmingAtTransform(TargetActor->GetActorTransform());
+}
+
+bool ABeehive::BeginColonySwarmingAtTransform(const FTransform& TargetTransform)
+{
+	if (!bHasQueenBee || ColonyBeeCount <= 0)
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	int32 OutgoingBeeCount = 0;
+	if (!CalculateColonySwarmingOutgoingBeeCount(OutgoingBeeCount) || OutgoingBeeCount <= 0)
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	FBeehiveSwarmingStartOptions Options;
+	Options.Mode = EBeehiveSwarmingStartMode::ColonyImpact;
+	Options.ClusterSpawnAmount = OutgoingBeeCount;
+	Options.bApplyColonyImpact = true;
+	return BeginSwarmingAtTransformInternal(TargetTransform, Options);
+}
+
+bool ABeehive::BeginColonySwarmingAtActor(AActor* TargetActor)
+{
+	if (!IsValid(TargetActor))
+	{
+		NotifySwarmingStartFailed();
+		return false;
+	}
+
+	return BeginColonySwarmingAtTransform(TargetActor->GetActorTransform());
+}
+
+bool ABeehive::BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options)
+{
+	const bool bShouldApplyColonyImpact = Options.bApplyColonyImpact || Options.Mode == EBeehiveSwarmingStartMode::ColonyImpact;
 	UWorld* World = GetWorld();
 	if (!World || !SwarmClusterActorClass || !SwarmRouteActorClass)
 	{
@@ -283,6 +337,7 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 		return false;
 	}
 
+	const int32 SessionClusterSpawnAmount = FMath::Max(0, Options.ClusterSpawnAmount);
 	ClearActiveTestSwarm(bDestroyPreviousTestSwarmOnStart);
 
 	const float RouteSpawnAmount = FMath::Max(0.0f, SwarmRouteParameters.SpawnAmount);
@@ -328,11 +383,17 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 	const float RouteArrivalDelaySeconds = SplineLength > KINDA_SMALL_NUMBER
 		? SplineLength / AverageRouteSpeed
 		: 0.0f;
-	const float RouteEmissionDurationSeconds = static_cast<float>(FMath::Max(0, SwarmClusterSpawnAmount)) / RouteSpawnAmount;
+	const float RouteEmissionDurationSeconds = static_cast<float>(SessionClusterSpawnAmount) / RouteSpawnAmount;
 	const float RouteDestroyDelaySeconds = RouteArrivalDelaySeconds + RouteEmissionDurationSeconds;
+
+	if (bShouldApplyColonyImpact)
+	{
+		ApplyColonySwarmingImpact(SessionClusterSpawnAmount);
+	}
 
 	PendingSwarmClusterTransform = TargetTransform;
 	bHasPendingSwarmClusterTransform = true;
+	ActiveSwarmClusterSpawnAmount = SessionClusterSpawnAmount;
 	ActiveSwarmRouteActor = RouteActor;
 	ActiveSwarmRouteArrivalDelaySeconds = RouteArrivalDelaySeconds;
 	ActiveSwarmRouteEmissionDurationSeconds = RouteEmissionDurationSeconds;
@@ -368,21 +429,11 @@ bool ABeehive::BeginSwarmingAtTransform(const FTransform& TargetTransform)
 	return true;
 }
 
-bool ABeehive::BeginSwarmingAtActor(AActor* TargetActor)
-{
-	if (!IsValid(TargetActor))
-	{
-		NotifySwarmingStartFailed();
-		return false;
-	}
-
-	return BeginSwarmingAtTransform(TargetActor->GetActorTransform());
-}
-
 void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
 {
 	ClearActiveSwarmRouteTimers();
 	ClearPendingSwarmClusterSpawn();
+	ActiveSwarmClusterSpawnAmount = 0;
 	ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
 	ActiveSwarmRouteEmissionDurationSeconds = 0.0f;
 
@@ -1836,6 +1887,34 @@ FVector ABeehive::ResolveSwarmExitWorldLocation() const
 	return SwarmExitPoint ? SwarmExitPoint->GetComponentLocation() : GetActorLocation();
 }
 
+bool ABeehive::CalculateColonySwarmingOutgoingBeeCount(int32& OutOutgoingBeeCount) const
+{
+	OutOutgoingBeeCount = 0;
+
+	const int32 PreSwarmBeeCount = FMath::Max(0, ColonyBeeCount);
+	if (PreSwarmBeeCount <= 0)
+	{
+		return false;
+	}
+
+	const float ClampedMin = FMath::Clamp(ColonySwarmingBeeLossRatioMin, 0.0f, 1.0f);
+	const float ClampedMax = FMath::Clamp(ColonySwarmingBeeLossRatioMax, 0.0f, 1.0f);
+	const float LossRatioMin = FMath::Min(ClampedMin, ClampedMax);
+	const float LossRatioMax = FMath::Max(ClampedMin, ClampedMax);
+	const float LossRatio = FMath::FRandRange(LossRatioMin, LossRatioMax);
+	OutOutgoingBeeCount = FMath::Clamp(
+		FMath::RoundToInt(static_cast<float>(PreSwarmBeeCount) * LossRatio),
+		0,
+		PreSwarmBeeCount);
+	return OutOutgoingBeeCount > 0;
+}
+
+void ABeehive::ApplyColonySwarmingImpact(int32 OutgoingBeeCount)
+{
+	SetColonyBeeCount(FMath::Max(0, ColonyBeeCount - FMath::Max(0, OutgoingBeeCount)));
+	SetHasQueenBee(false);
+}
+
 bool ABeehive::HasActiveSwarmRouteSession() const
 {
 	return bHasPendingSwarmClusterTransform || IsValid(ActiveSwarmRouteActor);
@@ -1889,7 +1968,7 @@ void ABeehive::HandleActiveSwarmRouteArrived()
 	}
 
 	ClusterActor->InitializeSwarmClusterFromDensityWithIntroGrowth(
-		SwarmClusterSpawnAmount,
+		ActiveSwarmClusterSpawnAmount,
 		SwarmClusterBeeDensityPerCubicMeter,
 		ActiveSwarmRouteEmissionDurationSeconds);
 
