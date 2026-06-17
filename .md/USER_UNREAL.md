@@ -1,8 +1,77 @@
-# Unreal Editor 수동 작업 목록 - 분봉 테스트 포획
+# Unreal Editor 수동 작업 목록 - 분봉 테스트 포획 / Colony Swarming Site Selection
 
 이 문서는 C++ 구현 후 Unreal Editor에서 직접 설정, Compile/Save, PIE 검증해야 하는 항목만 정리한다.
 
 `Content/` asset은 Codex가 수정하지 않는다. 아래 작업은 Editor에서 수동으로 수행한다.
+
+## 0. Colony Swarming Site Selection 수동 migration
+
+실제 colony swarming C++ API는 target parameter가 없는 `ABeehive::BeginColonySwarming()`만 남아 있다.
+
+제거된 Blueprint node:
+
+- `BeginColonySwarmingAtTransform`
+- `BeginColonySwarmingAtActor`
+
+`Content/Beehive/BP_Beehive.uasset`에는 기존 `BeginColonySwarmingAtActor` node 참조가 남아 있으므로 Editor에서 수동 교체한다.
+
+### `BP_Beehive` node 교체
+
+1. Unreal Editor에서 `Content/Beehive/BP_Beehive`를 연다.
+2. missing/unknown 상태가 된 `BeginColonySwarmingAtActor` node 또는 해당 call site를 찾는다.
+3. 해당 node를 `BeginColonySwarming` node로 교체한다.
+4. 새 node에는 target actor/transform 입력을 연결하지 않는다. 실제 목적지는 C++가 world의 swarm cluster site 중에서 선택한다.
+5. 기존 target actor 탐색, comb slot transform 조회, 임시 target actor wiring이 이 call 전용이었다면 정리한다.
+6. `BP_Beehive`를 Compile/Save한다.
+
+### Swarm cluster site 배치
+
+실제 colony swarming은 selectable site가 없으면 실패하므로, 테스트 레벨에 여러 `ABeeSwarmClusterSiteActor` 또는 해당 BP child를 배치한다.
+
+각 site에서 확인한다.
+
+- `OccupantSpawnPoint`가 최종 swarm cluster 생성 위치/회전을 가리키는지 확인한다.
+- `bEnabled = true`인지 확인한다.
+- `bAutoReleaseWhenOccupantDestroyed = true`를 권장한다.
+- `AcceptedOccupantClass`는 기본 `ABeeSwarmClusterActor`를 사용한다. BP child로 제한해야 할 때만 명시적으로 변경한다.
+- `SelectionWeightMultiplier` 기본값은 `1.0`이다.
+- `DistanceWeightScaleCm` 기본값은 `3000.0`이다.
+- `DistanceWeightExponent` 기본값은 `2.0`이다.
+- `bUse2DDistanceForSelection = true`를 기본으로 둔다.
+- `MaxSelectionDistanceCm = 0.0`이면 거리 제한이 없다.
+
+여러 site를 서로 다른 거리로 배치해 가까운 site가 더 자주 선택되는지 반복 PIE에서 확인한다.
+
+### `BP_Beehive` colony swarming 설정
+
+기존 `BP_Beehive` 또는 `ABeehive` 기반 벌통 Blueprint에서 확인한다.
+
+- `SwarmExitPoint`가 벌통 입구 위치에 배치되어 있는지 확인한다.
+- `SwarmClusterActorClass`에 `BP_BeeSwarmClusterActor` 또는 사용할 cluster BP를 지정한다.
+- `SwarmRouteActorClass`에 route actor BP를 지정한다.
+- `SwarmRouteParameters.SpawnAmount`, `SpeedMin`, `SpeedMax`가 0보다 큰 유효 값인지 확인한다.
+- `ColonySwarmingBeeLossRatioMin`, `ColonySwarmingBeeLossRatioMax`를 의도한 실제 분봉 손실 비율로 설정한다.
+- 외부 테스트 Blueprint나 UI 버튼은 `BeginColonySwarming`만 호출한다.
+
+Compile/Save:
+
+- `BP_Beehive`
+- swarm cluster site BP child를 만들었다면 해당 BP
+- 테스트 Level Blueprint 또는 실제 호출 Blueprint
+- 테스트 레벨
+
+### Colony swarming PIE 검증
+
+1. selectable site가 없는 상태에서 `BeginColonySwarming`을 호출하면 실패하고 queen/`ColonyBeeCount`가 변경되지 않는지 확인한다.
+2. 여러 site를 배치한 상태에서 `BeginColonySwarming`을 호출하면 한 site가 reserved 상태가 되는지 확인한다.
+3. 가까운 site가 반복 호출에서 더 자주 선택되는지 확인한다.
+4. route가 선택 site의 `OccupantSpawnPoint` 위치로 끝나는지 확인한다.
+5. route actor spawn/config/timing 실패 조건을 만들면 pending reservation이 release되고 queen/`ColonyBeeCount`가 변경되지 않는지 확인한다.
+6. route arrival 후 cluster spawn이 성공하면 site가 occupied 상태가 되는지 확인한다.
+7. route arrival 후 site occupation 실패 조건에서는 site가 release되고 실패 event가 발생하며, 이미 commit된 queen/bee count rollback은 없는지 확인한다.
+8. cluster 최종 포획 후 actor destroy가 발생하면 site가 auto-release되어 다시 available이 되는지 확인한다.
+9. `ClearActiveTestSwarm(true)` 또는 벌통 EndPlay 시 pending reservation/active occupation이 남지 않는지 확인한다.
+10. 기존 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor` 테스트 API는 queen/`ColonyBeeCount`/site state를 변경하지 않는지 확인한다.
 
 ## 1. Gameplay Tag 확인
 
@@ -208,7 +277,7 @@ Editor 재시작 후 다시 열어 component, class reference, gameplay tag, Nia
 - Codex/C++가 `Content/` asset을 직접 수정하거나 저장하지 않는다.
 - 자동 분봉 발생 조건을 만들지 않는다.
 - colony simulation, honey production, disease/aggression 계산에 분봉을 연결하지 않는다.
-- 기존 벌통 `ColonyBeeCount`를 차감하지 않는다.
+- 분봉 테스트 경로에서는 기존 벌통 `ColonyBeeCount`를 차감하지 않는다. 실제 colony swarming은 `BeginColonySwarming` route start 성공 후 C++가 차감한다.
 - 기존 벌통 `QueenBeeChildActor`를 분봉 본진으로 이동시키지 않는다.
 - 소비장 bee count/target count를 분봉 시작으로 변경하지 않는다.
 - 벌 운반통 item instance에 포획 결과 state를 저장하지 않는다.

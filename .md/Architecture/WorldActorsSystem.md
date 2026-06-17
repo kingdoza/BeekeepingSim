@@ -15,6 +15,10 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeeSplineSwarmActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/WorldOccupancySiteActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/WorldOccupancySiteActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterSiteActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterSiteActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveSwarmRouteActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveSwarmRouteActor.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/QueenBeeCaptureSource.h`
@@ -85,6 +89,8 @@
 
 - `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner + 벌통 여왕벌 capture source
 - `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 벌 수와 밀도에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` cluster Niagara parameter, native preview focus hit proxy `FocusCollision`, 별도 queen child actor, FocusEngaged bee-carrier/queen-cage use-area를 소유한다. Route arrival spawn 직후에는 intro growth 동안 `AliveRadius`만 `0`에서 target radius로 성장하고, 최종 captured는 벌 전량 포획과 여왕벌 포획이 모두 끝난 상태다.
+- `AWorldOccupancySiteActor`: reusable world occupancy site. `Available`/`Reserved`/`Occupied` state, 예약자, 점유자, occupant spawn point, accepted occupant class, occupant destroyed auto-release 옵션을 소유한다.
+- `ABeeSwarmClusterSiteActor`: 실제 colony swarming 목적지 site. `ABeeSwarmClusterActor`를 기본 occupant로 수용하며 벌통 `SwarmExitPoint` 위치 기준 거리 weight를 계산한다.
 - `ABeehiveSwarmRouteActor`: 벌통 입구에서 요청 target까지 runtime spline route를 구성하는 `ABeeSplineSwarmActor` subclass. 기존 spline swarm Niagara parameter 계약을 재사용하며, cluster 생성은 소유하지 않는다.
 - `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
@@ -146,21 +152,21 @@
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterSpawnAmount`, `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`), `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
 - colony-impact swarming 설정: `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6`
-- transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`, `ActiveSwarmClusterSpawnAmount`, pending cluster transform, active route arrival/emission timer state
+- transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`, `PendingSwarmClusterSite`, `ActiveSwarmClusterSite`, `ActiveSwarmClusterSpawnAmount`, pending cluster transform, active route arrival/emission timer state
 - 분봉 테스트 API:
   - `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
   - `BeginSwarmingAtActor(AActor* TargetActor)`
   - `ClearActiveTestSwarm(bool bDestroyActors)`
   - `GetActiveSwarmClusterActor()`, `GetActiveSwarmRouteActor()`, `GetSwarmExitPointComponent()`
 - colony-impact 분봉 API:
-  - `BeginColonySwarmingAtTransform(const FTransform& TargetTransform)`
-  - `BeginColonySwarmingAtActor(AActor* TargetActor)`
+  - `BeginColonySwarming()`
 - 공통 route 시작 실패 조건: world 없음, `SwarmClusterActorClass` 없음, `SwarmRouteActorClass` 없음, route `SpawnAmount <= 0`, 평균 route speed <= 0, route spawn 실패, `bDestroyPreviousTestSwarmOnStart=false` 상태의 active route session 존재
-- colony-impact 분봉 추가 실패 조건: queen 없음, `ColonyBeeCount <= 0`, loss ratio 계산 결과 `OutgoingBeeCount <= 0`
+- colony-impact 분봉 추가 실패 조건: queen 없음, `ColonyBeeCount <= 0`, loss ratio 계산 결과 `OutgoingBeeCount <= 0`, available/positive weight `ABeeSwarmClusterSiteActor` 없음, 선택 site 예약 실패
 - 분봉 route 시작 성공 flow: 이전 test swarm session/timer 정리 옵션 처리(`bDestroyPreviousTestSwarmOnStart=false`이면 active route session을 덮어쓰지 않고 실패) -> session cluster spawn amount 결정 -> route spawn at `SwarmExitPoint` -> `ConfigureRoute(SwarmExitPoint, TargetTransform.Location)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> route arrival/emission stop/destroy timer 설정 -> true 반환
-- colony-impact commit timing: route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount(Max(0, ColonyBeeCount - OutgoingBeeCount))`와 `SetHasQueenBee(false)`를 호출한다. Commit 이후 route arrival cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.
+- colony-impact site selection flow: world의 `ABeeSwarmClusterSiteActor` 중 `IsAvailable()`이고 `CalculateSelectionWeightForHive(this) > 0`인 후보를 weighted random으로 선택한다. 선택 site는 route start 전에 `TryReserve(this)`로 예약하고, route start 실패 시 commit 없이 reservation을 release한다.
+- colony-impact commit timing: route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount(Max(0, ColonyBeeCount - OutgoingBeeCount))`와 `SetHasQueenBee(false)`를 호출한다. Commit 이후 route arrival cluster spawn 또는 site occupation 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.
 - route emission duration: `ActiveSwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`. 테스트 세션은 authored `SwarmClusterSpawnAmount`, colony-impact 세션은 차감된 `OutgoingBeeCount`를 사용한다.
-- route arrival flow: pending target transform에 cluster spawn -> `InitializeSwarmClusterFromDensityWithIntroGrowth(ActiveSwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)` -> `ReceiveSwarmingStarted`
+- route arrival flow: pending target transform에 cluster spawn -> `InitializeSwarmClusterFromDensityWithIntroGrowth(ActiveSwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)` -> pending site가 있으면 `TryOccupy(this, ClusterActor)` 후 active site로 이동 -> `ReceiveSwarmingStarted`
 - `GetActiveSwarmClusterActor()`는 route arrival 전까지 null이며, `ReceiveSwarmingStarted`는 cluster가 실제 생성된 뒤 호출된다.
 - 기존 분봉 테스트 시작 API는 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
 - colony-impact 분봉은 `SetColonyBeeCount()`를 bee-count mutation path로 사용해 dual swarm, attraction swarm, active comb spawn amount를 갱신하고 target ratio를 보존한다. `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
@@ -419,6 +425,45 @@
   - `ReceiveSwarmClusterInitialized`
   - `ReceiveAliveRadiusChanged(float NewAliveRadius)`
   - `ReceiveSwarmCaptured`
+
+### `AWorldOccupancySiteActor`
+
+- reusable world occupancy site base이며 inventory placement API나 `AItemPlacementSlotActor`에 의존하지 않는다.
+- 구성:
+  - `Root`
+  - `OccupantSpawnPoint`
+- authoring/state:
+  - `bEnabled=true`
+  - `bAutoReleaseWhenOccupantDestroyed=true`
+  - `SiteTags`
+  - `AcceptedOccupantClass`
+  - transient `ReservedByActor`
+  - transient `OccupyingActor`
+- site state:
+  - `Available`: enabled이고 유효 예약자/점유자가 없다.
+  - `Reserved`: 유효 예약자가 있고 점유자는 없다.
+  - `Occupied`: 유효 점유자가 있다.
+- `TryReserve(RequestedBy)`는 available일 때만 성공한다.
+- `TryOccupy(RequestedBy, Occupant)`는 available이거나 같은 requester가 예약한 경우에만 성공하고, 반드시 `CanAcceptOccupant(Occupant)`를 통과해야 한다.
+- `ClearOccupant(Occupant)`는 현재 점유 actor와 일치할 때만 점유를 해제한다.
+- `bAutoReleaseWhenOccupantDestroyed=true`이면 occupant `OnDestroyed`에 바인딩해 점유를 자동 해제한다.
+- `GetOccupantSpawnTransform()`은 `OccupantSpawnPoint` world transform을 반환한다.
+
+### `ABeeSwarmClusterSiteActor`
+
+- `AWorldOccupancySiteActor` subclass이며 실제 colony swarming destination이다.
+- constructor에서 `AcceptedOccupantClass` 기본값을 `ABeeSwarmClusterActor`로 설정한다.
+- selection 설정:
+  - `SelectionWeightMultiplier=1.0`
+  - `DistanceWeightScaleCm=3000.0`
+  - `DistanceWeightExponent=2.0`
+  - `bUse2DDistanceForSelection=true`
+  - `MaxSelectionDistanceCm=0.0` (`0`은 unlimited)
+- `CalculateSelectionWeightForHive(Hive)`는 hive `SwarmExitPoint` 위치를 우선 사용하고 없으면 hive actor location을 사용한다.
+- weight 공식:
+  - `Weight = SelectionWeightMultiplier / Pow(1.0f + Distance / DistanceWeightScaleCm, DistanceWeightExponent)`
+- `MaxSelectionDistanceCm > 0`이고 distance가 초과되면 `0`을 반환한다.
+- scale/exponent/multiplier invalid 값은 safe positive/default 값으로 보정하며, `Weight <= 0` candidate는 실제 colony swarming 선택에서 제외된다.
 
 ### `ABeehiveSwarmRouteActor`
 
@@ -956,12 +1001,16 @@
 - FocusEngaged 중 native preview hit proxy를 꺼야 BeeCarrier/QueenCage item-use-area cursor trace가 내부 use-area component를 hit할 수 있다.
 - 기존 swarm cluster Blueprint의 authored `SphereCollision`은 제거하거나 `NoCollision`으로 변경한 뒤 compile/save해야 한다. C++ 구현은 임의의 Blueprint component를 이름으로 찾아 mutation하지 않는다.
 
-## Update 2026-06-16 (Colony Swarming API)
+## Update 2026-06-17 (Colony Swarming Site Selection)
 
 - 기존 `ABeehive::BeginSwarmingAtTransform`/`BeginSwarmingAtActor`는 state-neutral 테스트/프레젠테이션 API로 유지한다.
-- `ABeehive::BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`를 추가했다. 이 API는 queen 보유와 양수 `ColonyBeeCount`를 요구한다.
+- 실제 colony swarming API는 target parameter가 없는 `ABeehive::BeginColonySwarming()`이다. 제거된 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor` Blueprint node는 `BeginColonySwarming`으로 수동 migration해야 한다.
+- `BeginColonySwarming()`은 queen 보유와 양수 `ColonyBeeCount`를 요구한다.
 - 새 설정 `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6`은 `0.0..1.0` 비율이며, 계산 시 clamp/sort 후 `OutgoingBeeCount = Clamp(RoundToInt(PreSwarmBeeCount * LossRatio), 0, PreSwarmBeeCount)`를 산출한다.
+- `AWorldOccupancySiteActor`를 추가해 reusable available/reserved/occupied world occupancy site 모델을 제공한다. 점유 actor destroy 시 자동 해제 옵션을 포함하며 inventory placement API와 분리된다.
+- `ABeeSwarmClusterSiteActor`를 추가해 실제 colony swarming destination을 표현한다. 기본 occupant class는 `ABeeSwarmClusterActor`이고, hive 거리 기반 `CalculateSelectionWeightForHive()`를 제공한다.
+- 실제 colony swarming은 world의 available `ABeeSwarmClusterSiteActor` 중 positive weight 후보를 weighted random으로 선택하고, 선택 site를 `TryReserve(this)`로 예약한 뒤 site occupant spawn transform으로 route를 시작한다.
 - 실제 colony swarming은 route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount()`와 `SetHasQueenBee(false)`로 source hive state를 변경한다. `SetColonyBeeCount()`가 comb spawn amount refresh를 담당하므로 `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
 - `ActiveSwarmClusterSpawnAmount`가 route timing과 arrival cluster initialization의 session bee count다. 테스트 세션은 `SwarmClusterSpawnAmount`, colony-impact 세션은 `OutgoingBeeCount`를 저장한다.
+- route arrival cluster spawn 성공 후 pending site는 `TryOccupy(this, ClusterActor)`로 occupied가 되고 `ActiveSwarmClusterSite`로 이동한다. route start 실패는 commit 전에 reservation을 release하고, commit 이후 cluster spawn/occupation 실패는 reservation을 release하되 queen/bee count rollback은 수행하지 않는다.
 - 이번 구현은 source hive queen state transfer를 보류한다. 실제 colony swarming으로 source queen은 제거되지만, spawned swarm queen은 기존 `SwarmQueenBeeActorClass` defaults로 생성된다.
-- Colony impact commit 이후 cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.

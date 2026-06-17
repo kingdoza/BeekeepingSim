@@ -22,6 +22,7 @@
 #include "WorldActors/BeehiveDualSwarmActor.h"
 #include "WorldActors/BeehiveSwarmRouteActor.h"
 #include "WorldActors/BeeSwarmClusterActor.h"
+#include "WorldActors/BeeSwarmClusterSiteActor.h"
 #include "WorldActors/BeehiveCombActor.h"
 #include "WorldActors/BeehiveCombSlotActor.h"
 #include "WorldActors/BeehiveCombLiftComponent.h"
@@ -33,6 +34,7 @@
 #include "WorldActors/PlacedItemRemainingComponent.h"
 #include "WorldActors/QueenBeeActor.h"
 #include "Curves/CurveFloat.h"
+#include "EngineUtils.h"
 
 namespace BeehiveAttractionSwarmNames
 {
@@ -288,7 +290,7 @@ bool ABeehive::BeginSwarmingAtActor(AActor* TargetActor)
 	return BeginSwarmingAtTransform(TargetActor->GetActorTransform());
 }
 
-bool ABeehive::BeginColonySwarmingAtTransform(const FTransform& TargetTransform)
+bool ABeehive::BeginColonySwarming()
 {
 	if (!bHasQueenBee || ColonyBeeCount <= 0)
 	{
@@ -303,22 +305,26 @@ bool ABeehive::BeginColonySwarmingAtTransform(const FTransform& TargetTransform)
 		return false;
 	}
 
-	FBeehiveSwarmingStartOptions Options;
-	Options.Mode = EBeehiveSwarmingStartMode::ColonyImpact;
-	Options.ClusterSpawnAmount = OutgoingBeeCount;
-	Options.bApplyColonyImpact = true;
-	return BeginSwarmingAtTransformInternal(TargetTransform, Options);
-}
-
-bool ABeehive::BeginColonySwarmingAtActor(AActor* TargetActor)
-{
-	if (!IsValid(TargetActor))
+	ABeeSwarmClusterSiteActor* SelectedSite = SelectSwarmClusterSiteForColonySwarming();
+	if (!IsValid(SelectedSite) || !SelectedSite->TryReserve(this))
 	{
 		NotifySwarmingStartFailed();
 		return false;
 	}
 
-	return BeginColonySwarmingAtTransform(TargetActor->GetActorTransform());
+	FBeehiveSwarmingStartOptions Options;
+	Options.Mode = EBeehiveSwarmingStartMode::ColonyImpact;
+	Options.ClusterSpawnAmount = OutgoingBeeCount;
+	Options.bApplyColonyImpact = true;
+	Options.ReservedSwarmClusterSite = SelectedSite;
+
+	const bool bStarted = BeginSwarmingAtTransformInternal(SelectedSite->GetOccupantSpawnTransform(), Options);
+	if (!bStarted)
+	{
+		SelectedSite->ReleaseReservation(this);
+	}
+
+	return bStarted;
 }
 
 bool ABeehive::BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options)
@@ -393,6 +399,7 @@ bool ABeehive::BeginSwarmingAtTransformInternal(const FTransform& TargetTransfor
 
 	PendingSwarmClusterTransform = TargetTransform;
 	bHasPendingSwarmClusterTransform = true;
+	PendingSwarmClusterSite = Options.ReservedSwarmClusterSite;
 	ActiveSwarmClusterSpawnAmount = SessionClusterSpawnAmount;
 	ActiveSwarmRouteActor = RouteActor;
 	ActiveSwarmRouteArrivalDelaySeconds = RouteArrivalDelaySeconds;
@@ -432,6 +439,7 @@ bool ABeehive::BeginSwarmingAtTransformInternal(const FTransform& TargetTransfor
 void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
 {
 	ClearActiveSwarmRouteTimers();
+	ReleasePendingSwarmClusterSiteReservation();
 	ClearPendingSwarmClusterSpawn();
 	ActiveSwarmClusterSpawnAmount = 0;
 	ActiveSwarmRouteArrivalDelaySeconds = 0.0f;
@@ -439,6 +447,11 @@ void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
 
 	if (bDestroyActors)
 	{
+		if (IsValid(ActiveSwarmClusterSite) && ActiveSwarmClusterActor)
+		{
+			ActiveSwarmClusterSite->ClearOccupant(ActiveSwarmClusterActor);
+		}
+
 		if (IsValid(ActiveSwarmRouteActor))
 		{
 			ActiveSwarmRouteActor->Destroy();
@@ -452,6 +465,7 @@ void ABeehive::ClearActiveTestSwarm(bool bDestroyActors)
 
 	ActiveSwarmRouteActor = nullptr;
 	ActiveSwarmClusterActor = nullptr;
+	ActiveSwarmClusterSite = nullptr;
 }
 
 void ABeehive::ApplyAttractionSwarmSettings()
@@ -1909,6 +1923,63 @@ bool ABeehive::CalculateColonySwarmingOutgoingBeeCount(int32& OutOutgoingBeeCoun
 	return OutOutgoingBeeCount > 0;
 }
 
+ABeeSwarmClusterSiteActor* ABeehive::SelectSwarmClusterSiteForColonySwarming() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	struct FWeightedSwarmClusterSite
+	{
+		ABeeSwarmClusterSiteActor* Site = nullptr;
+		float Weight = 0.0f;
+	};
+
+	TArray<FWeightedSwarmClusterSite> Candidates;
+	float TotalWeight = 0.0f;
+
+	for (TActorIterator<ABeeSwarmClusterSiteActor> SiteIt(World); SiteIt; ++SiteIt)
+	{
+		ABeeSwarmClusterSiteActor* Site = *SiteIt;
+		if (!IsValid(Site) || !Site->IsAvailable())
+		{
+			continue;
+		}
+
+		const float Weight = Site->CalculateSelectionWeightForHive(this);
+		if (!FMath::IsFinite(Weight) || Weight <= 0.0f)
+		{
+			continue;
+		}
+
+		FWeightedSwarmClusterSite Candidate;
+		Candidate.Site = Site;
+		Candidate.Weight = Weight;
+		Candidates.Add(Candidate);
+		TotalWeight += Weight;
+	}
+
+	if (Candidates.IsEmpty() || !FMath::IsFinite(TotalWeight) || TotalWeight <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	const float SelectionThreshold = FMath::FRandRange(0.0f, TotalWeight);
+	float CumulativeWeight = 0.0f;
+	for (const FWeightedSwarmClusterSite& Candidate : Candidates)
+	{
+		CumulativeWeight += Candidate.Weight;
+		if (SelectionThreshold <= CumulativeWeight)
+		{
+			return Candidate.Site;
+		}
+	}
+
+	return Candidates.Last().Site;
+}
+
 void ABeehive::ApplyColonySwarmingImpact(int32 OutgoingBeeCount)
 {
 	SetColonyBeeCount(FMath::Max(0, ColonyBeeCount - FMath::Max(0, OutgoingBeeCount)));
@@ -1931,10 +2002,21 @@ void ABeehive::ClearActiveSwarmRouteTimers()
 	}
 }
 
+void ABeehive::ReleasePendingSwarmClusterSiteReservation()
+{
+	if (IsValid(PendingSwarmClusterSite))
+	{
+		PendingSwarmClusterSite->ReleaseReservation(this);
+	}
+
+	PendingSwarmClusterSite = nullptr;
+}
+
 void ABeehive::ClearPendingSwarmClusterSpawn()
 {
 	PendingSwarmClusterTransform = FTransform::Identity;
 	bHasPendingSwarmClusterTransform = false;
+	PendingSwarmClusterSite = nullptr;
 }
 
 void ABeehive::HandleActiveSwarmRouteArrived()
@@ -1944,9 +2026,16 @@ void ABeehive::HandleActiveSwarmRouteArrived()
 		return;
 	}
 
+	ABeeSwarmClusterSiteActor* ArrivalSite = PendingSwarmClusterSite;
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		if (IsValid(ArrivalSite))
+		{
+			ArrivalSite->ReleaseReservation(this);
+		}
+		ClearPendingSwarmClusterSpawn();
 		return;
 	}
 
@@ -1963,6 +2052,10 @@ void ABeehive::HandleActiveSwarmRouteArrived()
 
 	if (!ClusterActor)
 	{
+		if (IsValid(ArrivalSite))
+		{
+			ArrivalSite->ReleaseReservation(this);
+		}
 		NotifySwarmingStartFailed();
 		return;
 	}
@@ -1971,6 +2064,19 @@ void ABeehive::HandleActiveSwarmRouteArrived()
 		ActiveSwarmClusterSpawnAmount,
 		SwarmClusterBeeDensityPerCubicMeter,
 		ActiveSwarmRouteEmissionDurationSeconds);
+
+	if (IsValid(ArrivalSite))
+	{
+		if (!ArrivalSite->TryOccupy(this, ClusterActor))
+		{
+			ArrivalSite->ReleaseReservation(this);
+			ClusterActor->Destroy();
+			NotifySwarmingStartFailed();
+			return;
+		}
+
+		ActiveSwarmClusterSite = ArrivalSite;
+	}
 
 	ActiveSwarmClusterActor = ClusterActor;
 	ReceiveSwarmingStarted(ClusterActor, ActiveSwarmRouteActor);

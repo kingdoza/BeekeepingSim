@@ -1,21 +1,15 @@
-# Colony swarming implementation prompt
+# Colony swarming site selection implementation prompt
 
 ## Goal
 
-Add a real colony swarming API while preserving the existing state-neutral manual/test swarming API.
+Implement real colony swarming so the hive chooses a world occupancy site itself.
 
 Confirmed direction:
 
-- Existing `ABeehive::BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)` remain test/presentation APIs.
-- These existing APIs must keep their current contract: no queen removal, no `ColonyBeeCount` mutation, no active comb bee-count mutation.
-- Add separate real colony swarming APIs that use the same route-arrival cluster presentation but apply actual hive state impact.
-
-Real colony swarming behavior:
-
-1. The source hive loses its queen.
-2. The source hive loses a random `Min~Max` percentage of its current `ColonyBeeCount`.
-3. The removed bee count becomes the spawned swarm cluster bee count.
-4. Route emission duration is based on the removed bee count, not the authored test `SwarmClusterSpawnAmount`.
+- Keep `ABeehive::BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)` as state-neutral test/presentation APIs.
+- Replace the real colony swarming target-input API with `ABeehive::BeginColonySwarming()` with no target parameter.
+- Real colony swarming must select one available swarm cluster site from the world, with closer sites more likely to be chosen.
+- Add a reusable world occupancy site base so future non-swarm actors can use the same reservation/occupation model.
 
 ## Required reading
 
@@ -29,311 +23,252 @@ Real colony swarming behavior:
 
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmTypes.h`
 - `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/QueenBeeActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/QueenBeeActor.cpp`
+- New: `Source/BeekeepingSim/Public/WorldActors/WorldOccupancySiteActor.h`
+- New: `Source/BeekeepingSim/Private/WorldActors/WorldOccupancySiteActor.cpp`
+- New: `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterSiteActor.h`
+- New: `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterSiteActor.cpp`
 
-## Current code premises
+## New generic site actor
 
-- `ABeehive::BeginSwarmingAtTransform` currently starts a route-only session and spawns the cluster at route arrival.
-- `ABeehive::HandleActiveSwarmRouteArrived` currently initializes the cluster with `SwarmClusterSpawnAmount`.
-- Route emission duration is currently computed as:
+Add `AWorldOccupancySiteActor`.
+
+Responsibilities:
+
+- Represents a reusable world actor occupancy site.
+- Owns generic reservation and occupation state.
+- Provides an occupant spawn transform.
+- Optionally releases occupation when the occupant actor is destroyed.
+
+Recommended state:
 
 ```cpp
-RouteEmissionDurationSeconds = SwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount;
+UENUM(BlueprintType)
+enum class EWorldOccupancySiteState : uint8
+{
+    Available,
+    Reserved,
+    Occupied
+};
 ```
 
-- `SetColonyBeeCount(...)` is the correct source-of-truth mutation path for colony bee count because it refreshes:
-  - dual swarm settings
-  - attraction swarm settings
-  - active comb spawn amounts while preserving target ratios
-- `SetHasQueenBee(false)` is the correct source-of-truth mutation path for removing the hive queen because it clears/rebuilds the queen child actor and item-use-area descriptors.
-- Current architecture explicitly says manual swarming test does not modify `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, or bucket subscriptions. This must remain true for the existing test APIs.
-
-## Public API additions
-
-Add separate real colony swarming APIs on `ABeehive`.
-
-Recommended names:
+Recommended components:
 
 ```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
-bool BeginColonySwarmingAtTransform(const FTransform& TargetTransform);
-
-UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
-bool BeginColonySwarmingAtActor(AActor* TargetActor);
+USceneComponent* Root;
+USceneComponent* OccupantSpawnPoint;
 ```
 
-Do not rename or delete:
+Recommended properties:
 
 ```cpp
-BeginSwarmingAtTransform(...)
-BeginSwarmingAtActor(...)
+bool bEnabled = true;
+bool bAutoReleaseWhenOccupantDestroyed = true;
+FGameplayTagContainer SiteTags;
+TSubclassOf<AActor> AcceptedOccupantClass;
+
+UPROPERTY(Transient)
+TObjectPtr<AActor> ReservedByActor;
+
+UPROPERTY(Transient)
+TObjectPtr<AActor> OccupyingActor;
 ```
 
-Those remain manual/test APIs.
-
-## New authored settings
-
-Add real swarming loss ratio settings to `ABeehive`.
-
-Recommended names:
+Recommended API:
 
 ```cpp
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-float ColonySwarmingBeeLossRatioMin = 0.3f;
-
-UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Swarming", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-float ColonySwarmingBeeLossRatioMax = 0.6f;
+EWorldOccupancySiteState GetSiteState() const;
+bool IsAvailable() const;
+bool CanAcceptOccupant(AActor* Candidate) const;
+bool TryReserve(AActor* RequestedBy);
+bool ReleaseReservation(AActor* RequestedBy);
+bool TryOccupy(AActor* RequestedBy, AActor* Occupant);
+bool ClearOccupant(AActor* Occupant);
+FTransform GetOccupantSpawnTransform() const;
+AActor* GetReservedByActor() const;
+AActor* GetOccupyingActor() const;
 ```
 
 Rules:
 
-- Values represent `0.0~1.0`, not `0~100`.
-- Clamp both to `0.0~1.0` before use.
-- If min is greater than max, sort them at calculation time rather than failing.
-- If both effectively produce zero removed bees, real swarming start should fail cleanly.
+- `Available`: enabled, not reserved, no valid occupant.
+- `Reserved`: no occupant, reserved by a valid requester.
+- `Occupied`: has a valid occupying actor.
+- `TryReserve` succeeds only when the site is available.
+- `TryOccupy` succeeds when available or reserved by the same requester.
+- `TryOccupy` must call `CanAcceptOccupant`.
+- If `bAutoReleaseWhenOccupantDestroyed` is true, bind to the occupant's destroy event and clear the site when the occupant is destroyed.
+- Do not depend on inventory placement APIs. This is separate from `AItemPlacementSlotActor`.
 
-## Shared start flow
+## New swarm-specific site actor
 
-Do not duplicate the entire route-start implementation.
+Add `ABeeSwarmClusterSiteActor : public AWorldOccupancySiteActor`.
 
-Refactor into a private shared helper with a policy/input struct or clear parameters.
+Responsibilities:
 
-Recommended shape:
+- Represents a valid real colony swarming destination.
+- Accepts `ABeeSwarmClusterActor` occupants by default.
+- Computes hive-distance weighted selection weight.
 
-```cpp
-enum class EBeehiveSwarmingStartMode : uint8
-{
-    TestPresentation,
-    ColonyImpact
-};
-
-struct FBeehiveSwarmingStartOptions
-{
-    EBeehiveSwarmingStartMode Mode = EBeehiveSwarmingStartMode::TestPresentation;
-    int32 ClusterSpawnAmount = 0;
-    bool bApplyColonyImpact = false;
-};
-
-bool BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options);
-```
-
-Simple alternatives are acceptable, but keep these invariants:
-
-- Existing test APIs call the shared helper with:
-  - `ClusterSpawnAmount = SwarmClusterSpawnAmount`
-  - `bApplyColonyImpact = false`
-- New colony APIs call the shared helper with:
-  - `ClusterSpawnAmount = OutgoingBeeCount`
-  - `bApplyColonyImpact = true`
-- Route timing and cluster arrival use the session cluster spawn amount, not always `SwarmClusterSpawnAmount`.
-
-## Real swarming start validation
-
-`BeginColonySwarmingAtTransform(...)` must validate before route start:
+Recommended settings:
 
 ```cpp
-if (!bHasQueenBee)
-{
-    NotifySwarmingStartFailed();
-    return false;
-}
-
-if (ColonyBeeCount <= 0)
-{
-    NotifySwarmingStartFailed();
-    return false;
-}
+float SelectionWeightMultiplier = 1.0f;
+float DistanceWeightScaleCm = 3000.0f;
+float DistanceWeightExponent = 2.0f;
+bool bUse2DDistanceForSelection = true;
+float MaxSelectionDistanceCm = 0.0f; // 0 means unlimited
 ```
 
-Then compute outgoing bee count:
+Recommended API:
 
 ```cpp
-const int32 PreSwarmBeeCount = FMath::Max(0, ColonyBeeCount);
-const float ClampedMin = FMath::Clamp(ColonySwarmingBeeLossRatioMin, 0.0f, 1.0f);
-const float ClampedMax = FMath::Clamp(ColonySwarmingBeeLossRatioMax, 0.0f, 1.0f);
-const float LossRatioMin = FMath::Min(ClampedMin, ClampedMax);
-const float LossRatioMax = FMath::Max(ClampedMin, ClampedMax);
-const float LossRatio = FMath::FRandRange(LossRatioMin, LossRatioMax);
-const int32 OutgoingBeeCount = FMath::Clamp(
-    FMath::RoundToInt(static_cast<float>(PreSwarmBeeCount) * LossRatio),
-    0,
-    PreSwarmBeeCount);
+float CalculateSelectionWeightForHive(const ABeehive* Hive) const;
 ```
 
-If `OutgoingBeeCount <= 0`, fail cleanly with `NotifySwarmingStartFailed()` and return false.
-
-Do not remove the queen if outgoing bee count is zero.
-
-## Colony impact commit timing
-
-Apply colony state impact only after route actor spawn/config succeeds.
-
-Recommended route:
-
-1. Validate world/classes/session/rates.
-2. Compute outgoing bee count for colony mode.
-3. Spawn route actor.
-4. Configure route and apply route parameters.
-5. Compute route timings.
-6. Commit colony impact if this is colony mode.
-7. Store session state and schedule timers.
-
-The commit should happen before returning true but after route start cannot trivially fail.
-
-Recommended helper:
+Weight formula:
 
 ```cpp
-void ApplyColonySwarmingImpact(int32 OutgoingBeeCount);
+Weight = SelectionWeightMultiplier / Pow(1.0f + Distance / DistanceWeightScaleCm, DistanceWeightExponent);
 ```
 
-Implementation:
+Rules:
+
+- Use the hive `SwarmExitPoint` location when available; otherwise use hive actor location.
+- If `MaxSelectionDistanceCm > 0` and distance is greater than it, weight is `0`.
+- Clamp invalid `DistanceWeightScaleCm` and `DistanceWeightExponent` to safe positive values.
+- Weight <= 0 candidates are not selectable.
+
+## Beehive API change
+
+Keep test APIs:
 
 ```cpp
-void ABeehive::ApplyColonySwarmingImpact(int32 OutgoingBeeCount)
-{
-    SetColonyBeeCount(FMath::Max(0, ColonyBeeCount - FMath::Max(0, OutgoingBeeCount)));
-    SetHasQueenBee(false);
-}
+bool BeginSwarmingAtTransform(const FTransform& TargetTransform);
+bool BeginSwarmingAtActor(AActor* TargetActor);
 ```
 
-Do not call `ReduceAllCombTargetBeeCountsByConfiguredRatio()` from this impact path. `SetColonyBeeCount()` already refreshes comb spawn amounts while preserving target ratios. Calling both would double-apply visual/target reduction.
+Change real colony API to:
 
-## Session cluster spawn amount
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
+bool BeginColonySwarming();
+```
 
-Add transient session state so route timers and arrival logic can use the correct amount.
+Remove the no-longer-needed real colony target-input APIs:
 
-Recommended:
+```cpp
+BeginColonySwarmingAtTransform(...)
+BeginColonySwarmingAtActor(...)
+```
+
+This deletion is intentional per current design. Before deleting, search for references and report Blueprint migration impact. Do not modify or resave `Content/` assets in this implementation pass.
+
+## Beehive selection flow
+
+`ABeehive::BeginColonySwarming()` should:
+
+1. Validate `bHasQueenBee`.
+2. Validate `ColonyBeeCount > 0`.
+3. Compute outgoing bee count using existing min/max loss ratio settings.
+4. Find all world `ABeeSwarmClusterSiteActor` instances.
+5. Keep only available sites with positive selection weight.
+6. Select one site by weighted random.
+7. Reserve the selected site for this hive.
+8. Start the existing route flow using `SelectedSite->GetOccupantSpawnTransform()`.
+9. If route start fails before colony impact commit, release the reservation and do not mutate hive state.
+10. If route start succeeds, apply the existing colony impact: reduce `ColonyBeeCount` and remove the queen.
+
+Weighted random rules:
+
+- Sum candidate weights.
+- Pick a random threshold in `[0, TotalWeight]`.
+- Walk candidates until cumulative weight reaches the threshold.
+- If total weight is not positive, fail cleanly.
+
+## Route/session integration
+
+Add transient session references on `ABeehive`:
 
 ```cpp
 UPROPERTY(Transient)
-int32 ActiveSwarmClusterSpawnAmount = 0;
+TObjectPtr<ABeeSwarmClusterSiteActor> PendingSwarmClusterSite;
+
+UPROPERTY(Transient)
+TObjectPtr<ABeeSwarmClusterSiteActor> ActiveSwarmClusterSite;
 ```
 
 Rules:
 
-- Test APIs set this to authored `SwarmClusterSpawnAmount`.
-- Colony APIs set this to computed `OutgoingBeeCount`.
-- `ClearActiveTestSwarm(...)` or route session cleanup resets it to `0`.
-- Route emission duration uses `ActiveSwarmClusterSpawnAmount`.
-- Cluster arrival initialization uses `ActiveSwarmClusterSpawnAmount`.
+- Test presentation APIs do not use a site.
+- Real colony swarming stores the reserved site as `PendingSwarmClusterSite` until route arrival.
+- Route arrival spawns `ABeeSwarmClusterActor` at the pending site transform.
+- On cluster spawn success, call `PendingSwarmClusterSite->TryOccupy(this, ClusterActor)` and move it to `ActiveSwarmClusterSite`.
+- If cluster spawn or site occupation fails after colony impact commit, release the site, notify failure, and keep the existing no-rollback policy for queen/bee count.
+- The site auto-release-on-destroy path should clear occupation when the cluster actor is destroyed after final capture.
+- `ClearActiveTestSwarm(true)` should not leak site reservations or occupations. Release pending reservation and clear active occupation when the cluster is explicitly destroyed.
 
-Replace route emission duration calculation with session amount:
+## Existing colony impact behavior
 
-```cpp
-const int32 SessionClusterSpawnAmount = FMath::Max(0, Options.ClusterSpawnAmount);
-const float RouteEmissionDurationSeconds = static_cast<float>(SessionClusterSpawnAmount) / RouteSpawnAmount;
-```
+Keep the existing real colony swarming impact rules:
 
-At arrival:
+- Requires queen.
+- Requires positive `ColonyBeeCount`.
+- Computes outgoing bees from `ColonySwarmingBeeLossRatioMin` and `ColonySwarmingBeeLossRatioMax`.
+- Route emission duration and arrival cluster `SpawnAmount` use the outgoing bee count.
+- Commit impact only after route actor spawn/config/timing succeeds.
+- Use `SetColonyBeeCount(...)` for bee count mutation.
+- Use `SetHasQueenBee(false)` for queen removal.
+- Do not call `ReduceAllCombTargetBeeCountsByConfiguredRatio()` from this path.
+- Do not rollback queen/bee count after impact commit.
 
-```cpp
-ClusterActor->InitializeSwarmClusterFromDensityWithIntroGrowth(
-    ActiveSwarmClusterSpawnAmount,
-    SwarmClusterBeeDensityPerCubicMeter,
-    ActiveSwarmRouteEmissionDurationSeconds);
-```
-
-## Queen state transfer
-
-Minimum required behavior:
-
-- `SetHasQueenBee(false)` removes the hive queen.
-- `ABeeSwarmClusterActor` still creates its own swarm queen through existing `SwarmQueenBeeActorClass`.
-
-Preferred behavior if low-risk:
-
-- Before `SetHasQueenBee(false)`, capture the source hive queen state:
-
-```cpp
-FQueenCageItemState OutgoingQueenState;
-if (const AQueenBeeActor* QueenBee = GetQueenBeeActor())
-{
-    OutgoingQueenState = QueenBee->MakeQueenCageItemState();
-}
-```
-
-- Store it in transient session state.
-- Pass it to `ABeeSwarmClusterActor` at arrival.
-- Use it to configure the cluster queen class, base egg laying power, and disease value.
-
-Only implement the preferred transfer if it can be done without broad API churn. If it requires new public setters on `AQueenBeeActor`, add only small, clearly named setters and document the Blueprint/API impact.
-
-If not implementing queen state transfer in this pass, explicitly report that colony swarming removes the source queen but the spawned swarm queen still uses `SwarmQueenBeeActorClass` defaults.
-
-## Failure and rollback policy
-
-Before route start success:
-
-- Do not mutate hive state.
-- Fail with `NotifySwarmingStartFailed()`.
-
-After route start success and colony impact commit:
-
-- Do not rollback queen/bee count if route timers later fail or cluster spawn fails.
-- If route arrival cluster spawn fails, call `NotifySwarmingStartFailed()` but keep the colony impact.
-
-Rationale:
-
-- Once real swarming starts, the queen and bees have left the source colony.
-- Rolling back would require restoring queen child actor state, colony count, route state, and presentation state together.
-
-## Existing test API behavior that must remain unchanged
+## Existing test API invariants
 
 For `BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)`:
 
 - Do not check `bHasQueenBee`.
 - Do not check `ColonyBeeCount`.
+- Do not reserve or occupy a swarm cluster site.
 - Do not call `SetHasQueenBee(false)`.
 - Do not call `SetColonyBeeCount(...)`.
 - Continue using authored `SwarmClusterSpawnAmount`.
-- Continue allowing test route/cluster presentation without changing hive source-of-truth state.
 
 ## Blueprint/API/Core Redirect impact
 
-Expected Blueprint API additions:
+Expected additions:
 
-- `BeginColonySwarmingAtTransform`
-- `BeginColonySwarmingAtActor`
-- `ColonySwarmingBeeLossRatioMin`
-- `ColonySwarmingBeeLossRatioMax`
+- `AWorldOccupancySiteActor`
+- `ABeeSwarmClusterSiteActor`
+- `EWorldOccupancySiteState`
+- `ABeehive::BeginColonySwarming()`
 
-No Blueprint API deletion or rename is allowed.
+Expected removals:
+
+- `ABeehive::BeginColonySwarmingAtTransform(...)`
+- `ABeehive::BeginColonySwarmingAtActor(...)`
 
 Core Redirect:
 
-- Not required.
+- No UCLASS/USTRUCT/UENUM rename is planned.
 - Do not edit `Config/DefaultEngine.ini`.
 
-Blueprint behavior:
+Blueprint migration:
 
-- Existing Blueprint calls to `BeginSwarmingAtTransform/Actor` remain test-only and state-neutral.
-- Blueprints that want real hive impact must switch to the new `BeginColonySwarmingAtTransform/Actor` calls.
+- Existing Blueprint nodes using `BeginColonySwarmingAtTransform/Actor` must be replaced with `BeginColonySwarming`.
+- Search and report references before deletion.
+- Do not modify `Content/` unless the user explicitly asks for asset migration.
 
 ## Documentation updates
 
-Update `.md/0_ARCHITECTURE.md`:
+Update `.md/0_ARCHITECTURE.md` and `.md/Architecture/WorldActorsSystem.md`:
 
-- Keep existing test API contract: no colony/queen/comb state mutation.
-- Add new colony swarming API contract:
-  - requires queen
-  - removes queen on route start success
-  - removes random min/max ratio of `ColonyBeeCount`
-  - removed bee count drives cluster `SpawnAmount` and route emission duration
-
-Update `.md/Architecture/WorldActorsSystem.md`:
-
-- `ABeehive` composition/settings:
-  - add colony swarming loss ratio settings
-  - add session cluster spawn amount state
-- Swarming flow:
-  - separate test presentation start from colony-impact start
-  - document commit timing and no-rollback policy
-  - document that `SetColonyBeeCount()` and `SetHasQueenBee(false)` are the mutation paths
-- Update the previous "test start does not modify colony state" wording so it applies only to the existing test API, not the new colony API.
+- Add `AWorldOccupancySiteActor`.
+- Add `ABeeSwarmClusterSiteActor`.
+- Document site states: available, reserved, occupied.
+- Document that real colony swarming uses `BeginColonySwarming()` with internal weighted random site selection.
+- Document that `BeginSwarmingAtTransform/Actor` remain test/presentation APIs.
+- Document Blueprint migration impact from removed real colony target-input APIs.
 
 Do not update unrelated systems.
 
@@ -345,14 +280,16 @@ Run diff check:
 git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
-Run focused searches:
+Run focused source searches:
 
 ```powershell
-rg -n "BeginSwarmingAtTransform|BeginSwarmingAtActor|BeginColonySwarming|ColonySwarmingBeeLossRatio|ActiveSwarmClusterSpawnAmount|ApplyColonySwarmingImpact|SwarmClusterSpawnAmount" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
+rg -n "BeginSwarmingAtTransform|BeginSwarmingAtActor|BeginColonySwarming|WorldOccupancySite|BeeSwarmClusterSite|PendingSwarmClusterSite|ActiveSwarmClusterSite" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
 ```
 
+Search likely Blueprint/API references:
+
 ```powershell
-rg -n "SetHasQueenBee\\(false\\)|SetColonyBeeCount\\(|ReduceAllCombTargetBeeCountsByConfiguredRatio|NotifySwarmingStartFailed|ReceiveSwarmingStarted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors
+rg -a -n "BeginColonySwarmingAtTransform|BeginColonySwarmingAtActor" Source Content Config .md
 ```
 
 Build:
@@ -367,38 +304,34 @@ If the engine path is missing, do not guess another engine version. Report that 
 
 Test API:
 
-1. Call existing `BeginSwarmingAtTransform`.
+1. Call `BeginSwarmingAtTransform`.
 2. Confirm route/cluster presentation still works.
 3. Confirm hive queen remains.
 4. Confirm `ColonyBeeCount` is unchanged.
-5. Confirm active comb spawn/target state is not affected except by existing presentation-only behavior.
+5. Confirm no swarm cluster site is reserved or occupied.
 
 Colony API:
 
-1. Set `ColonyBeeCount` to a known value and `bHasQueenBee=true`.
-2. Set `ColonySwarmingBeeLossRatioMin` and `Max` to the same known value, e.g. `0.5`.
-3. Call `BeginColonySwarmingAtTransform`.
-4. Confirm route starts.
-5. Confirm hive queen is removed after route start succeeds.
-6. Confirm `ColonyBeeCount` decreases by the expected percentage.
-7. Confirm route emission duration uses removed bee count divided by route spawn amount.
-8. Confirm spawned cluster `SpawnAmount` equals removed bee count.
-9. Confirm active comb spawn amounts update through `SetColonyBeeCount()` behavior.
-10. Confirm calling colony API without a queen fails and does not mutate bee count.
-11. Confirm calling colony API with zero colony bees fails and does not remove queen.
-12. Confirm existing final swarm cluster capture behavior still works.
+1. Place multiple `ABeeSwarmClusterSiteActor` instances.
+2. Call `BeginColonySwarming`.
+3. Confirm an available site is selected and reserved.
+4. Confirm closer sites are selected more often over repeated trials.
+5. Confirm route ends at the selected site transform.
+6. Confirm cluster spawn changes the site to occupied.
+7. Confirm final cluster capture/destroy releases the site.
+8. Confirm no available site causes clean failure with no queen/bee count mutation.
+9. Confirm route-start failure releases the reserved site with no queen/bee count mutation.
+10. Confirm post-commit cluster spawn failure releases the site but does not rollback queen/bee count.
 
 ## Final report requirements
 
 - Changed files
-- New API names
-- New settings and default values
-- Exact real swarming bee-loss formula
-- Confirmation that existing test APIs remain state-neutral
-- Confirmation that real colony API removes queen and reduces `ColonyBeeCount`
-- Confirmation that route emission duration and cluster spawn amount use removed bee count for colony mode
-- Whether queen state transfer to cluster was implemented or deferred
-- Blueprint/API/Core Redirect impact
+- New classes and API names
+- Removed API names and Blueprint reference search result
+- Site state model summary
+- Weighted random formula and defaults
+- Confirmation that test APIs remain state-neutral
+- Confirmation that real colony API chooses a site internally
 - Architecture document updates
 - Build/diff validation results
 - Manual PIE checks still required

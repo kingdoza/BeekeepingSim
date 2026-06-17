@@ -1,22 +1,43 @@
-# 구현 수정 프롬프트: swarm cluster native FocusCollision 리뷰 Finding
+# 구현 수정 프롬프트: colony swarming site selection 리뷰 Finding
 
 ## 우선순위
 
-1. Important: 이번 C++ FocusCollision 변경 범위에 포함되지 않아야 하는 `Content/` asset 변경 제거
+1. Important: 제거된 colony swarming Blueprint node 수동 migration 안내 보강
 
 ## 발견 문제
 
-### 1. `Content/` asset 변경이 working tree에 남아 있음
+### 1. `BP_Beehive`에 제거 API 참조가 남아 있으나 수동 작업 문서가 최신 flow를 안내하지 않음
 
 - 대상 파일:
-  - `Content/Niagaras/NS_Part.uasset`
-  - `Content/BeeSwarmCluster/BP_SwarmTest.uasset`
-  - `Content/__ExternalActors__/Beekeeper/Lvl_BeekeeperTest/C/BF/`
-- 문제: 리뷰 프롬프트의 금지 변경 조건은 `Content/` 수정 금지인데, 현재 working tree에 modified/untracked asset 변경이 남아 있다.
-- 영향: native `FocusCollision` 전환은 C++ component와 문서/수동 migration note로 처리해야 하며, binary asset 변경이 섞이면 Blueprint/level/Niagara serialized state가 의도치 않게 commit될 수 있다.
-- 수정 방향: 이번 구현 changelist에서 `Content/` 변경을 제거한다. 기존 swarm cluster Blueprint의 legacy `SphereCollision` 제거 또는 `NoCollision` 변경은 수동 PIE/Blueprint migration 항목으로 보고하고, 이 코드 변경 PR/patch에는 포함하지 않는다.
+  - `.md/USER_UNREAL.md`
+  - `Content/Beehive/BP_Beehive.uasset`는 직접 수정하지 않는다.
+- 문제:
+  - `rg -a` 결과 `Content/Beehive/BP_Beehive.uasset`에 `BeginColonySwarmingAtActor` 참조가 남아 있다.
+  - C++에서는 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`가 제거되고 `BeginColonySwarming()`만 남았다.
+  - 현재 `.md/USER_UNREAL.md`는 이전 분봉 테스트 포획 workflow 중심이라, 새 `ABeeSwarmClusterSiteActor` 배치와 `BP_Beehive` node 교체/Compile/Save 절차를 지속 문서로 안내하지 않는다.
+- 영향:
+  - Editor에서 `BP_Beehive`를 열 때 제거된 Blueprint node가 missing/unknown 상태가 될 수 있다.
+  - 실제 colony swarming은 site actor 없이는 selectable site 없음으로 실패하므로, 레벨 배치와 PIE 검증 절차가 문서화되어야 한다.
+- 수정 방향:
+  - `.md/USER_UNREAL.md`에 colony swarming site selection 수동 작업 섹션을 추가한다.
+  - 포함할 내용:
+    - `Content/Beehive/BP_Beehive.uasset`의 `BeginColonySwarmingAtActor` node를 `BeginColonySwarming` node로 수동 교체한다.
+    - `BP_Beehive`를 Compile/Save한다.
+    - 레벨에 여러 `ABeeSwarmClusterSiteActor` 또는 해당 BP child를 배치하고 `OccupantSpawnPoint`, selection weight 설정을 확인한다.
+    - selectable site 없음, reservation 실패, route start 실패, route arrival occupation, cluster destroy auto-release PIE 체크를 추가한다.
+  - `Content/` asset은 이번 구현 changelist에서 수정하지 않는다. 실제 asset migration은 Editor 수동 작업으로 분리한다.
 
 ## 검증 방법
+
+```powershell
+rg -a -n "BeginColonySwarmingAtTransform|BeginColonySwarmingAtActor" Source Content Config .md
+```
+
+기대 결과:
+
+- `Source`에는 제거 API 선언/정의가 없어야 한다.
+- `Content/Beehive/BP_Beehive.uasset` 참조는 수동 migration 전까지 남을 수 있으며, `.md/USER_UNREAL.md`가 해당 작업을 명시해야 한다.
+- `Config/DefaultEngine.ini` Core Redirect 변경은 없어야 한다.
 
 ```powershell
 git status --short -- Content Config/DefaultEngine.ini
@@ -24,22 +45,10 @@ git status --short -- Content Config/DefaultEngine.ini
 
 기대 결과:
 
-- `Config/DefaultEngine.ini` 변경 없음
-- `Content/` 변경 없음
+- 이번 코드/문서 변경에는 `Content/` 변경이 포함되지 않는다.
+- `Config/DefaultEngine.ini` 변경이 없다.
 
-```powershell
-git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
-```
+## 아키텍처 문서 반영 필요 여부
 
-```powershell
-rg -n "FocusCollision|SphereCollision|SetFocusCollision|RefreshFocusCollision|AliveRadius \+ 5|OnFocusEngagedStarted|OnFocusReturnCompleted|OnFocusActionAborted" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
-```
-
-```powershell
-& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
-```
-
-## 문서/수동 migration
-
-- `.md/Architecture/WorldActorsSystem.md`의 migration note처럼 기존 swarm cluster Blueprint의 authored `SphereCollision`은 수동으로 제거하거나 `NoCollision`으로 변경한다.
-- 수동 migration 과정에서 asset을 저장해야 한다면 별도 change로 분리한다.
+- `.md/0_ARCHITECTURE.md`와 `.md/Architecture/WorldActorsSystem.md`는 이미 새 API/site selection flow를 반영했다.
+- 추가 반영 대상은 Editor 수동 작업 문서인 `.md/USER_UNREAL.md`다.

@@ -24,6 +24,7 @@ class ABeekeeperCharacter;
 class ABeehiveDualSwarmActor;
 class ABeehiveSwarmRouteActor;
 class ABeeSwarmClusterActor;
+class ABeeSwarmClusterSiteActor;
 class ABeehiveCombActor;
 class ABeehiveCombSlotActor;
 class AQueenBeeActor;
@@ -57,6 +58,7 @@ struct FBeehiveSwarmingStartOptions
 	EBeehiveSwarmingStartMode Mode = EBeehiveSwarmingStartMode::TestPresentation;
 	int32 ClusterSpawnAmount = 0;
 	bool bApplyColonyImpact = false;
+	ABeeSwarmClusterSiteActor* ReservedSwarmClusterSite = nullptr;
 };
 
 UCLASS()
@@ -89,10 +91,7 @@ public:
 	bool BeginSwarmingAtActor(AActor* TargetActor);
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
-	bool BeginColonySwarmingAtTransform(const FTransform& TargetTransform);
-
-	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
-	bool BeginColonySwarmingAtActor(AActor* TargetActor);
+	bool BeginColonySwarming();
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Test")
 	void ClearActiveTestSwarm(bool bDestroyActors);
@@ -483,6 +482,12 @@ protected:
 	TObjectPtr<ABeehiveSwarmRouteActor> ActiveSwarmRouteActor;
 
 	UPROPERTY(Transient)
+	TObjectPtr<ABeeSwarmClusterSiteActor> PendingSwarmClusterSite;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABeeSwarmClusterSiteActor> ActiveSwarmClusterSite;
+
+	UPROPERTY(Transient)
 	FTransform PendingSwarmClusterTransform;
 
 	UPROPERTY(Transient)
@@ -527,9 +532,11 @@ private:
 	FVector ResolveSwarmExitWorldLocation() const;
 	bool BeginSwarmingAtTransformInternal(const FTransform& TargetTransform, const FBeehiveSwarmingStartOptions& Options);
 	bool CalculateColonySwarmingOutgoingBeeCount(int32& OutOutgoingBeeCount) const;
+	ABeeSwarmClusterSiteActor* SelectSwarmClusterSiteForColonySwarming() const;
 	void ApplyColonySwarmingImpact(int32 OutgoingBeeCount);
 	bool HasActiveSwarmRouteSession() const;
 	void ClearActiveSwarmRouteTimers();
+	void ReleasePendingSwarmClusterSiteReservation();
 	void ClearPendingSwarmClusterSpawn();
 	void HandleActiveSwarmRouteArrived();
 	void StopActiveSwarmRouteEmission();

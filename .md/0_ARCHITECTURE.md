@@ -2,8 +2,8 @@
 
 ## 문서 기준
 
-- 기준일: 2026-06-10(KST) Source 재대조 기준
-- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table, BeeCarrier/QueenCage 포획 state, 분봉 최종 완료 조건 반영 후 현재 Source 구조 기준
+- 기준일: 2026-06-17(KST) colony swarming site selection 반영 기준
+- 상태: Focus prompt multi-entry, placed item remaining, smoker/aggression, active-use durability drain, honey ripeness, uncapping table/capping mask, honey container/decanting table, BeeCarrier/QueenCage 포획 state, 분봉 최종 완료 조건, colony swarming site selection 반영 후 현재 Source 구조 기준
 - 정본 문서: `.md/0_ARCHITECTURE.md`와 `.md/Architecture/*.md`
 - legacy 문서: `Source/ARCHITECTURE.md`는 정본이 아니며 이 문서로 연결하는 안내 파일로만 유지한다.
 
@@ -12,9 +12,9 @@
 - 주 분석 범위:
   - `Source/BeekeepingSim/Public`
   - `Source/BeekeepingSim/Private`
-- 현재 대상 C++ 파일 수: 192개
-  - Public header: 107개
-  - Private cpp/header: 85개
+- 현재 대상 C++ 파일 수: 196개
+  - Public header: 109개
+  - Private cpp/header: 87개
 - `Content`는 Blueprint 참조 검증 범위로만 다룬다. C++ 시스템 책임의 정본은 Source 하위 문서에 둔다.
 - `Config/DefaultEngine.ini`는 Core Redirect가 필요한 rename 호환 경로로만 문서화한다.
 
@@ -64,7 +64,7 @@ Source/BeekeepingSim/
   - Interaction: Public 2 / Private 2
   - Inventory: Public 25 / Private 18
   - UI: Public 8 / Private 7
-  - WorldActors: Public 35 / Private 34
+  - WorldActors: Public 37 / Private 36
 
 ## 시스템 간 책임 흐름
 
@@ -81,7 +81,9 @@ Source/BeekeepingSim/
 - WorldActors의 `ABeehiveDualSwarmActor`는 outgoing/ingoing Niagara 2개를 소유하고, `ABeehive`가 전달한 spline reference와 계산된 parameter를 적용한다.
 - `ABeehive`는 single dual-swarm child actor와 `SwarmSpline`을 직접 소유하고 `ColonyBeeCount`, common/directional settings, `Hour24`로 spawn/speed/shape 값을 계산해 주입한다.
 - `ABeehive`는 외부 Blueprint 테스트 호출용 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`를 제공하며, 기존 colony/queen/comb state를 변경하지 않고 `ABeehiveSwarmRouteActor`를 먼저 spawn한 뒤 route arrival 시점에 `ABeeSwarmClusterActor`를 spawn한다. 테스트 분봉 본진 생성 입력은 `SwarmClusterSpawnAmount`와 `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`)다.
-- `ABeehive`는 실제 colony-impact 분봉용 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`를 별도로 제공한다. 이 경로는 route start 성공 후 queen을 제거하고 `ColonyBeeCount`의 random min/max 비율만큼 벌을 차감하며, 차감된 벌 수가 route emission duration과 cluster `SpawnAmount`의 source of truth가 된다.
+- `AWorldOccupancySiteActor`는 reusable world occupancy site로 available/reserved/occupied 상태, 예약자, 점유자, occupant spawn transform, occupant destroy 시 자동 해제 옵션을 소유한다.
+- `ABeeSwarmClusterSiteActor`는 실제 colony swarming 목적지 site이며 `ABeeSwarmClusterActor` occupant를 기본 수용하고, 벌통 `SwarmExitPoint` 기준 거리 가중치로 선택 weight를 계산한다.
+- `ABeehive`는 실제 colony-impact 분봉용 `BeginColonySwarming()`을 제공한다. 이 경로는 월드의 available `ABeeSwarmClusterSiteActor` 중 positive weight 후보를 weighted random으로 선택/예약하고, site spawn transform으로 route start 성공 후 queen을 제거하고 `ColonyBeeCount`의 random min/max 비율만큼 벌을 차감한다. 차감된 벌 수가 route emission duration과 cluster `SpawnAmount`의 source of truth가 된다.
 - `ABeeSwarmClusterActor`는 분봉 본진의 포획/잔여 벌 수 source of truth, `SpawnAmount`와 `BeeDensityPerCubicMeter`에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` Niagara parameter, preview focus hit proxy인 native `FocusCollision`, 별도 여왕벌 child actor, FocusEngaged item-use-area host를 소유하며, 최종 완료는 벌 전량 포획과 여왕벌 포획이 모두 끝난 뒤 발생하고 완료 이벤트 후 다음 tick에 actor를 제거한다. Route arrival spawn 직후에는 `SpawnAmount`/`SphereRadius`를 target 값으로 적용하고 `AliveRadius`만 intro 동안 `0`에서 cube-root 부피 스케일로 성장시킨다.
 - `ABeehiveSwarmRouteActor`는 `ABeeSplineSwarmActor` 기반 runtime route를 거리 기반 홀수 자동 중간점 spline으로 구성하고 기존 spline swarm Niagara parameter 계약을 유지한다. Route emission stop은 `User.SpawnAmount=0` 재적용으로 처리하며, actor cleanup은 마지막으로 방출된 route bee가 target에 도달할 수 있는 지연 뒤 수행한다.
 - `ABeehive`는 `CombRackRoot` + `MaxCombCount` 슬롯(`UChildActorComponent`)을 소유하며, BeginPlay에서 `InitialCombCount`만큼 초기 소비장을 채우고 각 슬롯 child actor(`ABeehiveCombSlotActor`)의 placed comb를 active comb로 관리한다.
@@ -393,11 +395,15 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 - 왕롱으로 벌통 여왕벌을 포획해도 `ColonyBeeCount`, active comb bee count/target count, honey state는 즉시 변경하지 않는다.
 - 새 GameplayTag: `Item.UseArea.SwarmCluster.BeeCarrier`, `Item.BeeCarrier`, `Item.UseArea.QueenBee.QueenCage`, `Item.QueenCage`.
 
-## Update 2026-06-16 (Colony Swarming API)
+## Update 2026-06-17 (Colony Swarming Site Selection)
 
 - 기존 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor`는 state-neutral 테스트/프레젠테이션 API로 유지한다.
-- 새 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`는 queen 보유와 양수 `ColonyBeeCount`를 요구하고, `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6` 범위에서 차감할 벌 수를 계산한다.
+- 실제 colony swarming API는 target parameter가 없는 `BeginColonySwarming()`이다. 제거된 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor` Blueprint node는 `BeginColonySwarming`으로 수동 migration해야 한다.
+- `BeginColonySwarming()`은 queen 보유와 양수 `ColonyBeeCount`를 요구하고, `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6` 범위에서 차감할 벌 수를 계산한다.
+- `AWorldOccupancySiteActor`의 site state는 `Available`, `Reserved`, `Occupied`다. `Available`은 enabled이고 유효 예약자/점유자가 없는 상태, `Reserved`는 유효 예약자가 있고 점유자는 없는 상태, `Occupied`는 유효 점유자가 있는 상태다.
+- `ABeeSwarmClusterSiteActor`는 `Weight = SelectionWeightMultiplier / Pow(1.0f + Distance / DistanceWeightScaleCm, DistanceWeightExponent)`로 벌통 거리 기반 선택 weight를 계산한다. 기본값은 multiplier `1.0`, scale `3000.0cm`, exponent `2.0`, 2D 거리 사용, 최대 거리 제한 없음이다.
+- 실제 colony swarming은 available `ABeeSwarmClusterSiteActor` 중 positive weight 후보를 weighted random으로 선택하고, 선택 site를 source hive로 예약한 뒤 site의 occupant spawn transform으로 route를 시작한다.
 - 실제 colony swarming은 route start 성공 후 `SetColonyBeeCount()`와 `SetHasQueenBee(false)`로 source hive 상태를 변경한다. `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
 - route emission duration과 arrival cluster `SpawnAmount`는 session별 `ActiveSwarmClusterSpawnAmount`를 사용한다. 테스트 세션에서는 authored `SwarmClusterSpawnAmount`, 실제 colony 세션에서는 차감된 `OutgoingBeeCount`다.
+- route arrival cluster spawn 성공 시 pending site는 `TryOccupy(this, ClusterActor)`로 occupied가 되며, cluster destroy 시 site auto-release가 가능하다. route start 실패는 commit 전 reservation을 release하고, commit 이후 cluster spawn/occupation 실패는 reservation을 release하되 queen/bee count rollback은 수행하지 않는다.
 - 이번 구현은 source hive queen state transfer를 보류한다. 실제 colony swarming으로 source queen은 제거되지만, spawned swarm queen은 기존 `SwarmQueenBeeActorClass` defaults로 생성된다.
-- Colony impact commit 이후 cluster spawn 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.
