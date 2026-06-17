@@ -1,15 +1,18 @@
-# Colony swarming site selection implementation prompt
+# Swarming pressure and queen cell implementation prompt
 
 ## Goal
 
-Implement real colony swarming so the hive chooses a world occupancy site itself.
+Implement swarming pressure and queen cell gameplay on top of the already implemented site-based `ABeehive::BeginColonySwarming()` flow.
 
 Confirmed direction:
 
-- Keep `ABeehive::BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)` as state-neutral test/presentation APIs.
-- Replace the real colony swarming target-input API with `ABeehive::BeginColonySwarming()` with no target parameter.
-- Real colony swarming must select one available swarm cluster site from the world, with closer sites more likely to be chosen.
-- Add a reusable world occupancy site base so future non-swarm actors can use the same reservation/occupation model.
+- `AWorldOccupancySiteActor`, `ABeeSwarmClusterSiteActor`, and target-less `ABeehive::BeginColonySwarming()` already exist and are out of scope except for calling `BeginColonySwarming()` when pressure triggers.
+- Add `ABeehive` swarming pressure driven primarily by colony population.
+- Add queen cells as runtime state on active beehive comb actors.
+- Queen cells spawn on comb edge surfaces when pressure is high.
+- Removing queen cells reduces swarming pressure.
+- If real colony swarming succeeds, reset swarming pressure to `0.0f`.
+- Queen cells block comb retrieval, so queen cell state is not stored in `FBeehiveCombItemState`.
 
 ## Required reading
 
@@ -23,254 +26,401 @@ Confirmed direction:
 
 - `Source/BeekeepingSim/Public/WorldActors/Beehive.h`
 - `Source/BeekeepingSim/Private/WorldActors/Beehive.cpp`
-- `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterActor.h`
-- `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterActor.cpp`
-- New: `Source/BeekeepingSim/Public/WorldActors/WorldOccupancySiteActor.h`
-- New: `Source/BeekeepingSim/Private/WorldActors/WorldOccupancySiteActor.cpp`
-- New: `Source/BeekeepingSim/Public/WorldActors/BeeSwarmClusterSiteActor.h`
-- New: `Source/BeekeepingSim/Private/WorldActors/BeeSwarmClusterSiteActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/BeehiveCombPlacementOccupantComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/BeehiveCombPlacementOccupantComponent.cpp`
+- `Source/BeekeepingSim/Public/Focus/ItemUseAreaMeshComponent.h`
+- Item action classes under `Source/BeekeepingSim/Public/Inventory` and `Private/Inventory`
+- New: `Source/BeekeepingSim/Public/WorldActors/QueenCellSpawnAreaComponent.h`
+- New: `Source/BeekeepingSim/Private/WorldActors/QueenCellSpawnAreaComponent.cpp`
+- New queen cell removal use action files in the existing item-use action system location.
 
-## New generic site actor
+Do not reimplement the swarm cluster site selection work.
 
-Add `AWorldOccupancySiteActor`.
+## Beehive swarming pressure
 
-Responsibilities:
-
-- Represents a reusable world actor occupancy site.
-- Owns generic reservation and occupation state.
-- Provides an occupant spawn transform.
-- Optionally releases occupation when the occupant actor is destroyed.
-
-Recommended state:
-
-```cpp
-UENUM(BlueprintType)
-enum class EWorldOccupancySiteState : uint8
-{
-    Available,
-    Reserved,
-    Occupied
-};
-```
-
-Recommended components:
-
-```cpp
-USceneComponent* Root;
-USceneComponent* OccupantSpawnPoint;
-```
+Add swarming pressure state to `ABeehive`.
 
 Recommended properties:
 
 ```cpp
-bool bEnabled = true;
-bool bAutoReleaseWhenOccupantDestroyed = true;
-FGameplayTagContainer SiteTags;
-TSubclassOf<AActor> AcceptedOccupantClass;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure")
+float SwarmingPressure = 0.0f;
 
-UPROPERTY(Transient)
-TObjectPtr<AActor> ReservedByActor;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "1", ClampMax = "1440"))
+int32 SwarmingLifecycleBucketMinutes = 30;
 
-UPROPERTY(Transient)
-TObjectPtr<AActor> OccupyingActor;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure")
+bool bApplySwarmingLifecycleOnBeginPlayBucket = false;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+float ComfortBeeCountPerComb = 100.0f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+float PopulationStartRatio = 0.7f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0001"))
+float PopulationTriggerRatio = 1.1f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+float QueenCellSpawnPressureThreshold = 0.7f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0001"))
+float SwarmingTriggerPressure = 1.0f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+float QueenCellRemovalPressureDelta = 0.1f;
 ```
 
 Recommended API:
 
 ```cpp
-EWorldOccupancySiteState GetSiteState() const;
-bool IsAvailable() const;
-bool CanAcceptOccupant(AActor* Candidate) const;
-bool TryReserve(AActor* RequestedBy);
-bool ReleaseReservation(AActor* RequestedBy);
-bool TryOccupy(AActor* RequestedBy, AActor* Occupant);
-bool ClearOccupant(AActor* Occupant);
-FTransform GetOccupantSpawnTransform() const;
-AActor* GetReservedByActor() const;
-AActor* GetOccupyingActor() const;
+UFUNCTION(BlueprintPure, Category = "Beehive|Swarming Pressure")
+float GetSwarmingPressure() const;
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Pressure")
+void SetSwarmingPressure(float NewPressure);
+
+UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Pressure")
+void ApplySwarmingLifecycleUpdate();
+
+void HandleQueenCellRemoved(ABeehiveCombActor* SourceComb);
+```
+
+Pressure target calculation:
+
+```cpp
+ComfortBeeCapacity = ActiveCombCount * ComfortBeeCountPerComb;
+PopulationRatio = ColonyBeeCount / ComfortBeeCapacity;
+TargetPressure = (PopulationRatio - PopulationStartRatio) / (PopulationTriggerRatio - PopulationStartRatio);
 ```
 
 Rules:
 
-- `Available`: enabled, not reserved, no valid occupant.
-- `Reserved`: no occupant, reserved by a valid requester.
-- `Occupied`: has a valid occupying actor.
-- `TryReserve` succeeds only when the site is available.
-- `TryOccupy` succeeds when available or reserved by the same requester.
-- `TryOccupy` must call `CanAcceptOccupant`.
-- If `bAutoReleaseWhenOccupantDestroyed` is true, bind to the occupant's destroy event and clear the site when the occupant is destroyed.
-- Do not depend on inventory placement APIs. This is separate from `AItemPlacementSlotActor`.
+- Clamp/sanitize invalid denominator and capacity.
+- If there is no queen, swarming lifecycle should not trigger swarming. Prefer moving pressure toward `0` or no-op; do not spawn queen cells.
+- If no active combs exist, pressure target is `0`.
+- `SwarmingPressure` can be clamped to `0..SwarmingTriggerPressure` before trigger, or allowed to exceed `1.0`; trigger check uses `SwarmingPressure > SwarmingTriggerPressure`.
+- On successful `BeginColonySwarming()`, set `SwarmingPressure = 0.0f`.
 
-## New swarm-specific site actor
+## Bucket order
 
-Add `ABeeSwarmClusterSiteActor : public AWorldOccupancySiteActor`.
+Add a new `SwarmingLifecycle` bucket subscription on `ABeehive`.
 
-Responsibilities:
-
-- Represents a valid real colony swarming destination.
-- Accepts `ABeeSwarmClusterActor` occupants by default.
-- Computes hive-distance weighted selection weight.
-
-Recommended settings:
+Default:
 
 ```cpp
-float SelectionWeightMultiplier = 1.0f;
-float DistanceWeightScaleCm = 3000.0f;
-float DistanceWeightExponent = 2.0f;
-bool bUse2DDistanceForSelection = true;
-float MaxSelectionDistanceCm = 0.0f; // 0 means unlimited
+SwarmingLifecycleBucketMinutes = 30;
 ```
 
-Recommended API:
+Subscription ordering matters when buckets land on the same game-time boundary. Keep this order:
+
+1. `HoneyProduction`
+2. `ColonyPopulation`
+3. `SwarmingLifecycle`
+4. `PollenPattyConsumption`
+
+In practice, add the `SwarmingLifecycle` subscription after `ColonyPopulation` and before `PollenPattyConsumption` in `GetGameTimeBucketSubscriptions_Implementation`.
+
+`OnGameTimeBucketEvent_Implementation` should dispatch:
 
 ```cpp
-float CalculateSelectionWeightForHive(const ABeehive* Hive) const;
+if (Tag == "ColonyPopulation")
+{
+    ApplyColonyPopulationUpdate();
+}
+else if (Tag == "SwarmingLifecycle")
+{
+    ApplySwarmingLifecycleUpdate();
+}
 ```
 
-Weight formula:
+If the subsystem dispatches same-boundary subscriptions in returned order, this guarantees that population changes are visible to swarming pressure on the same boundary.
+
+## Queen cell target count
+
+Queen cell count is a hive-wide target derived from pressure.
+
+Recommended properties on `ABeehive`:
 
 ```cpp
-Weight = SelectionWeightMultiplier / Pow(1.0f + Distance / DistanceWeightScaleCm, DistanceWeightExponent);
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
+int32 MaxQueenCellCountPerHive = 10;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0.0001"))
+float QueenCellSpawnExponent = 1.5f;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
+int32 MaxQueenCellsSpawnPerBucket = 2;
 ```
 
-Rules:
-
-- Use the hive `SwarmExitPoint` location when available; otherwise use hive actor location.
-- If `MaxSelectionDistanceCm > 0` and distance is greater than it, weight is `0`.
-- Clamp invalid `DistanceWeightScaleCm` and `DistanceWeightExponent` to safe positive values.
-- Weight <= 0 candidates are not selectable.
-
-## Beehive API change
-
-Keep test APIs:
+Formula:
 
 ```cpp
-bool BeginSwarmingAtTransform(const FTransform& TargetTransform);
-bool BeginSwarmingAtActor(AActor* TargetActor);
-```
+Alpha = Clamp(
+    (SwarmingPressure - QueenCellSpawnPressureThreshold)
+    / (SwarmingTriggerPressure - QueenCellSpawnPressureThreshold),
+    0.0f,
+    1.0f);
 
-Change real colony API to:
-
-```cpp
-UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Swarming")
-bool BeginColonySwarming();
-```
-
-Remove the no-longer-needed real colony target-input APIs:
-
-```cpp
-BeginColonySwarmingAtTransform(...)
-BeginColonySwarmingAtActor(...)
-```
-
-This deletion is intentional per current design. Before deleting, search for references and report Blueprint migration impact. Do not modify or resave `Content/` assets in this implementation pass.
-
-## Beehive selection flow
-
-`ABeehive::BeginColonySwarming()` should:
-
-1. Validate `bHasQueenBee`.
-2. Validate `ColonyBeeCount > 0`.
-3. Compute outgoing bee count using existing min/max loss ratio settings.
-4. Find all world `ABeeSwarmClusterSiteActor` instances.
-5. Keep only available sites with positive selection weight.
-6. Select one site by weighted random.
-7. Reserve the selected site for this hive.
-8. Start the existing route flow using `SelectedSite->GetOccupantSpawnTransform()`.
-9. If route start fails before colony impact commit, release the reservation and do not mutate hive state.
-10. If route start succeeds, apply the existing colony impact: reduce `ColonyBeeCount` and remove the queen.
-
-Weighted random rules:
-
-- Sum candidate weights.
-- Pick a random threshold in `[0, TotalWeight]`.
-- Walk candidates until cumulative weight reaches the threshold.
-- If total weight is not positive, fail cleanly.
-
-## Route/session integration
-
-Add transient session references on `ABeehive`:
-
-```cpp
-UPROPERTY(Transient)
-TObjectPtr<ABeeSwarmClusterSiteActor> PendingSwarmClusterSite;
-
-UPROPERTY(Transient)
-TObjectPtr<ABeeSwarmClusterSiteActor> ActiveSwarmClusterSite;
+DesiredQueenCellCount = RoundToInt(MaxQueenCellCountPerHive * Pow(Alpha, QueenCellSpawnExponent));
 ```
 
 Rules:
 
-- Test presentation APIs do not use a site.
-- Real colony swarming stores the reserved site as `PendingSwarmClusterSite` until route arrival.
-- Route arrival spawns `ABeeSwarmClusterActor` at the pending site transform.
-- On cluster spawn success, call `PendingSwarmClusterSite->TryOccupy(this, ClusterActor)` and move it to `ActiveSwarmClusterSite`.
-- If cluster spawn or site occupation fails after colony impact commit, release the site, notify failure, and keep the existing no-rollback policy for queen/bee count.
-- The site auto-release-on-destroy path should clear occupation when the cluster actor is destroyed after final capture.
-- `ClearActiveTestSwarm(true)` should not leak site reservations or occupations. Release pending reservation and clear active occupation when the cluster is explicitly destroyed.
+- `DesiredQueenCellCount` is hive-wide, not per comb.
+- `CurrentQueenCellCount` is the sum across active combs in the hive.
+- `MissingCount = DesiredQueenCellCount - CurrentQueenCellCount`.
+- `SpawnCountThisBucket = Min(MissingCount, MaxQueenCellsSpawnPerBucket)`.
+- If pressure falls, do not auto-delete existing queen cells.
+- Existing queen cells must be removed by player action.
 
-## Existing colony impact behavior
+## Queen cell comb distribution
 
-Keep the existing real colony swarming impact rules:
+Distribute `SpawnCountThisBucket` across eligible active combs.
 
-- Requires queen.
-- Requires positive `ColonyBeeCount`.
-- Computes outgoing bees from `ColonySwarmingBeeLossRatioMin` and `ColonySwarmingBeeLossRatioMax`.
-- Route emission duration and arrival cluster `SpawnAmount` use the outgoing bee count.
-- Commit impact only after route actor spawn/config/timing succeeds.
-- Use `SetColonyBeeCount(...)` for bee count mutation.
-- Use `SetHasQueenBee(false)` for queen removal.
-- Do not call `ReduceAllCombTargetBeeCountsByConfiguredRatio()` from this path.
-- Do not rollback queen/bee count after impact commit.
+Eligible combs:
 
-## Existing test API invariants
+- Active combs inside this hive.
+- Exclude empty slots.
+- Exclude currently lifted comb.
+- Comb has a valid queen cell spawn area component.
+- Comb has less than its per-comb max queen cell count.
+- Comb can find a valid edge-band sample position.
 
-For `BeginSwarmingAtTransform(...)` and `BeginSwarmingAtActor(...)`:
+Recommended comb weight:
 
-- Do not check `bHasQueenBee`.
-- Do not check `ColonyBeeCount`.
-- Do not reserve or occupy a swarm cluster site.
-- Do not call `SetHasQueenBee(false)`.
-- Do not call `SetColonyBeeCount(...)`.
-- Continue using authored `SwarmClusterSpawnAmount`.
+```cpp
+CombWeight = 1.0f / (1.0f + CurrentQueenCellCountOnComb);
+```
 
-## Blueprint/API/Core Redirect impact
+Rules:
 
-Expected additions:
+- This intentionally favors combs with fewer queen cells.
+- Do not create `MissingCount` on every comb.
+- For each queen cell to spawn this bucket, select one eligible comb by weighted random and ask that comb to add one queen cell.
+- After spawning one queen cell, update that comb's count/weight before the next selection.
 
-- `AWorldOccupancySiteActor`
-- `ABeeSwarmClusterSiteActor`
-- `EWorldOccupancySiteState`
-- `ABeehive::BeginColonySwarming()`
+## Queen cell spawn area
 
-Expected removals:
+Add `UQueenCellSpawnAreaComponent : public UBoxComponent`.
 
-- `ABeehive::BeginColonySwarmingAtTransform(...)`
-- `ABeehive::BeginColonySwarmingAtActor(...)`
+Attach one spawn area component to `ABeehiveCombActor`.
 
-Core Redirect:
+Purpose:
 
-- No UCLASS/USTRUCT/UENUM rename is planned.
-- Do not edit `Config/DefaultEngine.ini`.
+- Blueprint/editor visible rectangular box for queen cell spawn area authoring.
+- One box covers both front and back surfaces.
+- Sampling uses the box local `+X` surface for front and `-X` surface for back.
 
-Blueprint migration:
+Axis contract:
 
-- Existing Blueprint nodes using `BeginColonySwarmingAtTransform/Actor` must be replaced with `BeginColonySwarming`.
-- Search and report references before deletion.
-- Do not modify `Content/` unless the user explicitly asks for asset migration.
+- Local `X`: comb thickness/normal direction.
+- Local `+X`: front surface.
+- Local `-X`: back surface.
+- Local `Y/Z`: rectangular surface coordinates.
+
+Recommended properties:
+
+```cpp
+float EdgeBandWidthCm = 8.0f;
+float EdgeInsetCm = 2.0f;
+float MinQueenCellSpacingCm = 6.0f;
+int32 MaxPlacementAttempts = 32;
+
+float BottomEdgeWeight = 3.0f;
+float LeftEdgeWeight = 1.0f;
+float RightEdgeWeight = 1.0f;
+float TopEdgeWeight = 0.5f;
+```
+
+Sampling rules:
+
+- Choose front/back face.
+- Choose one edge by edge weights.
+- Sample a point on the local `Y/Z` edge band.
+- Apply inset so queen cells do not sit outside the intended box.
+- Reject points inside the center area.
+- Reject points too close to existing queen cells on the same face using `MinQueenCellSpacingCm`.
+- Store the result as `Face + AreaLocalYZ`, not world position.
+
+Recommended placement state:
+
+```cpp
+USTRUCT(BlueprintType)
+struct FQueenCellPlacement
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    FGuid QueenCellId;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    EBeehiveCombFace Face;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    FVector2D AreaLocalYZ = FVector2D::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    float LocalRotationDegrees = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    float Scale = 1.0f;
+};
+```
+
+Use the existing comb face enum/name if one already exists. Do not introduce a duplicate enum.
+
+## Queen cell runtime components
+
+Queen cells are not actors. They are runtime component groups owned by `ABeehiveCombActor`.
+
+Runtime structure:
+
+```text
+QueenCellRoot_N
+  UStaticMeshComponent QueenCellVisual
+    UItemUseAreaMeshComponent QueenCellUseArea
+```
+
+Add BP-authored visual/use-area settings on `ABeehiveCombActor`:
+
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Visual")
+TObjectPtr<UStaticMesh> QueenCellVisualMesh;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Visual")
+TObjectPtr<UMaterialInterface> QueenCellVisualMaterial;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+TObjectPtr<UStaticMesh> QueenCellUseAreaMesh;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+TObjectPtr<UMaterialInterface> QueenCellUseAreaMaterial;
+```
+
+Rules:
+
+- Mesh/material defaults are assigned in the comb Blueprint child, not hardcoded in C++.
+- If `QueenCellUseAreaMesh` is missing, using `QueenCellVisualMesh` as fallback is acceptable.
+- `QueenCellUseArea` should use area tag `Item.UseArea.Beehive.QueenCell`.
+- Use a map to resolve hit use-area components to queen cell IDs:
+
+```cpp
+TMap<TObjectPtr<UItemUseAreaMeshComponent>, FGuid> QueenCellUseAreaToId;
+```
+
+- Do not store queen cell data in `FBeehiveCombItemState`.
+
+## Queen cell comb APIs
+
+Add APIs to `ABeehiveCombActor`.
+
+Recommended:
+
+```cpp
+int32 GetQueenCellCount() const;
+bool HasQueenCells() const;
+bool CanSpawnQueenCell() const;
+bool TrySpawnQueenCell();
+bool RemoveQueenCell(const FGuid& QueenCellId);
+bool ResolveQueenCellIdFromUseArea(const UItemUseAreaMeshComponent* UseArea, FGuid& OutQueenCellId) const;
+```
+
+Rules:
+
+- `TrySpawnQueenCell()` samples an eligible front/back edge location and creates runtime components.
+- `RemoveQueenCell()` destroys runtime components, removes placement state, updates use-area mapping, and notifies owning hive.
+- Rebuild item-use-area descriptors after queen cell add/remove if the owning host/scope requires it.
+
+## Queen cell removal action
+
+Add a C++ item-use action for queen cell removal, for example:
+
+```cpp
+UQueenCellRemovalUseAction
+```
+
+Rules:
+
+- The action is included in C++ scope.
+- The actual existing item DataAsset that uses this action is assigned by BP/DataAsset work.
+- Do not create/modify item assets unless explicitly requested.
+- The action should require/hit `Item.UseArea.Beehive.QueenCell`.
+- On hit, resolve the owning `ABeehiveCombActor` and queen cell ID.
+- Call `RemoveQueenCell(QueenCellId)`.
+- Return success only when a queen cell was actually removed.
+- On successful removal, owning hive reduces `SwarmingPressure` by `QueenCellRemovalPressureDelta`.
+
+## Comb retrieval condition
+
+Queen cells block comb retrieval.
+
+Existing comb retrieval condition:
+
+```text
+TotalTargetBeeCount == 0
+queen not attached
+```
+
+New condition:
+
+```text
+TotalTargetBeeCount == 0
+queen not attached
+QueenCellCount == 0
+```
+
+Implementation target:
+
+- Add the check in `UBeehiveCombPlacementOccupantComponent::ReceiveCanRetrievePlacementOccupant_Implementation` or the existing shared retrieval helper if one exists.
+- Prompt disabled/failure reason should indicate that queen cells must be removed first if the prompt system supports a reason.
+
+Because queen cells block retrieval, do not add queen cell state to `FBeehiveCombItemState`.
+
+## Swarming lifecycle order
+
+`ApplySwarmingLifecycleUpdate()` should run:
+
+1. If queenless, do not spawn queen cells or start swarming.
+2. Update `SwarmingPressure` from latest population/active comb state.
+3. Spawn missing queen cells up to `MaxQueenCellsSpawnPerBucket`.
+4. If `SwarmingPressure > SwarmingTriggerPressure`, call `BeginColonySwarming()`.
+5. If `BeginColonySwarming()` returns true, set `SwarmingPressure = 0.0f` and do not spawn more queen cells in that update.
+
+If implementation is simpler, step 3 may occur before step 4 in the same function as long as successful swarming immediately resets pressure and prevents additional same-update queen cell work.
+
+## Gameplay tags
+
+Add/use gameplay tag:
+
+```text
+Item.UseArea.Beehive.QueenCell
+```
+
+Follow the project's existing gameplay tag declaration/config pattern. Do not invent a separate tag system.
 
 ## Documentation updates
 
-Update `.md/0_ARCHITECTURE.md` and `.md/Architecture/WorldActorsSystem.md`:
+Update only relevant architecture docs:
 
-- Add `AWorldOccupancySiteActor`.
-- Add `ABeeSwarmClusterSiteActor`.
-- Document site states: available, reserved, occupied.
-- Document that real colony swarming uses `BeginColonySwarming()` with internal weighted random site selection.
-- Document that `BeginSwarmingAtTransform/Actor` remain test/presentation APIs.
-- Document Blueprint migration impact from removed real colony target-input APIs.
+- `.md/0_ARCHITECTURE.md`
+- `.md/Architecture/WorldActorsSystem.md`
 
-Do not update unrelated systems.
+Document:
+
+- `SwarmingPressure` source and bucket default `30` minutes.
+- Same-boundary order: honey production, colony population, swarming lifecycle, pollen patty consumption.
+- Queen cell count target is hive-wide and pressure-derived.
+- Queen cells distribute to active combs by fewest-queen-cell weighted random.
+- Single `UQueenCellSpawnAreaComponent : UBoxComponent` samples `+X/-X` surfaces and edge bands.
+- Queen cells are runtime component groups, not actors.
+- Queen cell visual/use-area mesh/material are assigned in comb Blueprint children.
+- Queen cells block comb retrieval and are not saved in `FBeehiveCombItemState`.
+- Successful colony swarming resets pressure to `0.0f`.
+
+Do not rewrite already implemented swarm cluster site selection docs except where needed for cross-reference.
 
 ## Validation commands
 
@@ -280,16 +430,10 @@ Run diff check:
 git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
 
-Run focused source searches:
+Focused search:
 
 ```powershell
-rg -n "BeginSwarmingAtTransform|BeginSwarmingAtActor|BeginColonySwarming|WorldOccupancySite|BeeSwarmClusterSite|PendingSwarmClusterSite|ActiveSwarmClusterSite" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors .md
-```
-
-Search likely Blueprint/API references:
-
-```powershell
-rg -a -n "BeginColonySwarmingAtTransform|BeginColonySwarmingAtActor" Source Content Config .md
+rg -n "SwarmingPressure|SwarmingLifecycle|QueenCell|QueenCellSpawnArea|Item.UseArea.Beehive.QueenCell|BeginColonySwarming|CanRetrievePlacementOccupant" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory .md
 ```
 
 Build:
@@ -302,36 +446,33 @@ If the engine path is missing, do not guess another engine version. Report that 
 
 ## Manual PIE checks
 
-Test API:
-
-1. Call `BeginSwarmingAtTransform`.
-2. Confirm route/cluster presentation still works.
-3. Confirm hive queen remains.
-4. Confirm `ColonyBeeCount` is unchanged.
-5. Confirm no swarm cluster site is reserved or occupied.
-
-Colony API:
-
-1. Place multiple `ABeeSwarmClusterSiteActor` instances.
-2. Call `BeginColonySwarming`.
-3. Confirm an available site is selected and reserved.
-4. Confirm closer sites are selected more often over repeated trials.
-5. Confirm route ends at the selected site transform.
-6. Confirm cluster spawn changes the site to occupied.
-7. Confirm final cluster capture/destroy releases the site.
-8. Confirm no available site causes clean failure with no queen/bee count mutation.
-9. Confirm route-start failure releases the reserved site with no queen/bee count mutation.
-10. Confirm post-commit cluster spawn failure releases the site but does not rollback queen/bee count.
+1. In a comb Blueprint child, assign queen cell visual mesh/material and use-area mesh/material.
+2. Confirm the queen cell spawn area box is visible/editable in Blueprint/editor.
+3. Set lifecycle bucket to 30 minutes and confirm update dispatch.
+4. Confirm population increase raises `SwarmingPressure`.
+5. Confirm queen cells spawn only when pressure is above threshold.
+6. Confirm queen cells appear only on `+X/-X` surfaces and only in the `Y/Z` edge band.
+7. Confirm queen cells distribute across active combs with fewer queen cells favored.
+8. Confirm lifted combs do not receive new queen cells.
+9. Confirm queen cell use-area can be hit with the configured existing item DataAsset/action.
+10. Confirm removing queen cells lowers pressure.
+11. Confirm comb retrieval is disabled while queen cells exist.
+12. Confirm comb retrieval works after all bees/queen/queen-cell constraints are clear.
+13. Confirm pressure above trigger calls existing `BeginColonySwarming()`.
+14. Confirm successful colony swarming resets `SwarmingPressure` to `0.0f`.
 
 ## Final report requirements
 
 - Changed files
-- New classes and API names
-- Removed API names and Blueprint reference search result
-- Site state model summary
-- Weighted random formula and defaults
-- Confirmation that test APIs remain state-neutral
-- Confirmation that real colony API chooses a site internally
+- New classes/components/actions
+- New settings and default values
+- Exact pressure formula
+- Queen cell target-count formula
+- Queen cell distribution rule
+- Queen cell spawn-area axis contract
+- Confirmation that queen cells are not saved in `FBeehiveCombItemState`
+- Confirmation that queen cells block comb retrieval
+- Blueprint/DataAsset work still required
 - Architecture document updates
 - Build/diff validation results
 - Manual PIE checks still required
