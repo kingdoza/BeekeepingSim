@@ -29,6 +29,11 @@ bool UBeehiveCombPlacementOccupantComponent::ReceiveCanRetrievePlacementOccupant
 		return false;
 	}
 
+	if (CombActor->HasQueenCells())
+	{
+		return false;
+	}
+
 	const AActor* SlotActor = GetOwningPlacementSlotActor();
 	const ABeehive* Beehive = SlotActor ? Cast<ABeehive>(SlotActor->GetAttachParentActor()) : nullptr;
 	if (!Beehive)

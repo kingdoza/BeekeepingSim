@@ -1,54 +1,77 @@
-# 구현 수정 프롬프트: colony swarming site selection 리뷰 Finding
+# 구현 수정 프롬프트: swarming pressure / queen cell 리뷰 Finding
 
 ## 우선순위
 
-1. Important: 제거된 colony swarming Blueprint node 수동 migration 안내 보강
+1. Important: queen cell placement runtime state를 transient로 고정
+2. Improvement: queen cell Editor 수동 작업 문서 보강
 
 ## 발견 문제
 
-### 1. `BP_Beehive`에 제거 API 참조가 남아 있으나 수동 작업 문서가 최신 flow를 안내하지 않음
+### 1. `QueenCellPlacements`가 runtime-only 계약인데 `Transient`가 아님
+
+- 대상 파일:
+  - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
+- 문제:
+  - queen cell은 `FBeehiveCombItemState`에 저장하지 않는 runtime state로 설계되어 있다.
+  - 하지만 `ABeehiveCombActor::QueenCellPlacements`는 `UPROPERTY(VisibleInstanceOnly, Category = "Beehive|Queen Cell")`로 선언되어 있고 `Transient`가 없다.
+- 영향:
+  - runtime placement state가 actor instance/editor serialization 대상으로 남을 수 있어 "runtime component group, item state에 저장하지 않음" 계약이 약해진다.
+- 수정 방향:
+  - `QueenCellPlacements`에 `Transient`를 추가한다.
+  - `QueenCellRuntimeComponents`와 `QueenCellUseAreaToId`는 계속 runtime-only mapping으로 유지한다.
+
+수정 예:
+
+```cpp
+UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Queen Cell")
+TArray<FQueenCellPlacement> QueenCellPlacements;
+```
+
+### 2. `.md/USER_UNREAL.md`가 queen cell 수동 설정을 안내하지 않음
 
 - 대상 파일:
   - `.md/USER_UNREAL.md`
-  - `Content/Beehive/BP_Beehive.uasset`는 직접 수정하지 않는다.
 - 문제:
-  - `rg -a` 결과 `Content/Beehive/BP_Beehive.uasset`에 `BeginColonySwarmingAtActor` 참조가 남아 있다.
-  - C++에서는 `BeginColonySwarmingAtTransform`/`BeginColonySwarmingAtActor`가 제거되고 `BeginColonySwarming()`만 남았다.
-  - 현재 `.md/USER_UNREAL.md`는 이전 분봉 테스트 포획 workflow 중심이라, 새 `ABeeSwarmClusterSiteActor` 배치와 `BP_Beehive` node 교체/Compile/Save 절차를 지속 문서로 안내하지 않는다.
+  - `Content/` asset은 수정하지 않는 범위가 맞다.
+  - 그러나 queen cell visual mesh/material, use-area mesh/material, spawn area authoring, queen cell removal item DataAsset/action 연결은 Editor/BP 수동 작업이 필요하다.
+  - 현재 `.md/USER_UNREAL.md`는 colony swarming site selection과 기존 swarm capture 중심이고 queen cell 수동 설정/PIE 체크가 없다.
 - 영향:
-  - Editor에서 `BP_Beehive`를 열 때 제거된 Blueprint node가 missing/unknown 상태가 될 수 있다.
-  - 실제 colony swarming은 site actor 없이는 selectable site 없음으로 실패하므로, 레벨 배치와 PIE 검증 절차가 문서화되어야 한다.
+  - C++는 빌드되어도 queen cell이 실제로 보이거나 제거 action으로 hit/use 되는 검증 경로가 빠진다.
 - 수정 방향:
-  - `.md/USER_UNREAL.md`에 colony swarming site selection 수동 작업 섹션을 추가한다.
-  - 포함할 내용:
-    - `Content/Beehive/BP_Beehive.uasset`의 `BeginColonySwarmingAtActor` node를 `BeginColonySwarming` node로 수동 교체한다.
-    - `BP_Beehive`를 Compile/Save한다.
-    - 레벨에 여러 `ABeeSwarmClusterSiteActor` 또는 해당 BP child를 배치하고 `OccupantSpawnPoint`, selection weight 설정을 확인한다.
-    - selectable site 없음, reservation 실패, route start 실패, route arrival occupation, cluster destroy auto-release PIE 체크를 추가한다.
-  - `Content/` asset은 이번 구현 changelist에서 수정하지 않는다. 실제 asset migration은 Editor 수동 작업으로 분리한다.
+  - `.md/USER_UNREAL.md`에 swarming pressure / queen cell 섹션을 추가한다.
+  - 포함할 항목:
+    - `Config/DefaultGameplayTags.ini`의 `Item.UseArea.Beehive.QueenCell` 확인
+    - comb Blueprint child에서 `QueenCellSpawnArea` 위치/크기 조정
+    - `QueenCellVisualMesh`, `QueenCellVisualMaterial`, `QueenCellUseAreaMesh`, `QueenCellUseAreaMaterial` 지정
+    - 제거용 item DataAsset에 `UQueenCellRemovalUseAction` 연결
+    - PIE에서 pressure 상승, threshold 전/후 생성, lifted comb 제외, 제거 시 pressure 감소, queen cell 존재 중 comb retrieval 차단 검증
+  - `Content/` asset은 이번 코드 변경 changelist에 포함하지 않는다.
 
 ## 검증 방법
 
 ```powershell
-rg -a -n "BeginColonySwarmingAtTransform|BeginColonySwarmingAtActor" Source Content Config .md
+git diff --check -- Source/BeekeepingSim/Public Source/BeekeepingSim/Private .md
 ```
-
-기대 결과:
-
-- `Source`에는 제거 API 선언/정의가 없어야 한다.
-- `Content/Beehive/BP_Beehive.uasset` 참조는 수동 migration 전까지 남을 수 있으며, `.md/USER_UNREAL.md`가 해당 작업을 명시해야 한다.
-- `Config/DefaultEngine.ini` Core Redirect 변경은 없어야 한다.
 
 ```powershell
-git status --short -- Content Config/DefaultEngine.ini
+rg -n "QueenCellPlacements|Transient|QueenCellRemovalUseAction|Item.UseArea.Beehive.QueenCell|QueenCellSpawnArea" Source/BeekeepingSim/Public/WorldActors Source/BeekeepingSim/Private/WorldActors Source/BeekeepingSim/Public/Inventory Source/BeekeepingSim/Private/Inventory .md/USER_UNREAL.md
+```
+
+```powershell
+git status --short -- Content Config/DefaultEngine.ini Config/DefaultGameplayTags.ini
 ```
 
 기대 결과:
 
-- 이번 코드/문서 변경에는 `Content/` 변경이 포함되지 않는다.
-- `Config/DefaultEngine.ini` 변경이 없다.
+- `Content/` 변경 없음
+- `Config/DefaultEngine.ini` 변경 없음
+- `Config/DefaultGameplayTags.ini`에는 `Item.UseArea.Beehive.QueenCell` 추가만 있음
+
+```powershell
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
+```
 
 ## 아키텍처 문서 반영 필요 여부
 
-- `.md/0_ARCHITECTURE.md`와 `.md/Architecture/WorldActorsSystem.md`는 이미 새 API/site selection flow를 반영했다.
-- 추가 반영 대상은 Editor 수동 작업 문서인 `.md/USER_UNREAL.md`다.
+- `.md/0_ARCHITECTURE.md`와 `.md/Architecture/WorldActorsSystem.md`는 swarming pressure / queen cell 설계를 이미 반영했다.
+- `.md/USER_UNREAL.md` 보강은 필요하다.

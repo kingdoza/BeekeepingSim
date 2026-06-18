@@ -1,284 +1,154 @@
-# Unreal Editor 수동 작업 목록 - 분봉 테스트 포획 / Colony Swarming Site Selection
+# Unreal Editor 수동 작업 목록 - Swarming Pressure / Queen Cell
 
-이 문서는 C++ 구현 후 Unreal Editor에서 직접 설정, Compile/Save, PIE 검증해야 하는 항목만 정리한다.
+이 문서는 C++ 구현 후 Unreal Editor에서 직접 설정, Compile/Save, PIE 검증해야 하는 swarming pressure / queen cell 항목만 정리한다.
 
 `Content/` asset은 Codex가 수정하지 않는다. 아래 작업은 Editor에서 수동으로 수행한다.
 
-## 0. Colony Swarming Site Selection 수동 migration
-
-실제 colony swarming C++ API는 target parameter가 없는 `ABeehive::BeginColonySwarming()`만 남아 있다.
-
-제거된 Blueprint node:
-
-- `BeginColonySwarmingAtTransform`
-- `BeginColonySwarmingAtActor`
-
-`Content/Beehive/BP_Beehive.uasset`에는 기존 `BeginColonySwarmingAtActor` node 참조가 남아 있으므로 Editor에서 수동 교체한다.
-
-### `BP_Beehive` node 교체
-
-1. Unreal Editor에서 `Content/Beehive/BP_Beehive`를 연다.
-2. missing/unknown 상태가 된 `BeginColonySwarmingAtActor` node 또는 해당 call site를 찾는다.
-3. 해당 node를 `BeginColonySwarming` node로 교체한다.
-4. 새 node에는 target actor/transform 입력을 연결하지 않는다. 실제 목적지는 C++가 world의 swarm cluster site 중에서 선택한다.
-5. 기존 target actor 탐색, comb slot transform 조회, 임시 target actor wiring이 이 call 전용이었다면 정리한다.
-6. `BP_Beehive`를 Compile/Save한다.
-
-### Swarm cluster site 배치
-
-실제 colony swarming은 selectable site가 없으면 실패하므로, 테스트 레벨에 여러 `ABeeSwarmClusterSiteActor` 또는 해당 BP child를 배치한다.
-
-각 site에서 확인한다.
-
-- `OccupantSpawnPoint`가 최종 swarm cluster 생성 위치/회전을 가리키는지 확인한다.
-- `bEnabled = true`인지 확인한다.
-- `bAutoReleaseWhenOccupantDestroyed = true`를 권장한다.
-- `AcceptedOccupantClass`는 기본 `ABeeSwarmClusterActor`를 사용한다. BP child로 제한해야 할 때만 명시적으로 변경한다.
-- `SelectionWeightMultiplier` 기본값은 `1.0`이다.
-- `DistanceWeightScaleCm` 기본값은 `3000.0`이다.
-- `DistanceWeightExponent` 기본값은 `2.0`이다.
-- `bUse2DDistanceForSelection = true`를 기본으로 둔다.
-- `MaxSelectionDistanceCm = 0.0`이면 거리 제한이 없다.
-
-여러 site를 서로 다른 거리로 배치해 가까운 site가 더 자주 선택되는지 반복 PIE에서 확인한다.
-
-### `BP_Beehive` colony swarming 설정
-
-기존 `BP_Beehive` 또는 `ABeehive` 기반 벌통 Blueprint에서 확인한다.
-
-- `SwarmExitPoint`가 벌통 입구 위치에 배치되어 있는지 확인한다.
-- `SwarmClusterActorClass`에 `BP_BeeSwarmClusterActor` 또는 사용할 cluster BP를 지정한다.
-- `SwarmRouteActorClass`에 route actor BP를 지정한다.
-- `SwarmRouteParameters.SpawnAmount`, `SpeedMin`, `SpeedMax`가 0보다 큰 유효 값인지 확인한다.
-- `ColonySwarmingBeeLossRatioMin`, `ColonySwarmingBeeLossRatioMax`를 의도한 실제 분봉 손실 비율로 설정한다.
-- 외부 테스트 Blueprint나 UI 버튼은 `BeginColonySwarming`만 호출한다.
-
-Compile/Save:
-
-- `BP_Beehive`
-- swarm cluster site BP child를 만들었다면 해당 BP
-- 테스트 Level Blueprint 또는 실제 호출 Blueprint
-- 테스트 레벨
-
-### Colony swarming PIE 검증
-
-1. selectable site가 없는 상태에서 `BeginColonySwarming`을 호출하면 실패하고 queen/`ColonyBeeCount`가 변경되지 않는지 확인한다.
-2. 여러 site를 배치한 상태에서 `BeginColonySwarming`을 호출하면 한 site가 reserved 상태가 되는지 확인한다.
-3. 가까운 site가 반복 호출에서 더 자주 선택되는지 확인한다.
-4. route가 선택 site의 `OccupantSpawnPoint` 위치로 끝나는지 확인한다.
-5. route actor spawn/config/timing 실패 조건을 만들면 pending reservation이 release되고 queen/`ColonyBeeCount`가 변경되지 않는지 확인한다.
-6. route arrival 후 cluster spawn이 성공하면 site가 occupied 상태가 되는지 확인한다.
-7. route arrival 후 site occupation 실패 조건에서는 site가 release되고 실패 event가 발생하며, 이미 commit된 queen/bee count rollback은 없는지 확인한다.
-8. cluster 최종 포획 후 actor destroy가 발생하면 site가 auto-release되어 다시 available이 되는지 확인한다.
-9. `ClearActiveTestSwarm(true)` 또는 벌통 EndPlay 시 pending reservation/active occupation이 남지 않는지 확인한다.
-10. 기존 `BeginSwarmingAtTransform`/`BeginSwarmingAtActor` 테스트 API는 queen/`ColonyBeeCount`/site state를 변경하지 않는지 확인한다.
-
 ## 1. Gameplay Tag 확인
 
-`Config/DefaultGameplayTags.ini`에 추가된 tag가 Editor에서 보이는지 확인한다.
+Project Settings 또는 Gameplay Tags 창에서 아래 tag가 보이는지 확인한다.
 
-- `Item.UseArea.SwarmCluster.BeeCarrier`
-- `Item.BeeCarrier`
+- `Item.UseArea.Beehive.QueenCell`
 
-기존 tag rename, Gameplay Tag Redirect, Core Redirect 작업은 하지 않는다.
+보이지 않으면 `Config/DefaultGameplayTags.ini`에 tag가 반영되어 있는지 확인한 뒤 Editor를 재시작한다.
 
-## 2. `BP_BeeSwarmClusterActor` 생성
+Core Redirect나 Gameplay Tag Redirect는 추가하지 않는다.
 
-`ABeeSwarmClusterActor` 기반 Blueprint를 생성한다.
+## 2. Comb Blueprint Queen Cell Authoring
 
-native component 확인:
-
-- `Root`
-- `ClusterCenter`
-- `ClusterNiagara`
-- `QueenBeeChildActor`
-- `CaptureUseAreaMesh`
-- `FocusAnchor`
-- `CharacterAnchor`
-- `FocusTarget`
-- `FocusAction`
-- `ItemUseAreaScope`
-- `ItemUseAreaMeshProvider`
-
-설정:
-
-- `ClusterNiagara`에 분봉 본진용 구형 벌떼 Niagara System을 지정한다.
-- Niagara System이 아래 user parameter를 사용하도록 설정한다.
-  - `User.AliveRadius` float
-  - `User.SpawnAmount` int
-  - `User.SphereRadius` float
-- `CaptureUseAreaMesh`에 포획 use-area mesh와 표시 material을 지정한다.
-- `CaptureUseAreaMesh.AreaTags`에 `Item.UseArea.SwarmCluster.BeeCarrier`가 들어 있는지 확인한다.
-- `CaptureUseAreaMesh.EffectTargetPolicy`는 `ComponentOwner`로 둔다.
-- `ClusterCenter`를 본진 중심점에 배치한다.
-- `FocusAnchor`를 FocusEngaged 카메라 기준 위치에 배치한다.
-- `CharacterAnchor`를 플레이어 고정 위치에 배치한다.
-- `FocusAnchor` component tag가 `FocusAnchor`인지 확인한다.
-- `CharacterAnchor` component tag가 `CharacterAnchor`인지 확인한다.
-- `SwarmQueenBeeActorClass`에 사용할 queen BP를 지정한다.
-- `QueenCenterOffset`으로 여왕벌이 cluster center에 보이도록 조정한다.
-
-Compile/Save:
-
-- `BP_BeeSwarmClusterActor`
-- cluster Niagara System
-- capture use-area material/material instance
-
-## 3. Route Actor Blueprint 설정
-
-`ABeehiveSwarmRouteActor` 기반 Blueprint를 생성한다.
+`ABeehiveCombActor` 기반 comb Blueprint child를 연다.
 
 native component 확인:
 
-- `Root`
-- `SwarmSpline`
-- `SwarmNiagara`
+- `QueenCellSpawnArea`
 
-설정:
+`QueenCellSpawnArea` 설정:
 
-- `SwarmNiagara`에 기존 출근용 spline swarm Niagara System 또는 동일 parameter 계약을 쓰는 Niagara System을 지정한다.
-- Niagara System이 아래 user parameter를 사용하도록 확인한다.
-  - `User.SwarmSpline`
-  - `User.SplineLength`
-  - `User.StartShapeExtent`
-  - `User.EndShapeExtent`
-  - `User.SpawnAmount`
-  - `User.SpeedMin`
-  - `User.SpeedMax`
-- `RouteMidPointHeightOffset`을 route arc 높이에 맞게 조정한다.
+- local `+X`가 comb front surface를 향하는지 확인한다.
+- local `-X`가 comb back surface를 향하는지 확인한다.
+- local `Y/Z`가 queen cell을 배치할 rectangular surface 영역을 덮도록 box 위치와 크기를 조정한다.
+- box는 front/back 양면을 모두 포함하는 하나의 spawn area로 사용한다.
+- edge band가 comb 바깥으로 나가지 않도록 `EdgeInsetCm`와 box extent를 함께 조정한다.
+- 기본값 확인:
+  - `EdgeBandWidthCm = 8.0`
+  - `EdgeInsetCm = 2.0`
+  - `MinQueenCellSpacingCm = 6.0`
+  - `MaxPlacementAttempts = 32`
+  - `BottomEdgeWeight = 3.0`
+  - `LeftEdgeWeight = 1.0`
+  - `RightEdgeWeight = 1.0`
+  - `TopEdgeWeight = 0.5`
 
-Compile/Save:
+queen cell visual/use-area 설정:
 
-- route actor BP
-- route Niagara System
-
-## 4. `BP_Beehive` 분봉 테스트 설정
-
-기존 `BP_Beehive` 또는 `ABeehive` 기반 벌통 Blueprint를 연다.
-
-native component 확인:
-
-- `SwarmExitPoint`
-
-설정:
-
-- `SwarmExitPoint`를 벌통 입구 위치에 배치한다.
-- `SwarmClusterActorClass`에 `BP_BeeSwarmClusterActor`를 지정한다.
-- `SwarmRouteActorClass`에 route actor BP를 지정한다.
-- `SwarmClusterSpawnAmount`를 cluster Niagara 규모에 맞게 설정한다.
-- `SwarmClusterBeeDensityPerCubicMeter`를 포획 난이도/cluster 크기에 맞게 설정한다. 기본값은 `8000.0 bees/m^3`이며, `SpawnAmount=500`이면 radius는 약 `24.63cm`다.
-- `SwarmRouteParameters`를 route Niagara에 맞게 설정한다.
-  - `StartShapeExtent`
-  - `EndShapeExtent`
-  - `SpawnAmount`
-  - `SpeedMin`
-  - `SpeedMax`
-- 반복 테스트가 필요하면 `bDestroyPreviousTestSwarmOnStart = true`를 권장한다.
-
-주의:
-
-- 기존 `QueenBeeChildActor`는 분봉 본진으로 이동시키지 않는다.
-- 기존 벌통 `ColonyBeeCount`, 소비장 벌 수/target count를 분봉 테스트 BP에서 직접 수정하지 않는다.
+- `QueenCellVisualMesh`를 지정한다.
+- `QueenCellVisualMaterial`을 지정한다.
+- `QueenCellUseAreaMesh`를 지정한다. 비워두면 C++가 visual mesh를 fallback으로 사용할 수 있지만, trace/hit 검증이 쉬운 별도 use-area mesh를 권장한다.
+- `QueenCellUseAreaMaterial`을 지정한다.
+- `MaxQueenCellCountPerComb`을 의도한 per-comb cap으로 설정한다. 기본값은 `4`다.
 
 Compile/Save:
 
-- `BP_Beehive`
-- 테스트 레벨
+- comb Blueprint child
+- queen cell visual material/material instance
+- queen cell use-area material/material instance
 
-## 5. 벌 운반통 Item Definition 설정
+## 3. Beehive Swarming Pressure Settings
 
-벌 운반통 item definition 또는 관련 DataAsset을 연다.
+`ABeehive` 기반 벌통 Blueprint를 연다.
 
-설정:
+swarming pressure 설정 기본값을 확인한다.
 
-- `GameplayTags`에 필요하면 `Item.BeeCarrier`를 추가한다.
-- action spec에 `UBeeCarrierUseAction`을 추가한다.
-- action tag는 프로젝트의 기존 item action authoring 규칙에 맞춰 지정한다.
-- `UBeeCarrierUseAction` tuning 값을 테스트 의도에 맞게 조정한다.
-  - `BaseAliveRadiusDecreasePerSecond`
-  - `DragSpeedToAliveRadiusDecreaseScale`
-  - `MaxAliveRadiusDecreasePerSecond`
-  - `MinDragSpeedForBonus`
+- `SwarmingPressure = 0.0`
+- `SwarmingLifecycleBucketMinutes = 30`
+- `bApplySwarmingLifecycleOnBeginPlayBucket = false`
+- `ComfortBeeCountPerComb = 100.0`
+- `PopulationStartRatio = 0.7`
+- `PopulationTriggerRatio = 1.1`
+- `QueenCellSpawnPressureThreshold = 0.7`
+- `SwarmingTriggerPressure = 1.0`
+- `QueenCellRemovalPressureDelta = 0.1`
 
-계산 기준:
+queen cell hive target 설정 기본값을 확인한다.
+
+- `MaxQueenCellCountPerHive = 10`
+- `QueenCellSpawnExponent = 1.5`
+- `MaxQueenCellsSpawnPerBucket = 2`
+
+튜닝 기준:
+
+- pressure target:
 
 ```cpp
-DragSpeed = Distance(CurrentImpactPoint, LastImpactPoint) / DeltaTime;
-BonusSpeed = Max(0, DragSpeed - MinDragSpeedForBonus);
-Rate = BaseAliveRadiusDecreasePerSecond + BonusSpeed * DragSpeedToAliveRadiusDecreaseScale;
-Rate = Clamp(Rate, 0.0f, MaxAliveRadiusDecreasePerSecond);
-DeltaAliveRadius = Rate * DeltaTime;
+ComfortBeeCapacity = ActiveCombCount * ComfortBeeCountPerComb;
+PopulationRatio = ColonyBeeCount / ComfortBeeCapacity;
+TargetPressure = (PopulationRatio - PopulationStartRatio)
+    / (PopulationTriggerRatio - PopulationStartRatio);
+```
+
+- queen cell target:
+
+```cpp
+Alpha = Clamp(
+    (SwarmingPressure - QueenCellSpawnPressureThreshold)
+    / (SwarmingTriggerPressure - QueenCellSpawnPressureThreshold),
+    0.0f,
+    1.0f);
+
+DesiredQueenCellCount =
+    RoundToInt(MaxQueenCellCountPerHive * Pow(Alpha, QueenCellSpawnExponent));
 ```
 
 Compile/Save:
 
-- 벌 운반통 item definition/DataAsset
+- `BP_Beehive` 또는 사용하는 벌통 Blueprint
+- 테스트 레벨
 
-## 6. 외부 테스트 Blueprint 작성
+## 4. Queen Cell Removal Item DataAsset
 
-테스트용 Level Blueprint, debug actor, 또는 임시 버튼 BP에서 벌통 분봉 시작 API를 호출한다.
+queen cell 제거에 사용할 item definition 또는 관련 DataAsset을 연다.
 
-호출 방식:
+설정:
 
-- `ABeehive::BeginSwarmingAtTransform`
-- 또는 `ABeehive::BeginSwarmingAtActor`
-
-권장 테스트:
-
-- 목표 위치 actor를 하나 배치하고 `BeginSwarmingAtActor(TargetActor)`를 호출한다.
-- 실패 event 확인이 필요하면 `SwarmClusterActorClass` 또는 `SwarmRouteActorClass`를 비운 상태도 테스트한다.
+- hold/use action 목록에 `UQueenCellRemovalUseAction`을 추가한다.
+- action tag는 프로젝트의 기존 item action authoring 규칙에 맞춰 지정한다.
+- 이 action은 `Item.UseArea.Beehive.QueenCell` use-area hit에서만 적용된다.
+- 별도 mesh나 material asset을 C++에 하드코딩하지 않는다.
 
 Compile/Save:
 
-- 테스트 Blueprint
-- 테스트 레벨
+- queen cell 제거용 item definition/DataAsset
+- 관련 UI 또는 hotbar 테스트 asset이 있다면 함께 저장
 
-## 7. PIE 검증 체크리스트
+## 5. PIE 검증 체크리스트
 
-1. 외부 BP 호출 시 지정 위치에 `BP_BeeSwarmClusterActor`가 생성되는지 확인한다.
-2. cluster Niagara에 `AliveRadius`, `SpawnAmount`, `SphereRadius` 초기값이 적용되는지 확인한다.
-3. cluster center에 기존 벌통 여왕벌이 아니라 별도 여왕벌이 생성/attach되는지 확인한다.
-4. 벌통 입구 `SwarmExitPoint`에서 cluster center까지 route actor가 생성되는지 확인한다.
-5. route Niagara가 spline을 따라 재생되는지 확인한다.
-6. route end가 cluster actor origin이 아니라 `ClusterCenter` 위치와 맞는지 확인한다.
-7. cluster actor에 FocusConfirm으로 FocusEngaged 진입되는지 확인한다.
-8. FocusEngaged 후 벌 운반통을 선택하면 capture use-area가 표시되는지 확인한다.
-9. LMB hold 첫 tick은 base rate만 적용되는지 확인한다.
-10. use-area 위를 천천히 드래그하면 `AliveRadius`가 base rate 중심으로 감소하는지 확인한다.
-11. 같은 `DeltaTime`에서 더 긴 drag distance가 더 큰 `AliveRadius` 감소량을 만드는지 확인한다.
-12. 빠르게 드래그하면 `MinDragSpeedForBonus` 초과분만 bonus rate로 더해지는지 확인한다.
-13. `AliveRadius`가 실제 감소한 tick에만 action result success가 true인지 로그/디버그로 확인한다.
-14. `AliveRadius <= 0`에서 captured event가 1회만 발생하는지 확인한다.
-15. captured 후 capture use-area가 비활성화되어 hover/use 대상에서 빠지는지 확인한다.
-16. captured 후 cluster Niagara에는 `User.AliveRadius = 0`이 적용되는지 확인한다.
-17. 분봉 시작 중 기존 벌통 `ColonyBeeCount`가 변하지 않는지 확인한다.
-18. 분봉 시작 중 기존 벌통 `QueenBeeChildActor` 위치/attach parent가 변하지 않는지 확인한다.
-19. 분봉 시작/포획 중 active comb bee count/target count가 변하지 않는지 확인한다.
-20. `bDestroyPreviousTestSwarmOnStart = true` 상태에서 재호출 시 이전 cluster/route actor가 destroy되는지 확인한다.
+1. 테스트 벌통에 queen이 있고 active comb가 배치되어 있는지 확인한다.
+2. `ColonyBeeCount`를 높이거나 `ComfortBeeCountPerComb`을 낮춰 `SwarmingPressure`가 상승하는 조건을 만든다.
+3. `SwarmingLifecycleBucketMinutes = 30` 기준으로 lifecycle update가 실행되는지 확인한다.
+4. `SwarmingPressure < QueenCellSpawnPressureThreshold`에서는 queen cell이 생성되지 않는지 확인한다.
+5. `SwarmingPressure >= QueenCellSpawnPressureThreshold` 이후 queen cell이 생성되는지 확인한다.
+6. queen cell 생성 수가 hive-wide target을 따르고, bucket당 `MaxQueenCellsSpawnPerBucket`를 넘지 않는지 확인한다.
+7. queen cell이 comb local `+X/-X` surface에만 생성되는지 확인한다.
+8. queen cell이 `QueenCellSpawnArea`의 `Y/Z` edge band 안에만 생성되는지 확인한다.
+9. center area에는 queen cell이 생성되지 않는지 확인한다.
+10. 같은 face에서 `MinQueenCellSpacingCm`보다 가까운 queen cell 배치가 거부되는지 확인한다.
+11. 여러 active comb가 있을 때 queen cell이 적은 comb가 더 자주 선택되는지 반복 확인한다.
+12. lifted comb에는 새 queen cell이 생성되지 않는지 확인한다.
+13. queen cell 제거용 item을 hotbar에서 선택하면 queen cell use-area가 hit/use 가능한지 확인한다.
+14. queen cell 제거 성공 시 해당 runtime component group이 사라지는지 확인한다.
+15. queen cell 제거 성공 시 `SwarmingPressure`가 `QueenCellRemovalPressureDelta`만큼 감소하고 0 미만으로 내려가지 않는지 확인한다.
+16. queen cell이 남아 있는 comb는 retrieval이 차단되는지 확인한다.
+17. bees target count가 0이고 queen이 붙어 있지 않더라도 queen cell이 있으면 comb retrieval이 실패하는지 확인한다.
+18. 모든 queen cell을 제거한 뒤 bees/queen 조건도 clear되면 comb retrieval이 가능해지는지 확인한다.
+19. queen이 없는 벌통에서는 swarming lifecycle이 queen cell을 생성하지 않는지 확인한다.
+20. `SwarmingPressure > SwarmingTriggerPressure`에서 기존 `BeginColonySwarming()` flow가 호출되는지 확인한다.
+21. 실제 colony swarming 성공 후 `SwarmingPressure`가 `0.0`으로 리셋되는지 확인한다.
+22. `BeginSwarmingAtTransform`/`BeginSwarmingAtActor` 테스트 API 호출이 queen, `ColonyBeeCount`, `SwarmingPressure`, queen cell state를 변경하지 않는지 확인한다.
 
-## 8. Compile / Save 대상
-
-작업 후 아래 asset을 Compile/Save한다.
-
-- `BP_BeeSwarmClusterActor`
-- cluster Niagara System
-- capture use-area material/material instance
-- route actor BP
-- route Niagara System
-- `BP_Beehive`
-- 벌 운반통 item definition/DataAsset
-- 외부 테스트 Blueprint
-- 테스트 레벨
-
-Editor 재시작 후 다시 열어 component, class reference, gameplay tag, Niagara parameter, item action 설정이 유지되는지 확인한다.
-
-## 9. 이번 범위에서 하지 않는 작업
+## 6. 이번 범위에서 하지 않는 작업
 
 - Codex/C++가 `Content/` asset을 직접 수정하거나 저장하지 않는다.
-- 자동 분봉 발생 조건을 만들지 않는다.
-- colony simulation, honey production, disease/aggression 계산에 분봉을 연결하지 않는다.
-- 분봉 테스트 경로에서는 기존 벌통 `ColonyBeeCount`를 차감하지 않는다. 실제 colony swarming은 `BeginColonySwarming` route start 성공 후 C++가 차감한다.
-- 기존 벌통 `QueenBeeChildActor`를 분봉 본진으로 이동시키지 않는다.
-- 소비장 bee count/target count를 분봉 시작으로 변경하지 않는다.
-- 벌 운반통 item instance에 포획 결과 state를 저장하지 않는다.
-- Core Redirect를 추가하지 않는다.
+- queen cell state를 `FBeehiveCombItemState`에 저장하지 않는다.
+- queen cell을 actor로 만들지 않는다.
+- `Config/DefaultEngine.ini` Core Redirect를 추가하지 않는다.
+- 제거용 item DataAsset 연결을 C++에서 자동 생성하지 않는다.

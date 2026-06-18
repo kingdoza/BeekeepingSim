@@ -200,6 +200,7 @@ void ABeehive::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	SetAggressionValue(AggressionValue);
+	SetSwarmingPressure(SwarmingPressure);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
@@ -219,6 +220,7 @@ void ABeehive::BeginPlay()
 		HoneyProductionCoefficient);
 
 	SetAggressionValue(AggressionValue);
+	SetSwarmingPressure(SwarmingPressure);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
 	ApplyBeeSwarmSettings();
@@ -322,6 +324,10 @@ bool ABeehive::BeginColonySwarming()
 	if (!bStarted)
 	{
 		SelectedSite->ReleaseReservation(this);
+	}
+	else
+	{
+		SetSwarmingPressure(0.0f);
 	}
 
 	return bStarted;
@@ -506,6 +512,50 @@ void ABeehive::SetColonyBeeCount(int32 NewBeeCount)
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombSpawnAmounts(false, true);
+}
+
+float ABeehive::GetSwarmingPressure() const
+{
+	return SwarmingPressure;
+}
+
+void ABeehive::SetSwarmingPressure(float NewPressure)
+{
+	SwarmingPressure = FMath::IsFinite(NewPressure) ? FMath::Max(0.0f, NewPressure) : 0.0f;
+}
+
+void ABeehive::ApplySwarmingLifecycleUpdate()
+{
+	if (!bHasQueenBee)
+	{
+		SetSwarmingPressure(0.0f);
+		return;
+	}
+
+	SetSwarmingPressure(CalculateSwarmingPressureTarget());
+	SpawnQueenCellsForSwarmingPressure();
+
+	const float SafeTriggerPressure = FMath::IsFinite(SwarmingTriggerPressure)
+		? FMath::Max(0.0001f, SwarmingTriggerPressure)
+		: 1.0f;
+	if (SwarmingPressure > SafeTriggerPressure)
+	{
+		if (BeginColonySwarming())
+		{
+			SetSwarmingPressure(0.0f);
+		}
+	}
+}
+
+void ABeehive::HandleQueenCellRemoved(ABeehiveCombActor* SourceComb)
+{
+	if (!SourceComb || !IsManagedActiveCombActor(SourceComb))
+	{
+		return;
+	}
+
+	SetSwarmingPressure(SwarmingPressure - FMath::Max(0.0f, QueenCellRemovalPressureDelta));
+	RebuildItemUseAreaDescriptorsIfAvailable();
 }
 
 void ABeehive::ApplyColonyPopulationUpdate()
@@ -786,6 +836,11 @@ void ABeehive::RebuildCursorPartFocusDescriptors()
 	}
 }
 
+void ABeehive::RebuildItemUseAreaDescriptors()
+{
+	RebuildItemUseAreaDescriptorsIfAvailable();
+}
+
 void ABeehive::SetLidOpenForPartFocus(bool bOpen)
 {
 	if (bIsLidOpen == bOpen)
@@ -973,6 +1028,13 @@ void ABeehive::GetGameTimeBucketSubscriptions_Implementation(TArray<FGameTimeBuc
 	PopulationSubscription.SubscriptionTag = FName(TEXT("ColonyPopulation"));
 	OutSubscriptions.Add(PopulationSubscription);
 
+	FGameTimeBucketSubscription SwarmingLifecycleSubscription;
+	SwarmingLifecycleSubscription.BucketMinutes = FMath::Clamp(SwarmingLifecycleBucketMinutes, 1, 1440);
+	SwarmingLifecycleSubscription.bApplyImmediatelyOnBeginPlay = bApplySwarmingLifecycleOnBeginPlayBucket;
+	SwarmingLifecycleSubscription.CatchUpPolicy = EGameTimeBucketCatchUpPolicy::LatestOnly;
+	SwarmingLifecycleSubscription.SubscriptionTag = FName(TEXT("SwarmingLifecycle"));
+	OutSubscriptions.Add(SwarmingLifecycleSubscription);
+
 	FGameTimeBucketSubscription PollenPattySubscription;
 	PollenPattySubscription.BucketMinutes = FMath::Clamp(PollenPattyConsumptionBucketMinutes, 1, 1440);
 	PollenPattySubscription.bApplyImmediatelyOnBeginPlay = bApplyPollenPattyConsumptionOnBeginPlayBucket;
@@ -1012,6 +1074,10 @@ void ABeehive::OnGameTimeBucketEvent_Implementation(const FGameTimeBucketEvent& 
 	else if (Event.SubscriptionTag == FName(TEXT("ColonyPopulation")))
 	{
 		ApplyColonyPopulationUpdate();
+	}
+	else if (Event.SubscriptionTag == FName(TEXT("SwarmingLifecycle")))
+	{
+		ApplySwarmingLifecycleUpdate();
 	}
 	else if (Event.SubscriptionTag == FName(TEXT("PollenPattyConsumption")))
 	{
@@ -1986,6 +2052,150 @@ void ABeehive::ApplyColonySwarmingImpact(int32 OutgoingBeeCount)
 	SetHasQueenBee(false);
 }
 
+float ABeehive::CalculateSwarmingPressureTarget() const
+{
+	if (!bHasQueenBee)
+	{
+		return 0.0f;
+	}
+
+	const int32 ActiveCombCount = GetOccupiedCombCount();
+	if (ActiveCombCount <= 0)
+	{
+		return 0.0f;
+	}
+
+	const float SafeComfortBeeCountPerComb = FMath::IsFinite(ComfortBeeCountPerComb)
+		? FMath::Max(0.0f, ComfortBeeCountPerComb)
+		: 0.0f;
+	const float ComfortBeeCapacity = static_cast<float>(ActiveCombCount) * SafeComfortBeeCountPerComb;
+	if (ComfortBeeCapacity <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const float SafePopulationStartRatio = FMath::IsFinite(PopulationStartRatio) ? PopulationStartRatio : 0.0f;
+	const float SafePopulationTriggerRatio = FMath::IsFinite(PopulationTriggerRatio)
+		? PopulationTriggerRatio
+		: SafePopulationStartRatio + 0.0001f;
+	const float Denominator = FMath::Max(0.0001f, SafePopulationTriggerRatio - SafePopulationStartRatio);
+	const float PopulationRatio = static_cast<float>(FMath::Max(0, ColonyBeeCount)) / ComfortBeeCapacity;
+	const float TargetPressure = (PopulationRatio - SafePopulationStartRatio) / Denominator;
+	return FMath::Max(0.0f, TargetPressure);
+}
+
+int32 ABeehive::CalculateDesiredQueenCellCount() const
+{
+	if (!bHasQueenBee || MaxQueenCellCountPerHive <= 0)
+	{
+		return 0;
+	}
+
+	const float SafeThreshold = FMath::IsFinite(QueenCellSpawnPressureThreshold)
+		? FMath::Max(0.0f, QueenCellSpawnPressureThreshold)
+		: 0.0f;
+	const float SafeTriggerPressure = FMath::IsFinite(SwarmingTriggerPressure)
+		? FMath::Max(0.0001f, SwarmingTriggerPressure)
+		: 1.0f;
+	const float Denominator = FMath::Max(0.0001f, SafeTriggerPressure - SafeThreshold);
+	const float Alpha = FMath::Clamp((SwarmingPressure - SafeThreshold) / Denominator, 0.0f, 1.0f);
+	const float SafeExponent = FMath::IsFinite(QueenCellSpawnExponent)
+		? FMath::Max(0.0001f, QueenCellSpawnExponent)
+		: 1.0f;
+	const float DesiredCount = static_cast<float>(MaxQueenCellCountPerHive) * FMath::Pow(Alpha, SafeExponent);
+	return FMath::Clamp(FMath::RoundToInt(DesiredCount), 0, MaxQueenCellCountPerHive);
+}
+
+int32 ABeehive::CountQueenCellsOnActiveCombs() const
+{
+	int32 QueenCellCount = 0;
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		const ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+		if (CombActor)
+		{
+			QueenCellCount += CombActor->GetQueenCellCount();
+		}
+	}
+
+	return QueenCellCount;
+}
+
+void ABeehive::SpawnQueenCellsForSwarmingPressure()
+{
+	if (!bHasQueenBee || MaxQueenCellsSpawnPerBucket <= 0)
+	{
+		return;
+	}
+
+	const int32 DesiredQueenCellCount = CalculateDesiredQueenCellCount();
+	const int32 CurrentQueenCellCount = CountQueenCellsOnActiveCombs();
+	const int32 MissingCount = DesiredQueenCellCount - CurrentQueenCellCount;
+	if (MissingCount <= 0)
+	{
+		return;
+	}
+
+	const int32 SpawnCountThisBucket = FMath::Min(MissingCount, MaxQueenCellsSpawnPerBucket);
+	for (int32 SpawnIndex = 0; SpawnIndex < SpawnCountThisBucket; ++SpawnIndex)
+	{
+		ABeehiveCombActor* SelectedComb = SelectQueenCellSpawnComb();
+		if (!SelectedComb || !SelectedComb->TrySpawnQueenCell())
+		{
+			break;
+		}
+	}
+}
+
+ABeehiveCombActor* ABeehive::SelectQueenCellSpawnComb() const
+{
+	struct FWeightedQueenCellComb
+	{
+		ABeehiveCombActor* Comb = nullptr;
+		float Weight = 0.0f;
+	};
+
+	TArray<FWeightedQueenCellComb> Candidates;
+	float TotalWeight = 0.0f;
+	ABeehiveCombActor* LiftedCombActor = GetLiftedCombActor();
+
+	for (int32 Index = 0; Index < CombSlotComponents.Num(); ++Index)
+	{
+		const ABeehiveCombSlotActor* SlotActor = GetCombSlotActorByIndex(Index);
+		ABeehiveCombActor* CombActor = SlotActor ? SlotActor->GetPlacedCombActor() : nullptr;
+		if (!CombActor || CombActor == LiftedCombActor || !CombActor->CanSpawnQueenCell())
+		{
+			continue;
+		}
+
+		const float Weight = 1.0f / (1.0f + static_cast<float>(CombActor->GetQueenCellCount()));
+		FWeightedQueenCellComb Candidate;
+		Candidate.Comb = CombActor;
+		Candidate.Weight = Weight;
+		Candidates.Add(Candidate);
+		TotalWeight += Weight;
+	}
+
+	if (Candidates.IsEmpty() || TotalWeight <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	const float SelectionThreshold = FMath::FRandRange(0.0f, TotalWeight);
+	float CumulativeWeight = 0.0f;
+	for (const FWeightedQueenCellComb& Candidate : Candidates)
+	{
+		CumulativeWeight += Candidate.Weight;
+		if (SelectionThreshold <= CumulativeWeight)
+		{
+			return Candidate.Comb;
+		}
+	}
+
+	return Candidates.Last().Comb;
+}
+
 bool ABeehive::HasActiveSwarmRouteSession() const
 {
 	return bHasPendingSwarmClusterTransform || IsValid(ActiveSwarmRouteActor);
@@ -2192,6 +2402,7 @@ void ABeehive::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	EnsureDualSwarmChildActorClass();
 	EnsureQueenBeeChildActorClass();
+	SetSwarmingPressure(SwarmingPressure);
 	ApplyBeeSwarmSettings();
 	ApplyAttractionSwarmSettings();
 	RefreshCombLayoutAndParameters();

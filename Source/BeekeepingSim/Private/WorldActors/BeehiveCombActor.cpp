@@ -13,7 +13,9 @@
 #include "WorldActors/Beehive.h"
 #include "WorldActors/BeehiveCombPartFocusActionComponent.h"
 #include "WorldActors/BeehiveCombPlacementOccupantComponent.h"
+#include "WorldActors/PlacementOccupantComponent.h"
 #include "WorldActors/PlacementSlotRetrievePartFocusActionComponent.h"
+#include "WorldActors/QueenCellSpawnAreaComponent.h"
 #include "WorldActors/UncappingTable.h"
 #include "WorldActors/UncappingTableCombSlot.h"
 
@@ -23,6 +25,7 @@ namespace BeehiveCombActorNames
 	static const FName SpawnAmount(TEXT("User.SpawnAmount"));
 	static const FName TargetBeeCount(TEXT("User.TargetBeeCount"));
 	static const FName UncappingTableHoneyCombUseAreaTag(TEXT("Item.UseArea.UncappingTable.HoneyComb"));
+	static const FName QueenCellUseAreaTag(TEXT("Item.UseArea.Beehive.QueenCell"));
 	// Legacy direct disease path disabled; ABeehive::DiseaseVfxNiagara now represents disease.
 	// static const FName Disease(TEXT("User.Disease"));
 
@@ -162,6 +165,9 @@ ABeehiveCombActor::ABeehiveCombActor()
 	BackWaxCappingUseAreaMesh->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner);
 	BackWaxCappingUseAreaMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BackWaxCappingUseAreaMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+
+	QueenCellSpawnArea = CreateDefaultSubobject<UQueenCellSpawnAreaComponent>(TEXT("QueenCellSpawnArea"));
+	QueenCellSpawnArea->SetupAttachment(CombMesh);
 }
 
 void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
@@ -205,6 +211,12 @@ void ABeehiveCombActor::BeginPlay()
 		GetHoneyFillRatio(),
 		CurrentHoneyRipeness,
 		GetHoneyRipenessRatio());
+}
+
+void ABeehiveCombActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DestroyAllQueenCellRuntimeComponents();
+	Super::EndPlay(EndPlayReason);
 }
 
 int32 ABeehiveCombActor::GetFrontShareFromTotal(int32 Total)
@@ -1098,6 +1110,9 @@ void ABeehiveCombActor::ApplyCombShakeByRatioWithStrokeCount(float ReductionRati
 
 void ABeehiveCombActor::ApplyStateFromItemInstance(const UItemInstance* SourceItemInstance)
 {
+	DestroyAllQueenCellRuntimeComponents();
+	QueenCellPlacements.Reset();
+
 	if (!SourceItemInstance || !SourceItemInstance->HasBeehiveCombState())
 	{
 		EnsureCappingMaskState();
@@ -1149,8 +1164,111 @@ void ABeehiveCombActor::WriteStateToItemInstance(UItemInstance* TargetItemInstan
 		BackWaxCappingMask);
 }
 
+int32 ABeehiveCombActor::GetQueenCellCount() const
+{
+	return QueenCellPlacements.Num();
+}
+
+bool ABeehiveCombActor::HasQueenCells() const
+{
+	return GetQueenCellCount() > 0;
+}
+
+bool ABeehiveCombActor::CanSpawnQueenCell() const
+{
+	return MaxQueenCellCountPerComb > 0
+		&& QueenCellPlacements.Num() < MaxQueenCellCountPerComb
+		&& QueenCellSpawnArea
+		&& (QueenCellVisualMesh || QueenCellUseAreaMesh)
+		&& QueenCellSpawnArea->CanSampleQueenCellPlacement(QueenCellPlacements);
+}
+
+bool ABeehiveCombActor::TrySpawnQueenCell()
+{
+	if (!CanSpawnQueenCell())
+	{
+		return false;
+	}
+
+	FQueenCellPlacement Placement;
+	if (!QueenCellSpawnArea->TrySampleQueenCellPlacement(QueenCellPlacements, Placement))
+	{
+		return false;
+	}
+
+	if (!Placement.QueenCellId.IsValid())
+	{
+		Placement.QueenCellId = FGuid::NewGuid();
+	}
+
+	QueenCellPlacements.Add(Placement);
+	if (!CreateQueenCellRuntimeComponents(Placement))
+	{
+		QueenCellPlacements.RemoveAllSwap([&Placement](const FQueenCellPlacement& Candidate)
+		{
+			return Candidate.QueenCellId == Placement.QueenCellId;
+		});
+		DestroyQueenCellRuntimeComponents(Placement.QueenCellId);
+		return false;
+	}
+
+	RequestOwningHiveItemUseAreaRebuild();
+	return true;
+}
+
+bool ABeehiveCombActor::RemoveQueenCell(const FGuid& QueenCellId)
+{
+	if (!QueenCellId.IsValid())
+	{
+		return false;
+	}
+
+	const int32 RemovedCount = QueenCellPlacements.RemoveAllSwap([&QueenCellId](const FQueenCellPlacement& Placement)
+	{
+		return Placement.QueenCellId == QueenCellId;
+	});
+
+	if (RemovedCount <= 0)
+	{
+		return false;
+	}
+
+	DestroyQueenCellRuntimeComponents(QueenCellId);
+
+	if (ABeehive* OwningHive = ResolveOwningHive())
+	{
+		OwningHive->HandleQueenCellRemoved(this);
+	}
+
+	RequestOwningHiveItemUseAreaRebuild();
+	return true;
+}
+
+bool ABeehiveCombActor::ResolveQueenCellIdFromUseArea(const UItemUseAreaMeshComponent* UseArea, FGuid& OutQueenCellId) const
+{
+	OutQueenCellId = FGuid();
+	if (!UseArea)
+	{
+		return false;
+	}
+
+	if (const FGuid* FoundId = QueenCellUseAreaToId.Find(const_cast<UItemUseAreaMeshComponent*>(UseArea)))
+	{
+		OutQueenCellId = *FoundId;
+		return OutQueenCellId.IsValid();
+	}
+
+	return false;
+}
+
 bool ABeehiveCombActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const
 {
+	if (Component && QueenCellUseAreaToId.Contains(Component))
+	{
+		const ABeehive* BeehiveHost = Cast<ABeehive>(HostActor);
+		return BeehiveHost && BeehiveHost == ResolveOwningHive();
+	}
+
 	if (Component == FrontWaxCappingUseAreaMesh || Component == BackWaxCappingUseAreaMesh)
 	{
 		const bool bFrontFaceComponent = (Component == FrontWaxCappingUseAreaMesh);
@@ -1173,6 +1291,172 @@ bool ABeehiveCombActor::IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshC
 
 	const ABeehive* BeehiveHost = Cast<ABeehive>(HostActor);
 	return BeehiveHost && (BeehiveHost->GetLiftedCombActor() == this);
+}
+
+bool ABeehiveCombActor::CreateQueenCellRuntimeComponents(const FQueenCellPlacement& Placement)
+{
+	if (!QueenCellSpawnArea || !Placement.QueenCellId.IsValid())
+	{
+		return false;
+	}
+
+	UStaticMesh* UseAreaMesh = QueenCellUseAreaMesh ? QueenCellUseAreaMesh.Get() : QueenCellVisualMesh.Get();
+	if (!QueenCellVisualMesh && !UseAreaMesh)
+	{
+		return false;
+	}
+
+	const FString QueenCellIdString = Placement.QueenCellId.ToString(EGuidFormats::Digits);
+	USceneComponent* CellRoot = NewObject<USceneComponent>(this, *FString::Printf(TEXT("QueenCellRoot_%s"), *QueenCellIdString));
+	UStaticMeshComponent* Visual = NewObject<UStaticMeshComponent>(this, *FString::Printf(TEXT("QueenCellVisual_%s"), *QueenCellIdString));
+	UItemUseAreaMeshComponent* UseArea = NewObject<UItemUseAreaMeshComponent>(this, *FString::Printf(TEXT("QueenCellUseArea_%s"), *QueenCellIdString));
+	if (!CellRoot || !Visual || !UseArea)
+	{
+		return false;
+	}
+
+	AddInstanceComponent(CellRoot);
+	CellRoot->SetupAttachment(QueenCellSpawnArea);
+	CellRoot->SetRelativeTransform(BuildQueenCellSpawnAreaRelativeTransform(Placement));
+	CellRoot->RegisterComponent();
+
+	AddInstanceComponent(Visual);
+	Visual->SetupAttachment(CellRoot);
+	Visual->SetRelativeTransform(FTransform::Identity);
+	if (QueenCellVisualMesh)
+	{
+		Visual->SetStaticMesh(QueenCellVisualMesh);
+	}
+	if (QueenCellVisualMaterial)
+	{
+		Visual->SetMaterial(0, QueenCellVisualMaterial);
+	}
+	Visual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Visual->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Visual->RegisterComponent();
+
+	FGameplayTagContainer QueenCellUseAreaTags;
+	const FGameplayTag QueenCellUseAreaGameplayTag = FGameplayTag::RequestGameplayTag(BeehiveCombActorNames::QueenCellUseAreaTag, false);
+	if (QueenCellUseAreaGameplayTag.IsValid())
+	{
+		QueenCellUseAreaTags.AddTag(QueenCellUseAreaGameplayTag);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Missing gameplay tag '%s' for queen cell use-area."),
+			*BeehiveCombActorNames::QueenCellUseAreaTag.ToString());
+	}
+
+	AddInstanceComponent(UseArea);
+	UseArea->SetupAttachment(Visual);
+	UseArea->SetRelativeTransform(FTransform::Identity);
+	UseArea->SetStaticMesh(UseAreaMesh);
+	if (QueenCellUseAreaMaterial)
+	{
+		UseArea->SetMaterial(0, QueenCellUseAreaMaterial);
+	}
+	UseArea->SetAreaId(FName(*FString::Printf(TEXT("Beehive.QueenCell.%s"), *QueenCellIdString)));
+	UseArea->SetAreaTags(QueenCellUseAreaTags);
+	UseArea->SetEffectTargetPolicy(EItemUseAreaEffectTargetPolicy::ComponentOwner);
+	UseArea->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	UseArea->SetCollisionResponseToAllChannels(ECR_Ignore);
+	UseArea->RegisterComponent();
+
+	FQueenCellRuntimeComponents Components;
+	Components.Root = CellRoot;
+	Components.Visual = Visual;
+	Components.UseArea = UseArea;
+	QueenCellRuntimeComponents.Add(Placement.QueenCellId, Components);
+	QueenCellUseAreaToId.Add(UseArea, Placement.QueenCellId);
+	return true;
+}
+
+void ABeehiveCombActor::DestroyQueenCellRuntimeComponents(const FGuid& QueenCellId)
+{
+	FQueenCellRuntimeComponents Components;
+	if (QueenCellRuntimeComponents.RemoveAndCopyValue(QueenCellId, Components))
+	{
+		if (Components.UseArea)
+		{
+			QueenCellUseAreaToId.Remove(Components.UseArea);
+			Components.UseArea->DestroyComponent();
+		}
+
+		if (Components.Visual)
+		{
+			Components.Visual->DestroyComponent();
+		}
+
+		if (Components.Root)
+		{
+			Components.Root->DestroyComponent();
+		}
+		return;
+	}
+
+	for (auto It = QueenCellUseAreaToId.CreateIterator(); It; ++It)
+	{
+		if (It.Value() == QueenCellId)
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+void ABeehiveCombActor::DestroyAllQueenCellRuntimeComponents()
+{
+	TArray<FGuid> QueenCellIds;
+	QueenCellRuntimeComponents.GetKeys(QueenCellIds);
+	for (const FGuid& QueenCellId : QueenCellIds)
+	{
+		DestroyQueenCellRuntimeComponents(QueenCellId);
+	}
+
+	QueenCellRuntimeComponents.Reset();
+	QueenCellUseAreaToId.Reset();
+}
+
+FTransform ABeehiveCombActor::BuildQueenCellSpawnAreaRelativeTransform(const FQueenCellPlacement& Placement) const
+{
+	const FVector Extent = QueenCellSpawnArea ? QueenCellSpawnArea->GetUnscaledBoxExtent() : FVector::ZeroVector;
+	const float SurfaceX = Placement.Face == EBeehiveCombVisibleFace::Front ? Extent.X : -Extent.X;
+	const FVector RelativeLocation(SurfaceX, Placement.AreaLocalYZ.X, Placement.AreaLocalYZ.Y);
+	const float FaceYaw = Placement.Face == EBeehiveCombVisibleFace::Front ? 0.0f : 180.0f;
+	const FRotator RelativeRotation(0.0f, FaceYaw, Placement.LocalRotationDegrees);
+	const FVector RelativeScale(FMath::Max(0.01f, Placement.Scale));
+	return FTransform(RelativeRotation, RelativeLocation, RelativeScale);
+}
+
+ABeehive* ABeehiveCombActor::ResolveOwningHive() const
+{
+	for (AActor* Candidate = GetAttachParentActor(); Candidate; Candidate = Candidate->GetAttachParentActor())
+	{
+		if (ABeehive* Hive = Cast<ABeehive>(Candidate))
+		{
+			return Hive;
+		}
+	}
+
+	if (PlacementOccupant)
+	{
+		for (AActor* Candidate = PlacementOccupant->GetOwningPlacementSlotActor(); Candidate; Candidate = Candidate->GetAttachParentActor())
+		{
+			if (ABeehive* Hive = Cast<ABeehive>(Candidate))
+			{
+				return Hive;
+			}
+		}
+	}
+
+	return Cast<ABeehive>(GetOwner());
+}
+
+void ABeehiveCombActor::RequestOwningHiveItemUseAreaRebuild() const
+{
+	if (ABeehive* Hive = ResolveOwningHive())
+	{
+		Hive->RebuildItemUseAreaDescriptors();
+	}
 }
 
 #if WITH_EDITOR

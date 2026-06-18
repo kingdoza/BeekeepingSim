@@ -9,12 +9,16 @@ class UNiagaraComponent;
 class UMaterialInstanceDynamic;
 class USceneComponent;
 class UStaticMeshComponent;
+class UStaticMesh;
 class UItemUseAreaMeshComponent;
 class UCursorPartFocusActionComponent;
 class UPlacementOccupantComponent;
 class UPlacementSlotRetrievePartFocusActionComponent;
 class UItemInstance;
 class UTexture2D;
+class UMaterialInterface;
+class UQueenCellSpawnAreaComponent;
+class ABeehive;
 struct FBeehiveCombItemState;
 
 UENUM(BlueprintType)
@@ -22,6 +26,42 @@ enum class EBeehiveCombVisibleFace : uint8
 {
 	Front,
 	Back
+};
+
+USTRUCT(BlueprintType)
+struct BEEKEEPINGSIM_API FQueenCellPlacement
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell")
+	FGuid QueenCellId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell")
+	EBeehiveCombVisibleFace Face = EBeehiveCombVisibleFace::Front;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell")
+	FVector2D AreaLocalYZ = FVector2D::ZeroVector;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell")
+	float LocalRotationDegrees = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell")
+	float Scale = 1.0f;
+};
+
+USTRUCT()
+struct BEEKEEPINGSIM_API FQueenCellRuntimeComponents
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TObjectPtr<USceneComponent> Root;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> Visual;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UItemUseAreaMeshComponent> UseArea;
 };
 
 UENUM(BlueprintType)
@@ -41,6 +81,7 @@ public:
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -190,6 +231,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Placement")
 	void WriteStateToItemInstance(UItemInstance* TargetItemInstance) const;
 
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Cell")
+	int32 GetQueenCellCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Cell")
+	bool HasQueenCells() const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Cell")
+	bool CanSpawnQueenCell() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Queen Cell")
+	bool TrySpawnQueenCell();
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Queen Cell")
+	bool RemoveQueenCell(const FGuid& QueenCellId);
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Cell")
+	bool ResolveQueenCellIdFromUseArea(const UItemUseAreaMeshComponent* UseArea, FGuid& OutQueenCellId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Queen Cell")
+	UQueenCellSpawnAreaComponent* GetQueenCellSpawnArea() const { return QueenCellSpawnArea; }
+
 	virtual bool IsItemUseAreaMeshActive_Implementation(UItemUseAreaMeshComponent* Component, AActor* HostActor) const override;
 
 protected:
@@ -244,6 +306,24 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UItemUseAreaMeshComponent> BackWaxCappingUseAreaMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UQueenCellSpawnAreaComponent> QueenCellSpawnArea;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Visual")
+	TObjectPtr<UStaticMesh> QueenCellVisualMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Visual")
+	TObjectPtr<UMaterialInterface> QueenCellVisualMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+	TObjectPtr<UStaticMesh> QueenCellUseAreaMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+	TObjectPtr<UMaterialInterface> QueenCellUseAreaMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
+	int32 MaxQueenCellCountPerComb = 4;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Beehive|Comb", meta = (DisplayName = "Receive Comb Flipped"))
 	void ReceiveCombFlipped(EBeehiveCombVisibleFace NewVisibleFace);
 
@@ -279,6 +359,12 @@ private:
 	void ApplyHoneyVisualState();
 	void ApplyHoneyCappingVisualState();
 	void EnsureHoneyMaterialInstances();
+	bool CreateQueenCellRuntimeComponents(const FQueenCellPlacement& Placement);
+	void DestroyQueenCellRuntimeComponents(const FGuid& QueenCellId);
+	void DestroyAllQueenCellRuntimeComponents();
+	FTransform BuildQueenCellSpawnAreaRelativeTransform(const FQueenCellPlacement& Placement) const;
+	ABeehive* ResolveOwningHive() const;
+	void RequestOwningHiveItemUseAreaRebuild() const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
 	FVector2D PlaneSize = FVector2D(100.0f, 100.0f);
@@ -369,4 +455,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Beehive|Comb")
 	EBeehiveCombVisibleFace VisibleCombFace = EBeehiveCombVisibleFace::Front;
+
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Queen Cell")
+	TArray<FQueenCellPlacement> QueenCellPlacements;
+
+	UPROPERTY(Transient)
+	TMap<FGuid, FQueenCellRuntimeComponents> QueenCellRuntimeComponents;
+
+	TMap<TObjectPtr<UItemUseAreaMeshComponent>, FGuid> QueenCellUseAreaToId;
 };

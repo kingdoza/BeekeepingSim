@@ -28,6 +28,8 @@
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveDualSwarmActorCustomization.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h`
 - `Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp`
+- `Source/BeekeepingSim/Public/WorldActors/QueenCellSpawnAreaComponent.h`
+- `Source/BeekeepingSim/Private/WorldActors/QueenCellSpawnAreaComponent.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/UncappingTable.h`
 - `Source/BeekeepingSim/Private/WorldActors/UncappingTable.cpp`
 - `Source/BeekeepingSim/Public/WorldActors/UncappingTableCombSlot.h`
@@ -87,12 +89,13 @@
 
 ## Key Classes
 
-- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner + 벌통 여왕벌 capture source
+- `ABeehive`: anchored focus/cursor interaction 예시 actor + item-use-area first host(provider/scope) + `ABeehiveDualSwarmActor` child 소유 및 시간/벌 수 parameter 주입 + 위생 질병 VFX owner + 외부 BP 수동 분봉 테스트 시작 API owner + 벌통 여왕벌 capture source + swarming pressure/queen cell lifecycle owner
 - `ABeeSwarmClusterActor`: 분봉 본진 actor. 포획/잔여 벌 수 source of truth, 벌 수와 밀도에서 파생한 `InitialAliveRadius`/`AliveRadius`/`SphereRadius` cluster Niagara parameter, native preview focus hit proxy `FocusCollision`, 별도 queen child actor, FocusEngaged bee-carrier/queen-cage use-area를 소유한다. Route arrival spawn 직후에는 intro growth 동안 `AliveRadius`만 `0`에서 target radius로 성장하고, 최종 captured는 벌 전량 포획과 여왕벌 포획이 모두 끝난 상태다.
 - `AWorldOccupancySiteActor`: reusable world occupancy site. `Available`/`Reserved`/`Occupied` state, 예약자, 점유자, occupant spawn point, accepted occupant class, occupant destroyed auto-release 옵션을 소유한다.
 - `ABeeSwarmClusterSiteActor`: 실제 colony swarming 목적지 site. `ABeeSwarmClusterActor`를 기본 occupant로 수용하며 벌통 `SwarmExitPoint` 위치 기준 거리 weight를 계산한다.
 - `ABeehiveSwarmRouteActor`: 벌통 입구에서 요청 target까지 runtime spline route를 구성하는 `ABeeSplineSwarmActor` subclass. 기존 spline swarm Niagara parameter 계약을 재사용하며, cluster 생성은 소유하지 않는다.
-- `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state를 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
+- `ABeehiveCombActor`: 벌통/작업대 소비장 mesh + 양면 Niagara(`FrontFaceBeeNiagara`, `BackFaceBeeNiagara`) + 꿀 양/숙성도 상태 + face별 wax capping mask/use-area/visual state + runtime queen cell component group을 소유하는 actor (`BeeDiseaseValue` legacy API 유지)
+- `UQueenCellSpawnAreaComponent`: comb-local `+X/-X` 표면과 `Y/Z` edge band를 샘플링하는 `UBoxComponent` subclass. queen cell placement를 world position이 아니라 face와 area-local YZ로 생성한다.
 - `AUncappingTable`: anchored cursor FocusEngaged, PartFocus scope/provider, item-use-area scope/provider, 단일 comb slot child actor를 조합하는 밀도 작업대 native WorldActor
 - `AUncappingTableCombSlot`: 작업대 전용 comb slot. `ABeehiveCombActor`만 accept하고, place 후 item instance state를 적용하며, occupied comb PartFocus descriptor를 작업대 전용 action으로 직접 제공한다. 작업대 comb PartFocus 잡기 상태 source of truth(`bCombPartFocusEngaged`)를 소유하고, 잡기/놓기/강제 종료 Blueprint hook을 제공한다.
 - `UCombUncappingPartFocusActionComponent`: 작업대 소비장 horizontal drag flip과 PartFocus secondary retrieve bridge를 담당하는 action component. 벌통 lift/shake/lid tag 정책은 포함하지 않는다.
@@ -125,7 +128,7 @@
 - `UPlacedItemRemainingVisualComponent`: 배치 잔량 비주얼 반영용 base component.
 - `UPlacedItemAreaScaleRemainingVisualComponent`: 화분떡용 XY 면적 scale 비주얼 component (`sqrt(Ratio), sqrt(Ratio), 1`).
 - `ABeehiveCombSlotActor`: comb 전용 `AItemPlacementSlotActor` subclass. comb class 검증, beehive refresh 요청, comb slot 정책을 캡슐화한다.
-- `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TotalTargetBeeCount`, queen attach)을 구현하는 occupant subclass다.
+- `UBeehiveCombPlacementOccupantComponent`: comb 회수 가능 조건(`TotalTargetBeeCount`, queen attach, queen cell 없음)을 구현하는 occupant subclass다.
 - `FBeehiveDualSwarmActorCustomization` / `FBeehiveDualSwarmNiagaraComponentCustomization`: editor-only details customization. `OverrideParameters` 같은 C++ 적용값의 details 노출을 숨긴다.
 
 ## Composition
@@ -152,6 +155,8 @@
 - `BeeSplineSwarmActorClass` (`TSubclassOf<ABeehiveDualSwarmActor>`)로 child class 지정
 - `SwarmClusterActorClass`, `SwarmRouteActorClass`, `SwarmClusterSpawnAmount`, `SwarmClusterBeeDensityPerCubicMeter`(기본 `8000.0 bees/m^3`), `SwarmRouteParameters`, `bDestroyPreviousTestSwarmOnStart`
 - colony-impact swarming 설정: `ColonySwarmingBeeLossRatioMin=0.3`, `ColonySwarmingBeeLossRatioMax=0.6`
+- swarming pressure 설정: `SwarmingPressure=0.0`, `SwarmingLifecycleBucketMinutes=30`, `bApplySwarmingLifecycleOnBeginPlayBucket=false`, `ComfortBeeCountPerComb=100.0`, `PopulationStartRatio=0.7`, `PopulationTriggerRatio=1.1`, `QueenCellSpawnPressureThreshold=0.7`, `SwarmingTriggerPressure=1.0`, `QueenCellRemovalPressureDelta=0.1`
+- queen cell hive-wide target 설정: `MaxQueenCellCountPerHive=10`, `QueenCellSpawnExponent=1.5`, `MaxQueenCellsSpawnPerBucket=2`
 - transient `ActiveSwarmClusterActor`, `ActiveSwarmRouteActor`, `PendingSwarmClusterSite`, `ActiveSwarmClusterSite`, `ActiveSwarmClusterSpawnAmount`, pending cluster transform, active route arrival/emission timer state
 - 분봉 테스트 API:
   - `BeginSwarmingAtTransform(const FTransform& TargetTransform)`
@@ -165,10 +170,12 @@
 - 분봉 route 시작 성공 flow: 이전 test swarm session/timer 정리 옵션 처리(`bDestroyPreviousTestSwarmOnStart=false`이면 active route session을 덮어쓰지 않고 실패) -> session cluster spawn amount 결정 -> route spawn at `SwarmExitPoint` -> `ConfigureRoute(SwarmExitPoint, TargetTransform.Location)` -> `ApplyExternalSwarmParameters(SwarmRouteParameters)` -> route arrival/emission stop/destroy timer 설정 -> true 반환
 - colony-impact site selection flow: world의 `ABeeSwarmClusterSiteActor` 중 `IsAvailable()`이고 `CalculateSelectionWeightForHive(this) > 0`인 후보를 weighted random으로 선택한다. 선택 site는 route start 전에 `TryReserve(this)`로 예약하고, route start 실패 시 commit 없이 reservation을 release한다.
 - colony-impact commit timing: route actor spawn/config/parameter/timing 계산 성공 후 `SetColonyBeeCount(Max(0, ColonyBeeCount - OutgoingBeeCount))`와 `SetHasQueenBee(false)`를 호출한다. Commit 이후 route arrival cluster spawn 또는 site occupation 실패가 발생해도 queen/bee count rollback은 수행하지 않는다.
+- colony-impact swarming 성공 시 `SwarmingPressure`는 `0.0f`로 리셋된다.
 - route emission duration: `ActiveSwarmClusterSpawnAmount / SwarmRouteParameters.SpawnAmount`. 테스트 세션은 authored `SwarmClusterSpawnAmount`, colony-impact 세션은 차감된 `OutgoingBeeCount`를 사용한다.
 - route arrival flow: pending target transform에 cluster spawn -> `InitializeSwarmClusterFromDensityWithIntroGrowth(ActiveSwarmClusterSpawnAmount, SwarmClusterBeeDensityPerCubicMeter, RouteEmissionDurationSeconds)` -> pending site가 있으면 `TryOccupy(this, ClusterActor)` 후 active site로 이동 -> `ReceiveSwarmingStarted`
 - `GetActiveSwarmClusterActor()`는 route arrival 전까지 null이며, `ReceiveSwarmingStarted`는 cluster가 실제 생성된 뒤 호출된다.
 - 기존 분봉 테스트 시작 API는 `ColonyBeeCount`, `QueenBeeChildActor`, active comb bee count/target count, bucket subscription을 변경하지 않는다.
+- 기존 분봉 테스트 시작 API는 `SwarmingPressure`와 queen cell state도 변경하지 않는다.
 - colony-impact 분봉은 `SetColonyBeeCount()`를 bee-count mutation path로 사용해 dual swarm, attraction swarm, active comb spawn amount를 갱신하고 target ratio를 보존한다. `ReduceAllCombTargetBeeCountsByConfiguredRatio()`는 호출하지 않는다.
 - 왕롱 포획 API:
   - `HasQueenBee()`
@@ -500,6 +507,7 @@
 - `UStaticMeshComponent` 2개 (`FrontHoneyPlane`, `BackHoneyPlane`)
 - `UStaticMeshComponent` 2개 (`FrontWaxCappingPlane`, `BackWaxCappingPlane`)
 - `UItemUseAreaMeshComponent` 3개 (`BeeBrushUseAreaMesh`, `FrontWaxCappingUseAreaMesh`, `BackWaxCappingUseAreaMesh`)
+- `UQueenCellSpawnAreaComponent` 1개 (`QueenCellSpawnArea`)
 - visible face 상태: `EBeehiveCombVisibleFace` (`Front`/`Back`)
 - flip API: `FlipCombFace`, `SetVisibleCombFace`, `GetVisibleCombFace`
 - 방향 포함 flip API: `FlipCombFaceWithDirection(EBeehiveCombFlipDirection)`
@@ -520,6 +528,17 @@
   - capping plane 표시 조건은 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다.
   - `TryRegenerateWaxCapping()`은 `WaxCappingRegenerationRipenessThreshold` 이상으로 숙성된 full honey 소비장의 제거된 face mask를 face 단위로 `255` 복원한다.
   - `BeeDiseaseValue`는 `0..1` clamp된 legacy 런타임 시각값이며, front/back Niagara 직접 주입 경로는 주석처리되어 있다.
+  - queen cell placement는 `FQueenCellPlacement` 배열로 runtime에만 보관한다. 저장 필드는 cell id, `EBeehiveCombVisibleFace`, spawn area local YZ, local rotation, scale이다.
+  - queen cell runtime 표현은 `QueenCellRoot_N -> QueenCellVisual -> QueenCellUseArea` component group이며 actor가 아니다.
+  - queen cell visual mesh/material과 use-area mesh/material은 comb Blueprint child에서 지정한다. `QueenCellUseAreaMesh`가 없으면 visual mesh fallback을 사용할 수 있다.
+  - queen cell use-area tag는 `Item.UseArea.Beehive.QueenCell`이고 effect target은 component owner인 `ABeehiveCombActor`다.
+  - queen cell은 `FBeehiveCombItemState`에 저장하지 않는다. `ApplyStateFromItemInstance()`는 runtime queen cell component/state를 비워 item state와 섞이지 않게 한다.
+- `UQueenCellSpawnAreaComponent` axis contract:
+  - local `X`: comb thickness/normal
+  - local `+X`: front surface
+  - local `-X`: back surface
+  - local `Y/Z`: rectangular surface coordinates
+  - bottom/left/right/top edge weight로 edge band를 고르고, center 영역과 `MinQueenCellSpacingCm` 위반 위치를 거부한다.
 - 분배 규칙:
   - `FrontShare = (Total + 1) / 2`
   - `BackShare = Total / 2`
@@ -604,7 +623,9 @@
 - `ABeehive`의 queen 위치 갱신도 Environment actor 직접 참조 없이 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트로만 수행한다.
 - `ABeehive`의 colony population 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`ColonyPopulation`)로만 수행한다.
 - `ABeehive`의 honey ripeness + production 갱신도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`HoneyProduction`)로만 수행한다.
+- `ABeehive`의 swarming pressure/queen cell lifecycle도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`SwarmingLifecycle`, 기본 30분)로만 수행한다.
 - `ABeehive`의 pollen patty 고정 소모도 동일하게 `IGameTimeBucketListener` + `UGameTimeBucketSubsystem` 이벤트(`PollenPattyConsumption`)로 수행한다.
+- lifecycle 관련 같은 시간 경계 처리 순서는 `HoneyProduction` -> `ColonyPopulation` -> `SwarmingLifecycle` -> `PollenPattyConsumption`이다. 따라서 같은 boundary에서는 population 변화가 swarming pressure 계산에 먼저 반영된다.
 - 같은 60분 경계에서는 subscription 순서를 `HoneyProduction` 먼저, `ColonyPopulation` 다음으로 두어 꿀 생산이 기존 벌 수 기준으로 선행 처리된다.
 - 같은 경계에서 `ColonyPopulation`과 `PollenPattyConsumption`이 함께 발생하면 population update가 먼저 실행되고, 이후 consumption이 실행된다.
 - pollen patty 소모량은 `PollenPattyConsumptionAmountPerBucket` 고정값이며, bucket 길이/이벤트 횟수/벌 수/온도에 따라 스케일하지 않는다.
@@ -627,12 +648,25 @@
   - `ItemEggLayingBonus`는 증가 항 전용이며, `ItemLifespanBonus`와 `TemperatureScore`는 비례 감소량과 절대 감소량을 더한 전체 감소 항에 적용된다.
   - `SanitationDiseaseThreshold=0.0f`이면 `DiseaseRatio=0`이고, `MaxSanitationBeeDecreaseMultiplier=1.0f`이면 위생 기반 추가 감소가 없다.
   - 감소량은 bucket 시작 시점의 기존 `ColonyBeeCount`를 초과하지 않으며, `ItemLifespanBonus`와 `TemperatureScore`는 기존 `1.0f` placeholder 정책을 유지한다.
+- swarming pressure 계산식:
+  - `ComfortBeeCapacity = ActiveCombCount * ComfortBeeCountPerComb`
+  - `PopulationRatio = ColonyBeeCount / ComfortBeeCapacity`
+  - `TargetPressure = Max(0, (PopulationRatio - PopulationStartRatio) / Max(0.0001, PopulationTriggerRatio - PopulationStartRatio))`
+  - queen이 없거나 active comb가 없거나 capacity가 유효하지 않으면 target은 0이고 queen cell 생성/colony swarming trigger는 실행하지 않는다.
+- queen cell target count 계산식:
+  - `Alpha = Clamp((SwarmingPressure - QueenCellSpawnPressureThreshold) / Max(0.0001, SwarmingTriggerPressure - QueenCellSpawnPressureThreshold), 0..1)`
+  - `DesiredQueenCellCount = RoundToInt(MaxQueenCellCountPerHive * Pow(Alpha, QueenCellSpawnExponent))`
+  - target은 hive-wide count이며 comb별 target이 아니다.
+  - 현재 count는 active comb 전체의 `GetQueenCellCount()` 합계다.
+  - 부족분은 bucket당 `MaxQueenCellsSpawnPerBucket`까지만 생성한다.
+  - 생성 후보 comb weight는 `1 / (1 + CurrentQueenCellCountOnComb)`이며, queen cell이 적은 comb가 더 자주 선택된다.
+  - empty slot, lifted comb, spawn area가 없는 comb, per-comb cap에 도달한 comb, edge-band sample을 찾지 못하는 comb는 생성 후보에서 제외된다.
 - queen이 붙은 comb가 lifted 상태가 되면 queen은 comb attach 상태를 유지하며 함께 이동하고, 다음 위치 갱신 후보에서만 lifted slot이 제외된다.
 - honey ripeness는 `HoneyProduction` bucket에서 생산 전에 이미 full 상태였던 comb에만 증가한다. 같은 bucket에서 production으로 처음 full이 된 comb는 다음 bucket부터 숙성된다.
 - honey 분배는 랜덤 가중치 정규화(`Weight / WeightSum`)를 사용하며, comb가 최대 꿀량에 도달해 생긴 초과분은 재분배하지 않고 버린다.
 - Pickup은 획득 성공 시 destroy되고, 실패 시 actor를 유지한다.
 - StorageBox는 storage 상태를 `UStorageBoxComponent`가 소유하고, UI lifecycle은 `UStorageBoxFocusActionComponent`가 처리한다.
-- placement/comb 회수 prompt availability는 실제 회수 경로의 조건 helper를 공유한다. 예: `CanRetrievePlacementOccupant`, comb 회수 조건(`TotalTargetBeeCount == 0`, queen 미부착), hotbar acquire dry-run 결과를 조합한다.
+- placement/comb 회수 prompt availability는 실제 회수 경로의 조건 helper를 공유한다. 예: `CanRetrievePlacementOccupant`, comb 회수 조건(`TotalTargetBeeCount == 0`, queen 미부착, `QueenCellCount == 0`), hotbar acquire dry-run 결과를 조합한다.
 - 회수 조건 실패는 prompt entry 제거가 아니라 `FFocusPromptEntry::bEnabled=false` disabled 표시 대상이 될 수 있다.
 - 뚜껑/소비장 같은 토글형 PartFocus primary action name은 공통 `UCursorPartFocusActionComponent`의 `PrimaryPromptActionText`/`EngagedPrimaryPromptActionText`를 사용하며, 표시 source는 `ResolvePrimaryPromptActionText()`를 따른다.
   - 뚜껑 기본 authoring: `열기` / `닫기`
@@ -779,8 +813,8 @@
   - active comb는 slot의 `GetPlacedCombActor()`로 조회
   - honey/colony/queen/lift 관련 comb 순회는 placed comb 기준으로 동작
 - 소비장 회수 조건:
-  - `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
-  - `TotalTargetBeeCount == 0` 및 `ABeehive::IsQueenBeeAttachedToComb(...) == false`일 때만 회수 가능
+- `UBeehiveCombPlacementOccupantComponent`가 회수 가능 정책을 구현
+  - `TotalTargetBeeCount == 0`, `ABeehive::IsQueenBeeAttachedToComb(...) == false`, `QueenCellCount == 0`일 때만 회수 가능
   - prompt availability와 실제 secondary retrieve는 같은 회수 가능 조건을 공유해야 한다.
 
 ## Update 2026-05-31 (Placed Item Durability Remaining)
@@ -1014,3 +1048,15 @@
 - `ActiveSwarmClusterSpawnAmount`가 route timing과 arrival cluster initialization의 session bee count다. 테스트 세션은 `SwarmClusterSpawnAmount`, colony-impact 세션은 `OutgoingBeeCount`를 저장한다.
 - route arrival cluster spawn 성공 후 pending site는 `TryOccupy(this, ClusterActor)`로 occupied가 되고 `ActiveSwarmClusterSite`로 이동한다. route start 실패는 commit 전에 reservation을 release하고, commit 이후 cluster spawn/occupation 실패는 reservation을 release하되 queen/bee count rollback은 수행하지 않는다.
 - 이번 구현은 source hive queen state transfer를 보류한다. 실제 colony swarming으로 source queen은 제거되지만, spawned swarm queen은 기존 `SwarmQueenBeeActorClass` defaults로 생성된다.
+
+## Update 2026-06-18 (Swarming Pressure + Queen Cells)
+
+- `ABeehive`에 population-derived `SwarmingPressure`와 `SwarmingLifecycle` bucket을 추가했다. 기본 bucket은 30분이고, same-boundary lifecycle 순서는 `HoneyProduction` -> `ColonyPopulation` -> `SwarmingLifecycle` -> `PollenPattyConsumption`이다.
+- pressure target은 `ComfortBeeCapacity = ActiveCombCount * ComfortBeeCountPerComb`, `PopulationRatio = ColonyBeeCount / ComfortBeeCapacity`, `TargetPressure = Max(0, (PopulationRatio - PopulationStartRatio) / Max(0.0001, PopulationTriggerRatio - PopulationStartRatio))`로 계산한다.
+- queen cell target은 hive-wide count이며 `Alpha = Clamp((SwarmingPressure - QueenCellSpawnPressureThreshold) / Max(0.0001, SwarmingTriggerPressure - QueenCellSpawnPressureThreshold), 0..1)`, `DesiredQueenCellCount = RoundToInt(MaxQueenCellCountPerHive * Pow(Alpha, QueenCellSpawnExponent))`를 사용한다.
+- missing queen cell은 bucket당 `MaxQueenCellsSpawnPerBucket`까지만 생성한다. 후보 active comb는 lifted 상태, per-comb cap, spawn area/sample 불가 조건을 제외하고, weight `1 / (1 + CurrentQueenCellCountOnComb)`로 weighted random 선택한다.
+- `UQueenCellSpawnAreaComponent : UBoxComponent`를 추가했다. local `+X/-X`를 front/back surface로, `Y/Z`를 rectangular surface coordinates로 사용하고 edge-band 샘플만 허용한다.
+- queen cell은 `ABeehiveCombActor` runtime component group이지 actor가 아니다. visual/use-area mesh/material은 comb Blueprint child에서 지정한다.
+- `UQueenCellRemovalUseAction`은 `Item.UseArea.Beehive.QueenCell` hit component에서 cell id를 resolve해 제거하고, 제거 성공 시 owning hive pressure를 `QueenCellRemovalPressureDelta`만큼 낮춘다. 실제 item DataAsset 연결은 BP/DataAsset 작업이다.
+- queen cell은 `FBeehiveCombItemState`에 저장하지 않으며, 존재하는 동안 comb retrieval을 막는다.
+- 실제 `BeginColonySwarming()` 성공 시 `SwarmingPressure`는 `0.0f`로 리셋된다. `BeginSwarmingAtTransform`/`BeginSwarmingAtActor` 테스트 API는 state-neutral 상태를 유지한다.

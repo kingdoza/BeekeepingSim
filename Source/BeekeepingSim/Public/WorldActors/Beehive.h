@@ -117,6 +117,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
 	void RebuildCursorPartFocusDescriptors();
 
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Item Use Area")
+	void RebuildItemUseAreaDescriptors();
+
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Part Focus")
 	void SetLidOpenForPartFocus(bool bOpen);
 
@@ -173,6 +176,17 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Beehive|Colony Population")
 	void ApplyColonyPopulationUpdate();
+
+	UFUNCTION(BlueprintPure, Category = "Beehive|Swarming Pressure")
+	float GetSwarmingPressure() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Pressure")
+	void SetSwarmingPressure(float NewPressure);
+
+	UFUNCTION(BlueprintCallable, Category = "Beehive|Swarming Pressure")
+	void ApplySwarmingLifecycleUpdate();
+
+	void HandleQueenCellRemoved(ABeehiveCombActor* SourceComb);
 
 	UFUNCTION(BlueprintPure, Category = "Beehive|Colony Population")
 	float CalculateBeeIncreaseAmount() const;
@@ -376,6 +390,42 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population Time")
 	bool bApplyColonyPopulationOnBeginPlayBucket = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure")
+	float SwarmingPressure = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "1", ClampMax = "1440"))
+	int32 SwarmingLifecycleBucketMinutes = 30;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure")
+	bool bApplySwarmingLifecycleOnBeginPlayBucket = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+	float ComfortBeeCountPerComb = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+	float PopulationStartRatio = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0001"))
+	float PopulationTriggerRatio = 1.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+	float QueenCellSpawnPressureThreshold = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0001"))
+	float SwarmingTriggerPressure = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Swarming Pressure", meta = (ClampMin = "0.0"))
+	float QueenCellRemovalPressureDelta = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
+	int32 MaxQueenCellCountPerHive = 10;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0.0001"))
+	float QueenCellSpawnExponent = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
+	int32 MaxQueenCellsSpawnPerBucket = 2;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Colony Population", meta = (ClampMin = "0.0"))
 	float BeeIncreaseCoefficient = 1.0f;
 
@@ -542,6 +592,11 @@ private:
 	void StopActiveSwarmRouteEmission();
 	void DestroyActiveSwarmRouteAfterTravel();
 	void NotifySwarmingStartFailed();
+	float CalculateSwarmingPressureTarget() const;
+	int32 CalculateDesiredQueenCellCount() const;
+	int32 CountQueenCellsOnActiveCombs() const;
+	void SpawnQueenCellsForSwarmingPressure();
+	ABeehiveCombActor* SelectQueenCellSpawnComb() const;
 	void RefreshHiveDiseaseVisuals();
 	void ApplyDiseaseToCombActors(float DiseaseRatio);
 	void ApplyDiseaseToQueenBee(float DiseaseRatio);
