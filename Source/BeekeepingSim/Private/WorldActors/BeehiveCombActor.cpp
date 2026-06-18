@@ -67,6 +67,24 @@ namespace BeehiveCombActorNames
 #endif
 		return CurrentMaterial;
 	}
+
+	static float SanitizeQueenCellScaleComponent(float ScaleComponent)
+	{
+		if (!FMath::IsFinite(ScaleComponent))
+		{
+			return 1.0f;
+		}
+
+		return FMath::Max(0.01f, ScaleComponent);
+	}
+
+	static FVector SanitizeQueenCellScaleVector(const FVector& Scale)
+	{
+		return FVector(
+			SanitizeQueenCellScaleComponent(Scale.X),
+			SanitizeQueenCellScaleComponent(Scale.Y),
+			SanitizeQueenCellScaleComponent(Scale.Z));
+	}
 }
 
 ABeehiveCombActor::ABeehiveCombActor()
@@ -1373,7 +1391,10 @@ bool ABeehiveCombActor::CreateQueenCellRuntimeComponents(const FQueenCellPlaceme
 
 	AddInstanceComponent(UseArea);
 	UseArea->SetupAttachment(Visual);
-	UseArea->SetRelativeTransform(FTransform::Identity);
+	UseArea->SetRelativeTransform(FTransform(
+		FRotator::ZeroRotator,
+		FVector::ZeroVector,
+		BeehiveCombActorNames::SanitizeQueenCellScaleVector(QueenCellUseAreaScaleMultiplier)));
 	UseArea->SetStaticMesh(UseAreaMesh);
 	if (QueenCellUseAreaMaterial)
 	{
@@ -1448,7 +1469,13 @@ FTransform ABeehiveCombActor::BuildQueenCellSpawnAreaRelativeTransform(const FQu
 	const float FaceYaw = Placement.Face == EBeehiveCombVisibleFace::Front ? 0.0f : 180.0f;
 	const FRotator RelativeRotation(0.0f, FaceYaw, Placement.LocalRotationDegrees);
 	const FVector RelativeScale(FMath::Max(0.01f, Placement.Scale));
-	return FTransform(RelativeRotation, RelativeLocation, RelativeScale);
+	const FTransform BaseTransform(RelativeRotation, RelativeLocation, RelativeScale);
+
+	FTransform SanitizedQueenCellSpawnRelativeTransform = QueenCellSpawnRelativeTransform;
+	SanitizedQueenCellSpawnRelativeTransform.SetScale3D(
+		BeehiveCombActorNames::SanitizeQueenCellScaleVector(SanitizedQueenCellSpawnRelativeTransform.GetScale3D()));
+
+	return SanitizedQueenCellSpawnRelativeTransform * BaseTransform;
 }
 
 ABeehive* ABeehiveCombActor::ResolveOwningHive() const

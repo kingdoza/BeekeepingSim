@@ -533,6 +533,10 @@
   - queen cell placement는 `FQueenCellPlacement` 배열로 runtime에만 보관한다. 저장 필드는 cell id, `EBeehiveCombVisibleFace`, spawn area local YZ, local rotation, scale이다.
   - queen cell runtime 표현은 `QueenCellRoot_N -> QueenCellVisual -> QueenCellUseArea` component group이며 actor가 아니다.
   - queen cell visual mesh/material과 use-area mesh/material은 comb Blueprint child에서 지정한다. `QueenCellUseAreaMesh`가 없으면 visual mesh fallback을 사용할 수 있다.
+  - `QueenCellSpawnRelativeTransform`은 comb Blueprint authoring-time offset이며 spawned `QueenCellRoot`에 적용한다. sampled base transform은 `UQueenCellSpawnAreaComponent`가 제공한 face, area-local YZ, local rotation, scale에서 오고, root transform은 `QueenCellSpawnRelativeTransform * BaseTransform` 순서로 합성한다.
+  - `FQueenCellPlacement`는 `QueenCellSpawnRelativeTransform`을 저장하지 않는다. runtime spawn 뒤 transform 변경 refresh는 범위 밖이며 identity 기본값은 기존 placement를 그대로 보존한다.
+  - `QueenCellVisual`은 root 아래 identity relative transform을 유지한다.
+  - `QueenCellUseArea`는 visual 아래 location/rotation identity와 `QueenCellUseAreaScaleMultiplier` relative scale을 사용한다. 최종 hit/use 영역 scale은 sampled placement scale, `QueenCellSpawnRelativeTransform` scale, `QueenCellUseAreaScaleMultiplier`가 함께 곱해진 결과다. 기본값 `FVector::OneVector`는 기존 visual/use-area 정렬을 유지한다.
   - queen cell use-area tag는 `Item.UseArea.Beehive.QueenCell`이고 effect target은 component owner인 `ABeehiveCombActor`다.
   - queen cell은 `FBeehiveCombItemState`에 저장하지 않는다. `ApplyStateFromItemInstance()`는 runtime queen cell component/state를 비워 item state와 섞이지 않게 한다.
 - `UQueenCellSpawnAreaComponent` axis contract:
@@ -1062,6 +1066,7 @@
 - missing queen cell은 bucket당 `MaxQueenCellsSpawnPerBucket`까지만 생성한다. 후보 active comb는 lifted 상태, per-comb cap, spawn area/sample 불가 조건을 제외하고, weight `1 / (1 + CurrentQueenCellCountOnComb)`로 weighted random 선택한다.
 - `UQueenCellSpawnAreaComponent : UBoxComponent`를 추가했다. local `+X/-X`를 front/back surface로, `Y/Z`를 rectangular surface coordinates로 사용하고 edge-band 샘플만 허용한다.
 - queen cell은 `ABeehiveCombActor` runtime component group이지 actor가 아니다. visual/use-area mesh/material은 comb Blueprint child에서 지정한다.
+- `ABeehiveCombActor::QueenCellSpawnRelativeTransform`은 authoring-time offset으로 spawned `QueenCellRoot`에 적용한다. base placement는 spawn area sample의 face + area-local YZ + local rotation + scale이며 `QueenCellSpawnRelativeTransform * BaseTransform` 순서로 합성한다. `FQueenCellPlacement`는 offset을 저장하지 않는다. `QueenCellVisual`은 identity child이고, `QueenCellUseArea`는 `QueenCellUseAreaScaleMultiplier`를 추가 relative scale로 적용한다. spawn 이후 offset 변경 refresh는 지원하지 않고 identity/one-vector defaults는 기존 동작과 동일하다.
 - `UQueenCellRemovalUseAction`은 `Item.UseArea.Beehive.QueenCell` hit component에서 cell id를 resolve해 제거하고, 제거 성공 시 owning hive pressure를 `QueenCellRemovalPressureDelta`만큼 낮춘다. 실제 item DataAsset 연결은 BP/DataAsset 작업이다.
 - queen cell은 `FBeehiveCombItemState`에 저장하지 않으며, 존재하는 동안 comb retrieval을 막는다.
 - 실제 `BeginColonySwarming()` 성공 시 `SwarmingPressure`는 `0.0f`로 리셋된다. `BeginSwarmingAtTransform`/`BeginSwarmingAtActor` 테스트 API는 state-neutral 상태를 유지한다.

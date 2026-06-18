@@ -1,17 +1,20 @@
-# Beehive comb Blueprint editor delay 리뷰 프롬프트
+# Queen cell spawn relative transform 리뷰 프롬프트
 
 ## 리뷰 목표
 
-`ABeehiveCombActor`의 wax capping mask runtime state가 comb Blueprint class defaults에 직렬화되거나 editor construction/details-change 경로에서 transient texture allocation/update를 유발하지 않는지 검토한다.
+`ABeehiveCombActor`에 추가된 `QueenCellSpawnRelativeTransform`과 `QueenCellUseAreaScaleMultiplier`가 queen cell sampled placement 위에 authoring-time root offset과 use-area-only scale로만 적용되고, 기존 queen cell lifecycle/removal/retrieval/persistence 계약을 바꾸지 않는지 검토한다.
 
 기대 결과:
 
-- `RuntimeCappingMaskWidth`, `RuntimeCappingMaskHeight`, `RuntimeFrontWaxCappingMask`, `RuntimeBackWaxCappingMask`는 transient runtime actor state다.
-- 기존 serialized `CappingMaskWidth`, `CappingMaskHeight`, `FrontWaxCappingMask`, `BackWaxCappingMask` class-default payload와 연결되지 않도록 Core Redirect 없이 runtime property 이름을 분리한다.
-- `FBeehiveCombItemState`가 inventory/item 이동 사이의 capping mask persistence path로 유지된다.
-- editor `OnConstruction()`/`PostEditChangeProperty()` 경로는 scalar sanitize, Niagara parameter, honey visual safe update를 유지하되 capping mask texture refresh를 피한다.
-- runtime capping/uncapping, regeneration, item state restore/write, material parameter `WaxCappingMask` 적용은 기존 동작을 유지한다.
-- Public Blueprint API rename/delete, UCLASS/USTRUCT/UENUM rename, Core Redirect 변경이 없어야 한다.
+- `QueenCellSpawnRelativeTransform`은 `EditAnywhere, BlueprintReadOnly`, category `Beehive|Queen Cell|Spawn`, default `FTransform::Identity`다.
+- `QueenCellUseAreaScaleMultiplier`는 `EditAnywhere, BlueprintReadOnly`, category `Beehive|Queen Cell|Use Area`, default `FVector::OneVector`다.
+- `FQueenCellPlacement` fields와 의미는 변경되지 않는다.
+- sampled base placement는 계속 `UQueenCellSpawnAreaComponent`가 만든 face + area-local YZ + local rotation + scale이다.
+- spawned `QueenCellRoot` relative transform은 `SanitizedQueenCellSpawnRelativeTransform * BaseTransform` 순서로 합성된다.
+- `QueenCellVisual`은 identity relative transform child로 남는다.
+- `QueenCellUseArea`는 identity location/rotation과 `QueenCellUseAreaScaleMultiplier` relative scale을 사용한다.
+- runtime transform 변경 후 already-spawned queen cell refresh는 구현하지 않는다.
+- Content asset, `Config/DefaultEngine.ini`, Core Redirect, Blueprint API rename/delete가 없어야 한다.
 
 ## 반드시 읽을 문서
 
@@ -31,57 +34,62 @@
 
 ## 중점 리뷰 항목
 
-### Runtime state serialization
+### Authoring property
 
-- 아래 properties가 `VisibleInstanceOnly, Transient`인지 확인한다.
+- `ABeehiveCombActor`에 아래 property가 queen cell visual/use-area authoring property 근처에 있는지 확인한다.
 
 ```cpp
-RuntimeCappingMaskWidth
-RuntimeCappingMaskHeight
-RuntimeFrontWaxCappingMask
-RuntimeBackWaxCappingMask
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Spawn")
+FTransform QueenCellSpawnRelativeTransform = FTransform::Identity;
 ```
 
-- `FrontWaxCappingMaskTexture`/`BackWaxCappingMaskTexture`가 계속 `Transient`로 GC 보호되는지 확인한다.
-- `FBeehiveCombItemState` 구조와 `UItemInstance` persistence path가 변경되지 않았는지 확인한다.
-- `WriteStateToItemInstance()`가 width/height/front/back masks를 계속 저장하는지 확인한다.
-- `ApplyStateFromItemInstance()`가 valid stored mask를 복원하고 invalid dimension은 full mask fallback하는지 확인한다.
+- `ABeehiveCombActor`에 아래 property가 queen cell use-area authoring property 근처에 있는지 확인한다.
 
-### Editor-time guard
-
-- `OnConstruction()`이 sanitize, Niagara parameter, honey visual update를 유지하면서 `BeehiveCombActorNames::IsGameWorldContext(this)`일 때만 `EnsureCappingMaskState()`와 `RefreshCappingMaskTextures()`를 호출하는지 확인한다.
-- `PostEditChangeProperty()`가 editor details 변경에서 transient capping texture allocation/update를 수행하지 않는지 확인한다.
-- `ApplyHoneyVisualState()`가 editor world에서 capping texture를 간접 생성하지 않는지 확인한다.
-- `ApplyHoneyCappingVisualState()`가 editor world에서 mask 배열을 scan하지 않고 즉시 반환하는지 확인한다.
-- `ApplyWaxCappingMaskMaterialParameters()`가 front/back capping dynamic material instance가 둘 다 없으면 `EnsureCappingMaskTextures()` 전에 return하는지 확인한다.
-- `EnsureHoneyMaterialInstances()`의 editor-world dynamic material instance 회피 정책과 새 guard가 서로 맞는지 확인한다.
-
-### Runtime behavior preservation
-
-- 다음 runtime paths에서 capping mask state/texture refresh가 제거되지 않았는지 확인한다.
-
-```text
-BeginPlay()
-ApplyCombBeeParameters(...)
-SetTotalSpawnAmountAndResetTargetBeeCounts(...)
-SetTotalSpawnAmountPreservingTargetRatios(...)
-ApplyWaxCappingBrush(...)
-TryRegenerateWaxCapping()
-ApplyStateFromItemInstance(...)
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+FVector QueenCellUseAreaScaleMultiplier = FVector::OneVector;
 ```
 
-- `ApplyWaxCappingBrush(...)`가 현재 visible face의 mask만 수정하고 texture/material/visibility를 갱신하는지 확인한다.
-- `TryRegenerateWaxCapping()`이 full honey와 ripeness threshold 조건에서 제거된 face mask를 `255`로 복원하는지 확인한다.
-- capping material texture parameter 이름 `WaxCappingMask`와 honey scalar parameters `HoneyAmount`, `HoneyRipeness`가 변경되지 않았는지 확인한다.
-- `IsWaxCappingFaceComplete()`/`ApplyHoneyCappingVisualState()` 조건이 기존 visibility behavior를 유지하는지 확인한다.
+- `FQueenCellPlacement`에 새 field가 추가되지 않았는지 확인한다.
+- item state 또는 `FBeehiveCombItemState` persistence에 transform offset이 추가되지 않았는지 확인한다.
 
-### Scope and asset safety
+### Transform composition
 
-- `Content/Beehive/BP_HoneyComb.uasset` 변경은 stale serialized capping mask payload 제거를 위한 resave 결과인지 확인한다.
-- 다른 `Content/` asset이 수정되지 않았는지 확인한다.
-- `Config/DefaultEngine.ini` Core Redirect 변경이 없는지 확인한다.
-- Public Blueprint API rename/delete가 없는지 확인한다.
-- architecture docs가 capping mask transient runtime state, `FBeehiveCombItemState` persistence, editor-time texture allocation avoidance, runtime `WaxCappingMask` material contract를 정확히 반영하는지 확인한다.
+- `BuildQueenCellSpawnAreaRelativeTransform(...)`의 base transform이 기존 sampled placement 값을 그대로 사용하는지 확인한다.
+- composition order가 정확히 아래 형태인지 확인한다.
+
+```cpp
+return SanitizedQueenCellSpawnRelativeTransform * BaseTransform;
+```
+
+- offset이 `QueenCellRoot` relative transform에 적용되고, visual-only child transform으로 빠지지 않았는지 확인한다.
+- default identity에서 기존 placement 결과가 변경되지 않는지 확인한다.
+- front/back 모두 같은 authored offset을 sampled face-local frame에서 사용하는지 확인한다.
+
+### Scale sanitization
+
+- authoring transform scale component가 non-finite이면 `1.0f`로 정리되는지 확인한다.
+- finite scale component가 `0.01f`보다 작으면 `0.01f`로 clamp되는지 확인한다.
+- use-area scale multiplier도 같은 scale sanitization을 사용하는지 확인한다.
+- finite location/rotation은 별도 정책 없이 authored value를 유지하는지 확인한다.
+- placement scale은 기존처럼 `FMath::Max(0.01f, Placement.Scale)`로 유지되는지 확인한다.
+
+### Runtime contract preservation
+
+- `CreateQueenCellRuntimeComponents(...)`에서 `Visual->SetRelativeTransform(FTransform::Identity)`가 유지되는지 확인한다.
+- `UseArea->SetRelativeTransform(...)`는 location/rotation identity와 sanitized `QueenCellUseAreaScaleMultiplier` scale만 적용하는지 확인한다.
+- `TrySpawnQueenCell()`이 계속 `UQueenCellSpawnAreaComponent::TrySampleQueenCellPlacement(...)`를 사용하는지 확인한다.
+- `CanSpawnQueenCell()` 조건이 max count, mesh availability, spawn area availability, sample availability 기반으로 유지되는지 확인한다.
+- `RemoveQueenCell(...)`, `ResolveQueenCellIdFromUseArea(...)`, `QueenCellUseAreaToId` mapping이 변경되지 않았는지 확인한다.
+- queen cell use-area tag가 `Item.UseArea.Beehive.QueenCell`로 유지되는지 확인한다.
+- `ApplyStateFromItemInstance()`가 runtime queen cells를 계속 clear하고, queen cell state를 item state와 섞지 않는지 확인한다.
+- comb retrieval blocking 조건에서 `QueenCellCount > 0` 계약이 유지되는지 확인한다.
+
+### Scope and docs
+
+- `Content/` asset과 `Config/DefaultEngine.ini`가 수정되지 않았는지 확인한다.
+- UCLASS/USTRUCT/UENUM rename, Blueprint API delete/rename, Core Redirect 변경이 없는지 확인한다.
+- architecture docs가 authoring offset, sampled base placement, no `FQueenCellPlacement` persistence, root-only application, visual identity child, use-area scale multiplier, no post-spawn refresh, identity/one-vector default preservation을 정확히 설명하는지 확인한다.
 
 ## 검증 명령
 
@@ -90,15 +98,11 @@ git diff --check -- Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h S
 ```
 
 ```powershell
-rg -n "RuntimeCappingMaskWidth|RuntimeCappingMaskHeight|RuntimeFrontWaxCappingMask|RuntimeBackWaxCappingMask|RefreshCappingMaskTextures|ApplyWaxCappingMaskMaterialParameters|ApplyHoneyCappingVisualState|PostEditChangeProperty|OnConstruction" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md .md/PROMPT_REVIEW.md
+rg -n "QueenCellSpawnRelativeTransform|QueenCellUseAreaScaleMultiplier|BuildQueenCellSpawnAreaRelativeTransform|FQueenCellPlacement|QueenCellRoot|QueenCellVisual|QueenCellUseArea" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md
 ```
 
 ```powershell
 git status --short -- Content Config/DefaultEngine.ini
-```
-
-```powershell
-$bytes=[IO.File]::ReadAllBytes("Content\Beehive\BP_HoneyComb.uasset"); $max=0; $cur=0; for($i=0; $i -lt $bytes.Length; $i++){ if($bytes[$i] -eq 255){ $cur++ } else { if($cur -gt $max){ $max=$cur }; $cur=0 } }; if($cur -gt $max){ $max=$cur }; "AssetLength=$($bytes.Length) MaxFFRun=$max"
 ```
 
 ```powershell
@@ -107,8 +111,11 @@ $bytes=[IO.File]::ReadAllBytes("Content\Beehive\BP_HoneyComb.uasset"); $max=0; $
 
 ## 수동 Editor/PIE 확인
 
-- `Content/Beehive/BP_HoneyComb`를 열 때 기존 delay가 사라졌거나 크게 줄었는지 확인한다.
-- ordinary details 값을 바꿔도 기존 delay가 재현되지 않는지 확인한다.
-- Blueprint를 다시 Compile/Save해도 serialized mask payload가 재생성되지 않는지 확인한다.
-- `BP_HoneyComb.uasset` 크기가 다시 512x512 mask payload 포함 수준으로 증가하지 않는지 확인한다.
-- PIE에서 honey fill/ripeness visuals, full honey capping visuals, uncapping brush, inventory 회수/재배치 capping mask restore, wax capping regeneration이 기존처럼 동작하는지 확인한다.
+- comb Blueprint에서 `QueenCellSpawnRelativeTransform`이 `Beehive|Queen Cell|Spawn` 아래 보이는지 확인한다.
+- comb Blueprint에서 `QueenCellUseAreaScaleMultiplier`가 `Beehive|Queen Cell|Use Area` 아래 보이는지 확인한다.
+- visible location/rotation/scale offset을 지정한 뒤 queen cell spawn을 유도한다.
+- spawned queen cell visual이 root offset을 따르는지 확인한다.
+- removal use-area가 같은 중심/방향을 유지하면서 추가 scale multiplier를 적용하는지 확인한다.
+- front/back cells가 같은 authored offset을 각 face orientation 기준으로 적용하는지 확인한다.
+- identity/one-vector 값에서 기존 placement와 동일한지 확인한다.
+- queen cell removal, pressure 감소, retrieval blocking, `ApplyStateFromItemInstance()`의 runtime queen cell clear 동작이 유지되는지 확인한다.

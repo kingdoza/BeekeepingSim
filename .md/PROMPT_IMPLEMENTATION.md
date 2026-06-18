@@ -1,18 +1,33 @@
-# Beehive comb Blueprint editor delay implementation prompt
+# Queen cell spawn relative transform implementation prompt
 
 ## Goal
 
-Fix the delay that occurs when opening the beehive comb Blueprint or changing details values, while keeping gameplay behavior the same.
+Add an authoring-time relative transform offset for queen cell spawn visuals/use-areas on `ABeehiveCombActor`.
 
-Confirmed cause:
+The feature lets the comb Blueprint adjust spawned queen cell placement without changing the existing queen cell sampling, lifecycle, removal, retrieval blocking, or runtime persistence contracts.
 
-- `ABeehiveCombActor` owns wax capping mask byte arrays and transient capping mask textures.
-- The mask arrays are currently serialized into the comb Blueprint default object because they are `UPROPERTY(VisibleAnywhere)` without `Transient`.
-- `OnConstruction()` and `PostEditChangeProperty()` refresh capping mask textures in editor-time paths.
-- With `CappingMaskLongSideResolution = 512`, the two face masks are about `512 * 512 * 2 = 524,288` bytes before other asset overhead.
-- `Content/Beehive/BP_HoneyComb.uasset` already contains `FrontWaxCappingMask` and `BackWaxCappingMask`, and is much larger than the lightweight parent Blueprint.
+## Confirmed design
 
-The fix should preserve runtime capping/uncapping behavior, item state preservation, honey visual behavior, and material parameter contracts.
+- Queen cells remain runtime component groups owned by `ABeehiveCombActor`; they are not actors.
+- `UQueenCellSpawnAreaComponent` still samples the base placement:
+  - face: `EBeehiveCombVisibleFace`
+  - surface coordinate: spawn-area local `Y/Z`
+  - random local rotation
+  - placement scale
+- Add one comb authoring property:
+
+```cpp
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Spawn")
+FTransform QueenCellSpawnRelativeTransform = FTransform::Identity;
+```
+
+- The property is an authoring-time default. Runtime changes after a queen cell has spawned are out of scope.
+- Do not add a refresh helper for already-spawned queen cells.
+- Apply the transform to `QueenCellRoot`, not only to `QueenCellVisual`.
+- `QueenCellVisual` stays identity relative to `QueenCellRoot`.
+- `QueenCellUseArea` keeps identity location/rotation but receives an extra relative scale multiplier.
+- Front/back use the same transform in the sampled face-local frame.
+- Default `Identity` and `FVector::OneVector` values must preserve current behavior exactly.
 
 ## Required reading
 
@@ -28,117 +43,119 @@ The fix should preserve runtime capping/uncapping behavior, item state preservat
 - `.md/0_ARCHITECTURE.md`
 - `.md/Architecture/WorldActorsSystem.md`
 
-Do not modify `Content/` assets unless the user explicitly asks for the manual cleanup/resave step.
+Do not modify `Content/` assets for this task.
+Do not modify `Config/DefaultEngine.ini`.
 
 ## Behavioral constraints
 
 Keep these behaviors unchanged:
 
-- Runtime wax capping masks still exist per comb actor.
-- `ApplyWaxCappingBrush(...)` still updates the correct face mask and texture.
-- `TryRegenerateWaxCapping()` still restores capping masks when the honey/ripeness rules allow it.
-- `ApplyStateFromItemInstance(...)` still restores capping masks from `FBeehiveCombItemState`.
-- `WriteStateToItemInstance(...)` still writes capping masks to `FBeehiveCombItemState`.
-- Capping material still receives texture parameter `WaxCappingMask`.
-- Honey material parameters `HoneyAmount` and `HoneyRipeness` remain unchanged.
-- No Blueprint API rename, UCLASS/USTRUCT/UENUM rename, or Core Redirect should be needed.
+- `FQueenCellPlacement` fields and meaning stay unchanged:
+  - `QueenCellId`
+  - `Face`
+  - `AreaLocalYZ`
+  - `LocalRotationDegrees`
+  - `Scale`
+- Queen cell placement is still runtime-only and is not written into `FBeehiveCombItemState`.
+- `ApplyStateFromItemInstance()` still clears runtime queen cells so item state and queen cell runtime state do not mix.
+- `TrySpawnQueenCell()` still uses `UQueenCellSpawnAreaComponent::TrySampleQueenCellPlacement(...)`.
+- `CanSpawnQueenCell()` still depends on max count, mesh availability, spawn area availability, and sample availability.
+- `RemoveQueenCell(...)` still resolves/removes by cell id and notifies the owning hive.
+- `ResolveQueenCellIdFromUseArea(...)` and the `QueenCellUseAreaToId` mapping remain valid.
+- Queen cell use-area tag remains `Item.UseArea.Beehive.QueenCell`.
+- Comb retrieval remains blocked while `QueenCellCount > 0`.
+- No UCLASS/USTRUCT/UENUM rename.
+- No existing Blueprint API delete/rename.
+- No Core Redirect.
 
 ## Implementation tasks
 
-### 1. Stop serializing heavy mask runtime state into Blueprint defaults
+### 1. Add authoring property
 
-In `ABeehiveCombActor`, make the capping mask runtime fields transient.
-
-Target properties:
+In `ABeehiveCombActor`, add:
 
 ```cpp
-CappingMaskWidth
-CappingMaskHeight
-FrontWaxCappingMask
-BackWaxCappingMask
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Spawn")
+FTransform QueenCellSpawnRelativeTransform = FTransform::Identity;
 ```
 
-Recommended declaration style:
+Place it near the existing queen cell visual/use-area authoring properties.
+
+Add the use-area-only scale multiplier near the existing queen cell use-area authoring properties:
 
 ```cpp
-UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
-int32 CappingMaskWidth = 0;
-
-UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
-int32 CappingMaskHeight = 0;
-
-UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
-TArray<uint8> FrontWaxCappingMask;
-
-UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
-TArray<uint8> BackWaxCappingMask;
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+FVector QueenCellUseAreaScaleMultiplier = FVector::OneVector;
 ```
 
-Notes:
+Do not add it to `FQueenCellPlacement`.
+Do not add item-state persistence for it.
 
-- The arrays are runtime state, not Blueprint authoring data.
-- `FBeehiveCombItemState` remains the state persistence path for inventory/item movement.
-- Existing serialized values in `BP_HoneyComb` will only be removed after a later manual Blueprint compile/save or resave. Do not perform that content step in this implementation unless explicitly requested.
+### 2. Compose it into the queen cell root transform
 
-### 2. Avoid editor-time capping texture refresh
+Update `ABeehiveCombActor::BuildQueenCellSpawnAreaRelativeTransform(const FQueenCellPlacement& Placement) const`.
 
-Do not rebuild capping mask textures in editor-only construction/details-change paths.
-
-Update `ABeehiveCombActor::OnConstruction(...)`:
-
-- Continue sanitizing scalar/editor-visible state.
-- Continue applying Niagara user parameters and honey visual transform/material-safe editor behavior as needed.
-- Only run `EnsureCappingMaskState()` and `RefreshCappingMaskTextures()` when the actor is in a game world.
-
-Update `ABeehiveCombActor::PostEditChangeProperty(...)`:
-
-- Continue sanitizing editor-visible state.
-- Continue applying lightweight visual updates.
-- Do not allocate/update transient capping textures in the editor details path.
-- If the changed property can affect runtime mask dimensions, it is enough for the new dimensions to be applied on the next game-world initialization or item-state application.
-
-Use the existing `BeehiveCombActorNames::IsGameWorldContext(...)` helper instead of inventing another world-type check.
-
-### 3. Guard capping mask material parameter application
-
-`ApplyWaxCappingMaskMaterialParameters()` currently calls `EnsureCappingMaskTextures()` before checking whether runtime dynamic material instances exist.
-
-Change it so editor-time calls with no dynamic material instances return without allocating textures.
-
-Recommended shape:
+Current base behavior should remain the source of the sampled surface transform:
 
 ```cpp
-void ABeehiveCombActor::ApplyWaxCappingMaskMaterialParameters()
-{
-    if (!FrontWaxCappingMaterialInstance && !BackWaxCappingMaterialInstance)
-    {
-        return;
-    }
-
-    EnsureCappingMaskTextures();
-
-    ...
-}
+const FVector Extent = QueenCellSpawnArea ? QueenCellSpawnArea->GetUnscaledBoxExtent() : FVector::ZeroVector;
+const float SurfaceX = Placement.Face == EBeehiveCombVisibleFace::Front ? Extent.X : -Extent.X;
+const FVector RelativeLocation(SurfaceX, Placement.AreaLocalYZ.X, Placement.AreaLocalYZ.Y);
+const float FaceYaw = Placement.Face == EBeehiveCombVisibleFace::Front ? 0.0f : 180.0f;
+const FRotator RelativeRotation(0.0f, FaceYaw, Placement.LocalRotationDegrees);
+const FVector RelativeScale(FMath::Max(0.01f, Placement.Scale));
+const FTransform BaseTransform(RelativeRotation, RelativeLocation, RelativeScale);
 ```
 
-Rationale:
+Then compose the authoring offset in the sampled face-local frame:
 
-- In editor worlds, `EnsureHoneyMaterialInstances()` intentionally avoids creating dynamic material instances.
-- Without this guard, editor-time visual refresh can still allocate capping textures indirectly.
+```cpp
+return SanitizedQueenCellSpawnRelativeTransform * BaseTransform;
+```
 
-### 4. Keep runtime texture refresh paths intact
+Use the same ordering intentionally. This makes the offset behave relative to the sampled surface orientation, so front/back share one authored transform while still following their face frame.
 
-Do not remove runtime texture refresh from these paths:
+### 3. Sanitize the authoring transform scale
 
-- `BeginPlay()`
-- `ApplyCombBeeParameters(...)`
-- `SetTotalSpawnAmountAndResetTargetBeeCounts(...)`
-- `SetTotalSpawnAmountPreservingTargetRatios(...)`
-- `ApplyWaxCappingBrush(...)`
-- `TryRegenerateWaxCapping()`
-- `ApplyStateFromItemInstance(...)`
+Avoid zero or invalid scale on runtime components.
 
-If you factor helper functions, keep the same runtime call order and outputs.
+Either add a small private helper or sanitize inline in `BuildQueenCellSpawnAreaRelativeTransform(...)`.
+
+Recommended minimum:
+
+- Non-finite scale component -> `1.0f`
+- Scale component below `0.01f` -> `0.01f`
+- Preserve finite location and rotation as authored, unless the existing codebase already has a local transform sanitize pattern to follow.
+
+Do not silently change the default identity behavior.
+
+### 4. Apply use-area-only scale multiplier
+
+Do not move the root offset to child components.
+
+The visual child should remain identity:
+
+```cpp
+Visual->SetupAttachment(CellRoot);
+Visual->SetRelativeTransform(FTransform::Identity);
+```
+
+The use-area child should keep identity location/rotation and apply only `QueenCellUseAreaScaleMultiplier` as relative scale:
+
+```cpp
+UseArea->SetupAttachment(Visual);
+UseArea->SetRelativeTransform(FTransform(
+    FRotator::ZeroRotator,
+    FVector::ZeroVector,
+    SanitizedQueenCellUseAreaScaleMultiplier));
+```
+
+This makes the final use-area scale equal to sampled placement scale * `QueenCellSpawnRelativeTransform` scale * `QueenCellUseAreaScaleMultiplier`.
+
+Sanitize `QueenCellUseAreaScaleMultiplier` with the same minimum scale policy used for `QueenCellSpawnRelativeTransform` scale:
+
+- Non-finite scale component -> `1.0f`
+- Scale component below `0.01f` -> `0.01f`
 
 ## Documentation updates
 
@@ -149,13 +166,16 @@ Update only the relevant architecture docs:
 
 Document the clarified contract:
 
-- `ABeehiveCombActor` capping masks are transient runtime actor state.
-- Inventory/item persistence remains `FBeehiveCombItemState`.
-- Blueprint class defaults should not serialize the large face mask arrays.
-- Editor construction/details changes should avoid transient capping texture allocation/update.
-- Runtime still creates/updates transient `UTexture2D` masks and applies `WaxCappingMask` to capping materials.
+- `ABeehiveCombActor::QueenCellSpawnRelativeTransform` is an authoring-time offset applied to the spawned `QueenCellRoot`.
+- `ABeehiveCombActor::QueenCellUseAreaScaleMultiplier` is an authoring-time use-area-only scale multiplier.
+- The sampled base placement still comes from `UQueenCellSpawnAreaComponent` as face + area-local YZ + local rotation + scale.
+- `FQueenCellPlacement` does not store the authoring offset.
+- Visual remains identity under the root.
+- Use-area keeps identity location/rotation and applies only the extra scale multiplier, so visual and hit/use area can be sized independently while staying centered/aligned.
+- Runtime changes to the transform after spawn are out of scope.
+- Identity/one-vector defaults preserve existing placement behavior.
 
-Do not rewrite unrelated swarming, queen cell, honey container, or focus documentation.
+Do not rewrite unrelated swarming, honey, inventory, focus, or capping mask documentation.
 
 ## Validation commands
 
@@ -168,7 +188,7 @@ git diff --check -- Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h S
 Focused search:
 
 ```powershell
-rg -n "CappingMaskWidth|CappingMaskHeight|FrontWaxCappingMask|BackWaxCappingMask|RefreshCappingMaskTextures|ApplyWaxCappingMaskMaterialParameters|PostEditChangeProperty|OnConstruction" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md
+rg -n "QueenCellSpawnRelativeTransform|QueenCellUseAreaScaleMultiplier|BuildQueenCellSpawnAreaRelativeTransform|FQueenCellPlacement|QueenCellRoot|QueenCellVisual|QueenCellUseArea" Source/BeekeepingSim/Public/WorldActors/BeehiveCombActor.h Source/BeekeepingSim/Private/WorldActors/BeehiveCombActor.cpp .md/0_ARCHITECTURE.md .md/Architecture/WorldActorsSystem.md
 ```
 
 Build:
@@ -177,34 +197,40 @@ Build:
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\AutomationTool\UnrealBuildTool.exe" BeekeepingSimEditor Win64 Development -Project="C:\UnrealProjects\BeekeepingSim\BeekeepingSim.uproject" -WaitMutex -NoHotReloadFromIDE
 ```
 
-If the engine path is missing, do not guess another engine version. Report that build could not be run.
+If the engine path is missing, do not guess another engine version. Report that the build could not be run.
 
 ## Manual editor checks
 
-These require the Unreal Editor and may be performed by the user if the implementation agent cannot safely open/resave assets.
+These require Unreal Editor access:
 
-1. Open `Content/Beehive/BP_HoneyComb`.
-2. Confirm opening the Blueprint no longer has the previous delay.
-3. Change ordinary details values on the comb Blueprint and confirm the previous delay is gone or significantly reduced.
-4. Compile/save the Blueprint once to remove old serialized transient mask data from the asset.
-5. Confirm `BP_HoneyComb.uasset` size drops after compile/save.
+1. Open the comb Blueprint that derives from `ABeehiveCombActor`.
+2. Confirm `QueenCellSpawnRelativeTransform` appears under `Beehive|Queen Cell|Spawn`.
+3. Confirm `QueenCellUseAreaScaleMultiplier` appears under `Beehive|Queen Cell|Use Area`.
+4. Set a visible location/rotation/scale offset.
+5. Set a use-area scale multiplier different from one.
+6. Trigger queen cell spawning through the existing swarming pressure/test path.
+7. Confirm spawned queen cell visual follows the root offset.
+8. Confirm removal use-area remains centered/aligned but scales by the additional multiplier.
+9. Confirm front and back cells use the same authored offset relative to their face orientation.
+10. Confirm leaving the transform as Identity and multiplier as OneVector matches the old placement.
 
 ## Manual PIE checks
 
-1. Spawn or place a beehive comb through the existing beehive/uncapping table flow.
-2. Confirm honey fill/ripeness visuals still update.
-3. Confirm full honey capping visuals still appear.
-4. Use the uncapping action and confirm brush strokes still remove capping.
-5. Retrieve the comb into inventory, place it again, and confirm capping mask state is restored from item state.
-6. Confirm wax capping regeneration still restores capping when the existing honey/ripeness rules allow it.
+1. Let a hive spawn queen cells through the existing lifecycle.
+2. Confirm queen cell removal still works through `Item.UseArea.Beehive.QueenCell`.
+3. Confirm removing a queen cell still lowers hive pressure through the existing path.
+4. Confirm comb retrieval is still blocked while queen cells exist.
+5. Confirm item state restore still clears runtime queen cells when applying `FBeehiveCombItemState`.
 
 ## Final report requirements
 
 - Changed files
-- Exact capping mask property changes
-- Exact editor-time guard changes
-- Confirmation that runtime capping behavior is unchanged
-- Confirmation that `FBeehiveCombItemState` remains the persistence path
+- Added property name, category, and default value
+- Exact transform composition order
+- Exact use-area scale multiplier application
+- Confirmation that `FQueenCellPlacement` was not changed
+- Confirmation that visual remains identity and use-area applies only the additional scale
+- Confirmation that runtime transform changes after spawn are intentionally not handled
 - Architecture document updates
 - Diff/build validation results
-- Manual Content cleanup/resave still required, if not performed
+- Any manual checks that could not be run

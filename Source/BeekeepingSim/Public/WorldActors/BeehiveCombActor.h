@@ -321,6 +321,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
 	TObjectPtr<UMaterialInterface> QueenCellUseAreaMaterial;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Spawn")
+	FTransform QueenCellSpawnRelativeTransform = FTransform::Identity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell|Use Area")
+	FVector QueenCellUseAreaScaleMultiplier = FVector::OneVector;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Beehive|Queen Cell", meta = (ClampMin = "0"))
 	int32 MaxQueenCellCountPerComb = 4;
 
