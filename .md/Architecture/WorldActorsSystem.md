@@ -522,7 +522,9 @@
   - `TotalTargetBeeCount(Front+Back)`는 항상 `0..TotalSpawnAmount` 범위
   - `CurrentHoney`는 `0..MaxHoneyPerComb` clamp (초과분 폐기)
   - `CurrentHoneyRipeness`는 `0..MaxHoneyRipeness` clamp
-  - face별 capping mask는 `FrontWaxCappingMask`/`BackWaxCappingMask` byte buffer가 source of truth다.
+  - face별 capping mask는 `RuntimeFrontWaxCappingMask`/`RuntimeBackWaxCappingMask` transient runtime byte buffer가 actor-local source of truth다.
+  - inventory/item 이동 사이의 capping mask persistence path는 `FBeehiveCombItemState`이며, Blueprint class defaults는 큰 face mask 배열을 직렬화하지 않는다.
+  - 기존 Blueprint class default에 저장된 `FrontWaxCappingMask`/`BackWaxCappingMask` payload와 연결되지 않도록 actor runtime property는 Core Redirect 없이 `Runtime*` 이름을 사용한다.
   - capping mask `255`는 밀랍 남음, `0`은 제거됨이다.
   - face 완료 기준은 `GetWaxCappingRemainingRatio(Face) <= UncappedThreshold`다.
   - capping plane 표시 조건은 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다.
@@ -550,6 +552,8 @@
   - `ReduceFaceTargetBeeCountByAmount(EBeehiveCombVisibleFace, int32)`
 - 파라미터 적용 시점:
   - `OnConstruction`, `BeginPlay`, `PostEditChangeProperty`, 명시 API 호출 시
+  - `OnConstruction`/`PostEditChangeProperty`는 editor-visible scalar state sanitize, Niagara parameter, honey transform/material-safe visual update만 수행하고, capping mask state/texture refresh는 game world context에서만 수행한다.
+  - `BeginPlay`, bee parameter 변경 API, `ApplyWaxCappingBrush`, `TryRegenerateWaxCapping`, `ApplyStateFromItemInstance`는 runtime capping mask state/texture refresh 경로를 유지한다.
 - Niagara user parameter 적용:
   - `User.PlaneSize` (Vector2D)
   - `User.SpawnAmount` (Int32, face별 분배값)
@@ -559,8 +563,8 @@
   - fill ratio: `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)`
   - ripeness ratio: `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)`
   - front/back plane relative location을 empty/full 위치 사이에서 보간
-  - wax/capping material에는 `HoneyRipeness` scalar와 transient texture parameter `WaxCappingMask`를 주입한다.
-  - transient texture는 face별 byte mask에서 생성/갱신하며 `UPROPERTY(Transient)`로 GC 보호한다.
+  - runtime wax/capping material에는 `HoneyRipeness` scalar와 transient texture parameter `WaxCappingMask`를 주입한다.
+  - transient texture는 face별 byte mask에서 생성/갱신하며 `UPROPERTY(Transient)`로 GC 보호한다. Editor construction/details 변경 경로에서는 capping material dynamic instance가 없으면 `WaxCappingMask` texture를 생성하지 않는다.
   - material index 0 scalar parameter(`HoneyAmount`)에 fill ratio 적용
   - `FrontHoneyPlane`/`BackHoneyPlane` material index 0 scalar parameter(`HoneyRipeness`)에 ripeness ratio 적용
   - `FrontWaxCappingPlane`/`BackWaxCappingPlane` material index 0 scalar parameter(`HoneyRipeness`)에도 같은 ripeness ratio 적용
@@ -911,11 +915,12 @@
 - `ABeehiveCombActor` capping mask/use-area/visual state를 확장했다.
   - `FrontWaxCappingUseAreaMesh`, `BackWaxCappingUseAreaMesh`
   - `CappingMaskLongSideResolution`, `UncappedThreshold`
-  - `FrontWaxCappingMask`, `BackWaxCappingMask`
+  - transient runtime `RuntimeCappingMaskWidth`, `RuntimeCappingMaskHeight`, `RuntimeFrontWaxCappingMask`, `RuntimeBackWaxCappingMask`
   - transient `FrontWaxCappingMaskTexture`, `BackWaxCappingMaskTexture`
   - `ApplyWaxCappingBrush(...)`, `GetWaxCappingRemainingRatio(...)`, `IsWaxCappingFaceComplete(...)`, `IsWaxCappingComplete()`
+- face mask 배열과 dimension은 runtime actor state이며 Blueprint class defaults에 직렬화하지 않는다. 이전 serialized mask property와의 연결을 끊기 위해 actor runtime property 이름은 Core Redirect 없이 `Runtime*` prefix를 사용한다. `FBeehiveCombItemState`는 소비장 capping mask state의 inventory/item persistence 계약으로 유지한다.
 - capping mask dimension은 `PlaneSize` 비율과 long-side resolution에서 계산하며, invalid 저장 mask는 full mask fallback이다.
-- capping visual은 byte buffer에서 transient `UTexture2D`를 갱신해 material parameter `WaxCappingMask`로 주입한다.
+- capping visual은 game world runtime에서 byte buffer에서 transient `UTexture2D`를 갱신해 material parameter `WaxCappingMask`로 주입한다. Editor construction/details 변경 경로는 transient capping texture allocation/update를 피한다.
 - 작업대 capping use-area active 조건:
   - host가 `AUncappingTable`
   - `AUncappingTableCombSlot::IsCombPartFocusEngaged()`가 false

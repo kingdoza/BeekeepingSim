@@ -128,7 +128,7 @@ Source/BeekeepingSim/
   - 같은 60분 bucket 경계에서는 `HoneyProduction`을 `ColonyPopulation`보다 먼저 처리한다.
   - `ABeehiveCombActor`는 절대 꿀 양(`CurrentHoney`)을 저장하고, 시각값은 `Clamp(CurrentHoney/MaxHoneyPerComb, 0..1)` fill ratio를 사용한다.
   - `ABeehiveCombActor`는 절대 숙성도(`CurrentHoneyRipeness`)를 저장하고, honey plane과 wax/capping plane material에는 `Clamp(CurrentHoneyRipeness/MaxHoneyRipeness, 0..1)` ratio를 `HoneyRipeness`로 주입한다.
-  - `ABeehiveCombActor`의 full honey 밀랍/capping 표시는 `IsHoneyFull()`과 face별 capping mask 완료 여부에서 파생되며, `FrontWaxCappingPlane`/`BackWaxCappingPlane` material에는 transient `WaxCappingMask` texture가 주입된다.
+  - `ABeehiveCombActor`의 full honey 밀랍/capping 표시는 `IsHoneyFull()`과 face별 capping mask 완료 여부에서 파생되며, game world runtime에서 `FrontWaxCappingPlane`/`BackWaxCappingPlane` material에 transient `WaxCappingMask` texture가 주입된다. Editor construction/details 변경 경로는 transient capping texture 생성/갱신을 피한다.
   - 벌통 honey ripeness/production 업데이트는 active comb mutation 직후 `TryRegenerateWaxCapping()`을 호출하며, full honey와 `WaxCappingRegenerationRipenessThreshold`를 만족한 벌통 내부 소비장만 제거된 face mask를 `255`로 재생성한다.
 - FocusEngaged host 내부 파츠 상호작용은 `UCursorPartFocusScopeComponent`가 담당하고, 전역 focus 단일 오너(`UBeekeeperFocusComponent`)와 분리된다.
 - 파츠별 동작은 전용 C++ subclass 대신 공통 `UCursorPartFocusActionComponent` + BP Begin/Cancel/Abort 이벤트 구현을 기본 경로로 사용한다.
@@ -352,9 +352,9 @@ WorldActors의 Environment 의존은 concrete actor 직접 참조/polling이 아
 ## Update 2026-06-08 (Uncapping Table + Comb Wax Capping Mask)
 
 - 소비장 full honey 밀랍/capping 표시는 `ABeehiveCombActor`의 native 앞/뒤 plane component와 face별 byte mask로 처리한다.
-- capping mask source of truth는 `FBeehiveCombItemState`와 `ABeehiveCombActor`의 `FrontWaxCappingMask`/`BackWaxCappingMask` `TArray<uint8>`다. `255`는 밀랍 남음, `0`은 제거됨이다.
+- `ABeehiveCombActor`의 `RuntimeFrontWaxCappingMask`/`RuntimeBackWaxCappingMask`와 runtime mask dimension은 transient runtime actor state이며 Blueprint class defaults에 직렬화하지 않는다. 기존 serialized `FrontWaxCappingMask`/`BackWaxCappingMask` class-default payload를 끊기 위해 Core Redirect 없이 runtime property 이름을 분리한다. `FBeehiveCombItemState`가 inventory/item 이동 사이의 capping mask persistence path다. `255`는 밀랍 남음, `0`은 제거됨이다.
 - mask dimension은 `PlaneSize` X/Y 비율과 `CappingMaskLongSideResolution`에서 산출하며, 저장 mask dimension이 현재 actor dimension과 맞지 않으면 full mask로 fallback한다.
-- runtime visual은 transient `UTexture2D`를 생성/갱신해 capping material parameter `WaxCappingMask`에 주입한다. `HoneyRipeness` scalar 주입은 유지한다.
+- runtime visual은 game world에서 transient `UTexture2D`를 생성/갱신해 capping material parameter `WaxCappingMask`에 주입한다. `HoneyRipeness` scalar 주입은 유지한다. Editor construction/details 변경 경로는 transient capping texture allocation/update를 수행하지 않는다.
 - capping plane 표시 조건은 face별 `IsHoneyFull() && !IsWaxCappingFaceComplete(Face)`다. full honey가 아니어도 mask는 reset하지 않는다.
 - `AUncappingTable`/`AUncappingTableCombSlot`/`UCombUncappingPartFocusActionComponent`가 작업대 FocusEngaged, 단일 소비장 slot, horizontal drag flip, secondary retrieve를 제공한다.
 - `UCombUncappingUseAction`은 `Item.UseArea.UncappingTable.HoneyComb` tag를 all-tags-match query로 사용하고, context hit point 기반 brush stamp를 rate limit(`MinStampInterval`, `MinStampDistanceCm`)한다.

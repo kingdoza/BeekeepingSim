@@ -176,8 +176,11 @@ void ABeehiveCombActor::OnConstruction(const FTransform& Transform)
 	SanitizeState();
 	SanitizeHoneyState();
 	SanitizeHoneyRipenessState();
-	EnsureCappingMaskState();
-	RefreshCappingMaskTextures();
+	if (BeehiveCombActorNames::IsGameWorldContext(this))
+	{
+		EnsureCappingMaskState();
+		RefreshCappingMaskTextures();
+	}
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
 }
@@ -540,8 +543,8 @@ bool ABeehiveCombActor::ApplyWaxCappingBrush(UPrimitiveComponent* HitComponent, 
 
 	EnsureCappingMaskState();
 	TArray<uint8>& Mask = GetMutableWaxCappingMask(TargetFace);
-	const int32 PixelCount = CappingMaskWidth * CappingMaskHeight;
-	if (CappingMaskWidth <= 0 || CappingMaskHeight <= 0 || Mask.Num() != PixelCount)
+	const int32 PixelCount = RuntimeCappingMaskWidth * RuntimeCappingMaskHeight;
+	if (RuntimeCappingMaskWidth <= 0 || RuntimeCappingMaskHeight <= 0 || Mask.Num() != PixelCount)
 	{
 		return false;
 	}
@@ -570,29 +573,29 @@ bool ABeehiveCombActor::ApplyWaxCappingBrush(UPrimitiveComponent* HitComponent, 
 	const float LocalBrushRadiusY = SafeBrushRadius / WorldUnitsPerLocalY;
 
 	const int32 MinX = FMath::Clamp(
-		FMath::FloorToInt(((LocalImpactPoint.X - LocalBrushRadiusX + HalfPlaneX) / PlaneSizeForMask.X) * static_cast<float>(CappingMaskWidth)),
+		FMath::FloorToInt(((LocalImpactPoint.X - LocalBrushRadiusX + HalfPlaneX) / PlaneSizeForMask.X) * static_cast<float>(RuntimeCappingMaskWidth)),
 		0,
-		CappingMaskWidth - 1);
+		RuntimeCappingMaskWidth - 1);
 	const int32 MaxX = FMath::Clamp(
-		FMath::CeilToInt(((LocalImpactPoint.X + LocalBrushRadiusX + HalfPlaneX) / PlaneSizeForMask.X) * static_cast<float>(CappingMaskWidth)),
+		FMath::CeilToInt(((LocalImpactPoint.X + LocalBrushRadiusX + HalfPlaneX) / PlaneSizeForMask.X) * static_cast<float>(RuntimeCappingMaskWidth)),
 		0,
-		CappingMaskWidth - 1);
+		RuntimeCappingMaskWidth - 1);
 	const int32 MinY = FMath::Clamp(
-		FMath::FloorToInt(((LocalImpactPoint.Y - LocalBrushRadiusY + HalfPlaneY) / PlaneSizeForMask.Y) * static_cast<float>(CappingMaskHeight)),
+		FMath::FloorToInt(((LocalImpactPoint.Y - LocalBrushRadiusY + HalfPlaneY) / PlaneSizeForMask.Y) * static_cast<float>(RuntimeCappingMaskHeight)),
 		0,
-		CappingMaskHeight - 1);
+		RuntimeCappingMaskHeight - 1);
 	const int32 MaxY = FMath::Clamp(
-		FMath::CeilToInt(((LocalImpactPoint.Y + LocalBrushRadiusY + HalfPlaneY) / PlaneSizeForMask.Y) * static_cast<float>(CappingMaskHeight)),
+		FMath::CeilToInt(((LocalImpactPoint.Y + LocalBrushRadiusY + HalfPlaneY) / PlaneSizeForMask.Y) * static_cast<float>(RuntimeCappingMaskHeight)),
 		0,
-		CappingMaskHeight - 1);
+		RuntimeCappingMaskHeight - 1);
 
 	bool bChanged = false;
 	for (int32 Y = MinY; Y <= MaxY; ++Y)
 	{
-		const float PixelLocalY = ((static_cast<float>(Y) + 0.5f) / static_cast<float>(CappingMaskHeight) - 0.5f) * PlaneSizeForMask.Y;
+		const float PixelLocalY = ((static_cast<float>(Y) + 0.5f) / static_cast<float>(RuntimeCappingMaskHeight) - 0.5f) * PlaneSizeForMask.Y;
 		for (int32 X = MinX; X <= MaxX; ++X)
 		{
-			const float PixelLocalX = ((static_cast<float>(X) + 0.5f) / static_cast<float>(CappingMaskWidth) - 0.5f) * PlaneSizeForMask.X;
+			const float PixelLocalX = ((static_cast<float>(X) + 0.5f) / static_cast<float>(RuntimeCappingMaskWidth) - 0.5f) * PlaneSizeForMask.X;
 			const FVector WorldDelta = PaintTransform.TransformVector(FVector(
 				PixelLocalX - LocalImpactPoint.X,
 				PixelLocalY - LocalImpactPoint.Y,
@@ -602,7 +605,7 @@ bool ABeehiveCombActor::ApplyWaxCappingBrush(UPrimitiveComponent* HitComponent, 
 				continue;
 			}
 
-			const int32 PixelIndex = (Y * CappingMaskWidth) + X;
+			const int32 PixelIndex = (Y * RuntimeCappingMaskWidth) + X;
 			if (Mask.IsValidIndex(PixelIndex) && Mask[PixelIndex] > 0)
 			{
 				Mask[PixelIndex] = 0;
@@ -670,8 +673,8 @@ bool ABeehiveCombActor::TryRegenerateWaxCapping()
 float ABeehiveCombActor::GetWaxCappingRemainingRatio(EBeehiveCombVisibleFace Face) const
 {
 	const TArray<uint8>& Mask = GetWaxCappingMask(Face);
-	const int32 PixelCount = CappingMaskWidth * CappingMaskHeight;
-	if (CappingMaskWidth <= 0 || CappingMaskHeight <= 0 || Mask.Num() != PixelCount || PixelCount <= 0)
+	const int32 PixelCount = RuntimeCappingMaskWidth * RuntimeCappingMaskHeight;
+	if (RuntimeCappingMaskWidth <= 0 || RuntimeCappingMaskHeight <= 0 || Mask.Num() != PixelCount || PixelCount <= 0)
 	{
 		return 1.0f;
 	}
@@ -748,10 +751,10 @@ void ABeehiveCombActor::EnsureCappingMaskState()
 	const int32 DesiredPixelCount = DesiredWidth * DesiredHeight;
 	const bool bNeedsFullMask = DesiredWidth <= 0
 		|| DesiredHeight <= 0
-		|| CappingMaskWidth != DesiredWidth
-		|| CappingMaskHeight != DesiredHeight
-		|| FrontWaxCappingMask.Num() != DesiredPixelCount
-		|| BackWaxCappingMask.Num() != DesiredPixelCount;
+		|| RuntimeCappingMaskWidth != DesiredWidth
+		|| RuntimeCappingMaskHeight != DesiredHeight
+		|| RuntimeFrontWaxCappingMask.Num() != DesiredPixelCount
+		|| RuntimeBackWaxCappingMask.Num() != DesiredPixelCount;
 
 	if (bNeedsFullMask)
 	{
@@ -762,12 +765,12 @@ void ABeehiveCombActor::EnsureCappingMaskState()
 
 void ABeehiveCombActor::InitializeFullCappingMasks(int32 NewWidth, int32 NewHeight)
 {
-	CappingMaskWidth = FMath::Max(1, NewWidth);
-	CappingMaskHeight = FMath::Max(1, NewHeight);
+	RuntimeCappingMaskWidth = FMath::Max(1, NewWidth);
+	RuntimeCappingMaskHeight = FMath::Max(1, NewHeight);
 
-	const int32 PixelCount = CappingMaskWidth * CappingMaskHeight;
-	FrontWaxCappingMask.Init(255, PixelCount);
-	BackWaxCappingMask.Init(255, PixelCount);
+	const int32 PixelCount = RuntimeCappingMaskWidth * RuntimeCappingMaskHeight;
+	RuntimeFrontWaxCappingMask.Init(255, PixelCount);
+	RuntimeBackWaxCappingMask.Init(255, PixelCount);
 }
 
 void ABeehiveCombActor::ResolveCappingMaskDimensions(int32& OutWidth, int32& OutHeight) const
@@ -816,12 +819,12 @@ bool ABeehiveCombActor::IsStoredCappingMaskValid(const FBeehiveCombItemState& Co
 
 TArray<uint8>& ABeehiveCombActor::GetMutableWaxCappingMask(EBeehiveCombVisibleFace Face)
 {
-	return Face == EBeehiveCombVisibleFace::Front ? FrontWaxCappingMask : BackWaxCappingMask;
+	return Face == EBeehiveCombVisibleFace::Front ? RuntimeFrontWaxCappingMask : RuntimeBackWaxCappingMask;
 }
 
 const TArray<uint8>& ABeehiveCombActor::GetWaxCappingMask(EBeehiveCombVisibleFace Face) const
 {
-	return Face == EBeehiveCombVisibleFace::Front ? FrontWaxCappingMask : BackWaxCappingMask;
+	return Face == EBeehiveCombVisibleFace::Front ? RuntimeFrontWaxCappingMask : RuntimeBackWaxCappingMask;
 }
 
 TObjectPtr<UTexture2D>& ABeehiveCombActor::GetWaxCappingMaskTextureRef(EBeehiveCombVisibleFace Face)
@@ -831,7 +834,7 @@ TObjectPtr<UTexture2D>& ABeehiveCombActor::GetWaxCappingMaskTextureRef(EBeehiveC
 
 void ABeehiveCombActor::EnsureCappingMaskTextures()
 {
-	if (CappingMaskWidth <= 0 || CappingMaskHeight <= 0)
+	if (RuntimeCappingMaskWidth <= 0 || RuntimeCappingMaskHeight <= 0)
 	{
 		return;
 	}
@@ -839,9 +842,9 @@ void ABeehiveCombActor::EnsureCappingMaskTextures()
 	for (const EBeehiveCombVisibleFace Face : { EBeehiveCombVisibleFace::Front, EBeehiveCombVisibleFace::Back })
 	{
 		TObjectPtr<UTexture2D>& Texture = GetWaxCappingMaskTextureRef(Face);
-		if (!Texture || Texture->GetSizeX() != CappingMaskWidth || Texture->GetSizeY() != CappingMaskHeight)
+		if (!Texture || Texture->GetSizeX() != RuntimeCappingMaskWidth || Texture->GetSizeY() != RuntimeCappingMaskHeight)
 		{
-			Texture = UTexture2D::CreateTransient(CappingMaskWidth, CappingMaskHeight, PF_B8G8R8A8);
+			Texture = UTexture2D::CreateTransient(RuntimeCappingMaskWidth, RuntimeCappingMaskHeight, PF_B8G8R8A8);
 			if (Texture)
 			{
 				Texture->SRGB = false;
@@ -867,8 +870,8 @@ void ABeehiveCombActor::UpdateCappingMaskTexture(EBeehiveCombVisibleFace Face)
 
 	TObjectPtr<UTexture2D>& Texture = GetWaxCappingMaskTextureRef(Face);
 	const TArray<uint8>& Mask = GetWaxCappingMask(Face);
-	const int32 PixelCount = CappingMaskWidth * CappingMaskHeight;
-	if (!Texture || CappingMaskWidth <= 0 || CappingMaskHeight <= 0 || Mask.Num() != PixelCount)
+	const int32 PixelCount = RuntimeCappingMaskWidth * RuntimeCappingMaskHeight;
+	if (!Texture || RuntimeCappingMaskWidth <= 0 || RuntimeCappingMaskHeight <= 0 || Mask.Num() != PixelCount)
 	{
 		return;
 	}
@@ -903,6 +906,11 @@ void ABeehiveCombActor::UpdateCappingMaskTexture(EBeehiveCombVisibleFace Face)
 
 void ABeehiveCombActor::ApplyWaxCappingMaskMaterialParameters()
 {
+	if (!FrontWaxCappingMaterialInstance && !BackWaxCappingMaterialInstance)
+	{
+		return;
+	}
+
 	EnsureCappingMaskTextures();
 
 	if (FrontWaxCappingMaterialInstance && FrontWaxCappingMaskTexture)
@@ -1049,6 +1057,22 @@ void ABeehiveCombActor::ApplyHoneyVisualState()
 
 void ABeehiveCombActor::ApplyHoneyCappingVisualState()
 {
+#if WITH_EDITOR
+	if (!BeehiveCombActorNames::IsGameWorldContext(this))
+	{
+		if (FrontWaxCappingPlane)
+		{
+			FrontWaxCappingPlane->SetHiddenInGame(true);
+		}
+
+		if (BackWaxCappingPlane)
+		{
+			BackWaxCappingPlane->SetHiddenInGame(true);
+		}
+		return;
+	}
+#endif
+
 	const bool bShowFrontCapping = IsHoneyFull() && !IsWaxCappingFaceComplete(EBeehiveCombVisibleFace::Front);
 	const bool bShowBackCapping = IsHoneyFull() && !IsWaxCappingFaceComplete(EBeehiveCombVisibleFace::Back);
 
@@ -1132,10 +1156,10 @@ void ABeehiveCombActor::ApplyStateFromItemInstance(const UItemInstance* SourceIt
 	ResolveCappingMaskDimensions(DesiredWidth, DesiredHeight);
 	if (IsStoredCappingMaskValid(CombState))
 	{
-		CappingMaskWidth = DesiredWidth;
-		CappingMaskHeight = DesiredHeight;
-		FrontWaxCappingMask = CombState.FrontWaxCappingMask;
-		BackWaxCappingMask = CombState.BackWaxCappingMask;
+		RuntimeCappingMaskWidth = DesiredWidth;
+		RuntimeCappingMaskHeight = DesiredHeight;
+		RuntimeFrontWaxCappingMask = CombState.FrontWaxCappingMask;
+		RuntimeBackWaxCappingMask = CombState.BackWaxCappingMask;
 	}
 	else
 	{
@@ -1158,10 +1182,10 @@ void ABeehiveCombActor::WriteStateToItemInstance(UItemInstance* TargetItemInstan
 		CurrentHoney,
 		CurrentHoneyRipeness,
 		bIsFrontFaceVisible,
-		CappingMaskWidth,
-		CappingMaskHeight,
-		FrontWaxCappingMask,
-		BackWaxCappingMask);
+		RuntimeCappingMaskWidth,
+		RuntimeCappingMaskHeight,
+		RuntimeFrontWaxCappingMask,
+		RuntimeBackWaxCappingMask);
 }
 
 int32 ABeehiveCombActor::GetQueenCellCount() const
@@ -1466,8 +1490,11 @@ void ABeehiveCombActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
 	SanitizeState();
 	SanitizeHoneyState();
 	SanitizeHoneyRipenessState();
-	EnsureCappingMaskState();
-	RefreshCappingMaskTextures();
+	if (BeehiveCombActorNames::IsGameWorldContext(this))
+	{
+		EnsureCappingMaskState();
+		RefreshCappingMaskTextures();
+	}
 	ApplyNiagaraUserParameters();
 	ApplyHoneyVisualState();
 }

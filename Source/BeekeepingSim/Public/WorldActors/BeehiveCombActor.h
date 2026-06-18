@@ -423,17 +423,17 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Beehive|Wax Capping")
 	FName WaxCappingMaskMaterialParameterName = TEXT("WaxCappingMask");
 
-	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
-	int32 CappingMaskWidth = 0;
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
+	int32 RuntimeCappingMaskWidth = 0;
 
-	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
-	int32 CappingMaskHeight = 0;
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
+	int32 RuntimeCappingMaskHeight = 0;
 
-	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
-	TArray<uint8> FrontWaxCappingMask;
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
+	TArray<uint8> RuntimeFrontWaxCappingMask;
 
-	UPROPERTY(VisibleAnywhere, Category = "Beehive|Wax Capping")
-	TArray<uint8> BackWaxCappingMask;
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Beehive|Wax Capping")
+	TArray<uint8> RuntimeBackWaxCappingMask;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> FrontWaxCappingMaskTexture;
